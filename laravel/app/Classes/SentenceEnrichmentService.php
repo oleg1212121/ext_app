@@ -4,6 +4,7 @@ namespace App\Classes;
 
 use App\Classes\Enrichment\Enricher;
 use App\Classes\Enrichment\EnricherRegistry;
+use App\Classes\Enrichment\Stamp;
 use App\Models\Entity;
 use App\Models\EntitySentence;
 use App\Models\EntityWord;
@@ -35,14 +36,17 @@ class SentenceEnrichmentService
     ) {}
 
     /**
-     * The entity's language enrichers that currently need to run (never
-     * enriched, a newly registered enricher, or sentence changes since).
+     * The entity's language enrichers that currently need to run for at
+     * least one of its sentences — the union of its sentences' stale
+     * enricher keys (never enriched, a newly registered enricher, an older
+     * algorithm version, or sentence changes since). Empty for a fully
+     * enriched entity and for languages with no enrichers.
      *
      * @return list<Enricher>
      */
     public function staleEnrichers(Entity $entity): array
     {
-        return $this->registry->staleFor($entity);
+        return $this->registry->forKeys($this->registry->staleKeysFor($entity));
     }
 
     public function isStale(Entity $entity): bool
@@ -51,47 +55,53 @@ class SentenceEnrichmentService
     }
 
     /**
-     * Stamp the given enrichers done on entities.enrichment_stamps (quiet
-     * base-builder write, jsonb merge so concurrent stampers can't clobber
-     * each other's keys). Each stamp carries the Laravel algorithm version
-     * and the python-reported algorithm version, so a bump on either side
-     * re-stales the whole corpus (ADR 0059, ADR 0067); a version the chunk
-     * run did not report falls back to the enricher's declared python
-     * version. Null stamps every enricher of the entity's language — the
-     * whole-run-done stamp; a language with no enrichers ends as an empty
-     * map so it never counts as stale again.
+     * Stamp the given sentences done for exactly the enrichers processed
+     * for each of them, on entity_sentences.enrichment_stamps — the same
+     * {key: {v, pv, at}} contract as the entity-level stamps (Stamp). Quiet
+     * base-builder writes (no model events, no updated_at — the staleness
+     * compare against the sentence's own content change must stay valid)
+     * merged via jsonb || so concurrent stampers cannot clobber each other's
+     * keys. Sentences whose target set is empty are left untouched.
      *
-     * @param  list<Enricher>|null  $enrichers
+     * @param  Collection<int, EntitySentence>  $sentences
+     * @param  array<int, list<Enricher>>  $perSentenceEnrichers  sentence id -> processed enrichers
      * @param  array<string, int>  $reportedVersions  enricher key -> python-reported version
      */
-    public function markEnriched(Entity $entity, ?array $enrichers = null, array $reportedVersions = []): void
+    public function markSentencesEnriched(Collection $sentences, array $perSentenceEnrichers, array $reportedVersions = []): void
     {
-        $enrichers ??= $this->registry->forLanguage($entity->language?->code ?? '');
+        $at = now()->toISOString();
 
-        $stamps = [];
+        // Sentences sharing a target set share their stamp json — one quiet
+        // write per distinct map instead of one per sentence.
+        $byJson = [];
 
-        foreach ($enrichers as $enricher) {
-            $stamps[$enricher->key()] = [
-                'v' => $enricher->version(),
-                'pv' => $reportedVersions[$enricher->key()] ?? $enricher->pythonVersion(),
-                'at' => now()->toISOString(),
-            ];
+        foreach ($sentences as $sentence) {
+            $enrichers = $perSentenceEnrichers[$sentence->id] ?? [];
+
+            $stamps = [];
+
+            foreach ($enrichers as $enricher) {
+                $stamps[$enricher->key()] = Stamp::build($enricher, $reportedVersions[$enricher->key()] ?? null, $at);
+            }
+
+            if ($stamps === []) {
+                continue;
+            }
+
+            $byJson[Stamp::encode($stamps)][] = $sentence->id;
         }
 
-        // An empty PHP array would encode as the jsonb LIST [], and
-        // Postgres concatenating an object with an array wraps the result
-        // into [{}] — the empty stamp map is the OBJECT {}.
-        $json = $stamps === [] ? '{}' : json_encode($stamps, JSON_UNESCAPED_UNICODE);
-
-        Entity::query()
-            ->whereKey($entity->id)
-            ->toBase()
-            ->update([
-                // Base-builder update: no model events, no updated_at.
-                'enrichment_stamps' => DB::raw(
-                    "coalesce(enrichment_stamps, '{}'::jsonb) || '{$json}'::jsonb",
-                ),
-            ]);
+        foreach ($byJson as $json => $ids) {
+            EntitySentence::query()
+                ->whereIn('id', $ids)
+                ->toBase()
+                ->update([
+                    // Base-builder update: no model events, no updated_at.
+                    'enrichment_stamps' => DB::raw(
+                        "coalesce(enrichment_stamps, '{}'::jsonb) || '{$json}'::jsonb",
+                    ),
+                ]);
+        }
     }
 
     /**
@@ -101,13 +111,22 @@ class SentenceEnrichmentService
      * events, no timestamps) so enrichment itself never marks the entity
      * stale again.
      *
+     * $sentenceEnrichers narrows what is persisted PER SENTENCE (the job's
+     * per-sentence staleness): the payload dispatches the union ($enrichers)
+     * — python computes every requested enricher for every sentence — but a
+     * sentence stale for only some of them keeps its other annotations and
+     * gets stamped only for the enrichers actually persisted for it.
+     * Persist-what-you-stamp: an enricher neither written nor stamped for a
+     * sentence cannot fake freshness for stored results it did not produce.
+     *
      * @param  Collection<int, EntitySentence>  $sentences
      * @param  list<Enricher>|null  $enrichers
+     * @param  array<int, list<Enricher>>  $sentenceEnrichers  sentence id -> the enrichers to persist for it; missing id -> all
      * @return array{written: int, versions: array<string, int>} sentences
      *                                                           written and the python-reported algorithm versions — the
      *                                                           stamp's input (ADR 0067)
      */
-    public function enrichChunk(Entity $entity, Collection $sentences, ?array $enrichers = null): array
+    public function enrichChunk(Entity $entity, Collection $sentences, ?array $enrichers = null, array $sentenceEnrichers = []): array
     {
         $enrichers ??= $this->registry->forLanguage($entity->language?->code ?? '');
 
@@ -180,11 +199,12 @@ class SentenceEnrichmentService
 
         $written = 0;
 
-        DB::transaction(function () use ($results, $enrichers, &$written): void {
+        DB::transaction(function () use ($results, $enrichers, $sentenceEnrichers, &$written): void {
             foreach ($results as $result) {
+                $targets = $sentenceEnrichers[$result['id']] ?? $enrichers;
                 $row = [];
 
-                foreach ($enrichers as $enricher) {
+                foreach ($targets as $enricher) {
                     $row[$enricher->annotation()->column] = $enricher->toStorage($result['output'][$enricher->key()] ?? null);
                 }
 
@@ -203,9 +223,9 @@ class SentenceEnrichmentService
      * The version contract (ADR 0067): the python service is expected to
      * report each dispatched enricher's algorithm version, and every
      * reported value must match the enricher's declared python version. A
-     * mismatch only warns — the stamp records what actually ran, so
-     * staleFor re-stales the entity against the declared version and the
-     * sweep re-runs the analysis once the two sides agree.
+     * mismatch only warns — the stamp records what actually ran, so the
+     * sentence's per-sentence stamps keep it stale against the declared
+     * version and the sweep re-runs the analysis once the two sides agree.
      *
      * @param  list<Enricher>  $enrichers
      * @param  array<string, int>  $reported

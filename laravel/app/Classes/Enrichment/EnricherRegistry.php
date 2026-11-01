@@ -4,13 +4,14 @@ namespace App\Classes\Enrichment;
 
 use App\Models\Entity;
 use App\Models\EntitySentence;
-use Illuminate\Support\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * The manifest of enrichers (ADR 0057): which analyses exist, which
- * languages they apply to, and — from the per-enricher completion stamps on
- * entities.enrichment_stamps — which of them an entity is currently stale
- * for. Adding an algorithm means adding one class here; no config, no flags.
+ * languages they apply to, and — from the per-sentence completion stamps on
+ * entity_sentences.enrichment_stamps — which of them an entity's sentences
+ * are currently stale for. Adding an algorithm means adding one class here;
+ * no config, no flags.
  */
 class EnricherRegistry
 {
@@ -118,41 +119,85 @@ class EnricherRegistry
     }
 
     /**
-     * The entity's language enrichers whose completion stamp is missing (a
-     * newly registered enricher is automatically stale), was written by an
-     * older algorithm version — a version bump re-stales every entity so
-     * the sweep re-runs the analysis corpus-wide (ADR 0059) — or older than
-     * the last sentence change. Entities of languages with no enrichers are
-     * never stale — the sweep does not pick them up.
+     * The enrichers of the given set whose stamp ON THE SENTENCE is stale:
+     * missing (a newly registered or retro-processed enricher), an older
+     * algorithm version on either side — a bump on either side re-stales
+     * every sentence stamped below it (ADR 0059, ADR 0067) — or the
+     * sentence's own content changed after the stamp. Clock-skew safe by
+     * construction: the stamp is written after the change it covers, so it
+     * can only be equal-or-later than the sentence's updated_at.
      *
-     * @return list<Enricher>
+     * @param  list<Enricher>  $enrichers  the candidate set — the caller
+     *                                     resolves the language's enrichers
+     * @return list<string> stale enricher keys, candidate-set order
      */
-    public function staleFor(Entity $entity): array
+    public function staleKeysForSentence(EntitySentence $sentence, array $enrichers): array
     {
-        $enrichers = $this->forLanguage($entity->language?->code ?? '');
+        $stamps = $sentence->enrichment_stamps ?? [];
 
-        if ($enrichers === []) {
-            return [];
+        $keys = [];
+
+        foreach ($enrichers as $enricher) {
+            $stamp = $stamps[$enricher->key()] ?? null;
+
+            if (Stamp::stale($enricher, $stamp, $sentence->updated_at?->toISOString())) {
+                $keys[] = $enricher->key();
+            }
         }
 
-        return $this->filterStale(
-            $enrichers,
-            $entity->enrichment_stamps ?? [],
-            EntitySentence::query()
-                ->where('entity_id', $entity->id)
-                ->max('updated_at'),
-        );
+        return $keys;
     }
 
     /**
-     * staleFor for many entities at once: one grouped max(updated_at) query
-     * instead of one per entity, so the sweep's scan stays bounded no matter
-     * how large the catalog grows (ADR 0043).
+     * The entity's sentences stale for any of the given enrichers (default:
+     * every enricher of the entity's language), in id order — the
+     * enrichment job's processing window. Languages with no enrichers match
+     * nothing: their sentences are never stale.
+     *
+     * The per-key conditions mirror Stamp::stale exactly — including the
+     * legacy tolerances (a bare-ISO stamp reads as version 1 with no python
+     * version, a versioned stamp without pv reads as pv 0) — so SQL and the
+     * PHP predicate cannot disagree. `at` is pinned to UTC explicitly so the
+     * comparison against the (UTC wall-clock) updated_at column does not
+     * depend on the database session timezone.
+     *
+     * @param  list<Enricher>|null  $enrichers
+     * @return Builder<EntitySentence>
+     */
+    public function staleSentenceQuery(Entity $entity, ?array $enrichers = null)
+    {
+        $enrichers ??= $this->forLanguage($entity->language?->code ?? '');
+
+        return EntitySentence::query()
+            ->where('entity_id', $entity->id)
+            ->when($enrichers !== [], fn ($query) => $query->where($this->sentenceStaleConditions($enrichers)))
+            ->when($enrichers === [], fn ($query) => $query->whereRaw('false'))
+            ->orderBy('id');
+    }
+
+    /**
+     * The union of the entity's sentences' stale enricher keys — "what does
+     * this entity still need". Empty for a fully enriched entity and for
+     * languages with no enrichers.
+     *
+     * @return list<string>
+     */
+    public function staleKeysFor(Entity $entity): array
+    {
+        return $this->staleKeysForMany([$entity])[$entity->id] ?? [];
+    }
+
+    /**
+     * staleKeysFor for many entities at once: one grouped query with a
+     * bool_or per enricher key, so the sweep's scan stays bounded no matter
+     * how large the catalog grows (ADR 0043). Entities of languages with no
+     * enrichers map to [] — never stale, never picked. An entity with no
+     * sentences maps to [] too: staleness needs at least one stale sentence.
      *
      * @param  iterable<int, Entity>  $entities
-     * @return array<int, list<Enricher>> entity id -> its stale enrichers
+     * @return array<int, list<string>> entity id -> its stale enricher keys
      */
-    public function staleForMany(iterable $entities): array
+    public function staleKeysForMany(iterable $entities): array
     {
         $byId = [];
 
@@ -164,73 +209,116 @@ class EnricherRegistry
             return [];
         }
 
-        $lastChanges = EntitySentence::query()
+        $enrichersByEntity = [];
+
+        foreach ($byId as $id => $entity) {
+            $enrichersByEntity[$id] = $this->forLanguage($entity->language?->code ?? '');
+        }
+
+        // One bool_or column per distinct enricher key in the batch — keys
+        // are globally unique across the manifest, so the column name is the
+        // safe decode address for every entity's row.
+        $distinctEnrichers = [];
+
+        foreach ($enrichersByEntity as $enrichers) {
+            foreach ($enrichers as $enricher) {
+                $distinctEnrichers[$enricher->key()] ??= $enricher;
+            }
+        }
+
+        $columns = ['entity_id'];
+        $bindings = [];
+
+        foreach ($distinctEnrichers as $enricher) {
+            [$clause, $clauseBindings] = $this->sentenceStaleClause($enricher);
+            $columns[] = "bool_or({$clause}) as {$enricher->key()}";
+            $bindings = array_merge($bindings, $clauseBindings);
+        }
+
+        $rows = EntitySentence::query()
             ->whereIn('entity_id', array_keys($byId))
             ->groupBy('entity_id')
-            ->selectRaw('entity_id, max(updated_at) as last_change')
-            ->pluck('last_change', 'entity_id');
+            ->selectRaw(implode(', ', $columns), $bindings)
+            ->get()
+            ->keyBy('entity_id');
 
         $stale = [];
 
         foreach ($byId as $id => $entity) {
-            $stale[$id] = $this->filterStale(
-                $this->forLanguage($entity->language?->code ?? ''),
-                $entity->enrichment_stamps ?? [],
-                $lastChanges[$id] ?? null,
-            );
+            $languageEnrichers = $enrichersByEntity[$id];
+            $row = $rows->get($id);
+
+            if ($languageEnrichers === [] || $row === null) {
+                // A language with no enrichers is never stale; an entity
+                // with no sentences has no stale sentence.
+                $stale[$id] = [];
+            } else {
+                $stale[$id] = array_values(array_filter(
+                    array_map(fn (Enricher $e) => $row->{$e->key()} ? $e->key() : null, $languageEnrichers),
+                ));
+            }
         }
 
         return $stale;
     }
 
     /**
-     * The staleness predicate behind staleFor/staleForMany: a missing stamp,
-     * an older algorithm version on either side, or a sentence change after
-     * the stamp makes the enricher stale.
+     * The SQL mirror of Stamp::stale for one enricher, as a where-clause
+     * closure over the entity_sentences query.
      *
      * @param  list<Enricher>  $enrichers
-     * @param  array<string, mixed>  $stamps
-     * @param  string|null  $lastSentenceChange  raw aggregate value, not a cast datetime
-     * @return list<Enricher>
+     * @return \Closure(\Illuminate\Database\Query\Builder): void
      */
-    private function filterStale(array $enrichers, array $stamps, ?string $lastSentenceChange): array
+    private function sentenceStaleConditions(array $enrichers): \Closure
     {
-        return array_values(array_filter(
-            $enrichers,
-            function (Enricher $enricher) use ($stamps, $lastSentenceChange): bool {
-                $stamp = $stamps[$enricher->key()] ?? null;
+        return function ($query) use ($enrichers): void {
+            foreach ($enrichers as $enricher) {
+                [$clause, $bindings] = $this->sentenceStaleClause($enricher);
+                $query->orWhereRaw($clause, $bindings);
+            }
+        };
+    }
 
-                if ($stamp === null) {
-                    return true;
-                }
+    /**
+     * The raw per-key staleness clause and its bindings. Bindings order:
+     * key (null check), key (typeof), key+key (v), key+key+version (v
+     * compare), key+key (typeof), key+key (pv), key+key+pythonVersion (pv
+     * compare), key (typeof), key+key (at), key (typeof), key+key (at
+     * extract), at extract (timestamp compare).
+     *
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private function sentenceStaleClause(Enricher $enricher): array
+    {
+        $k = $enricher->key();
+        $column = 'enrichment_stamps';
 
-                // v1 stamps were bare ISO strings; the array shape carries
-                // the algorithm version next to the completion time.
-                $enrichedAt = is_array($stamp) ? ($stamp['at'] ?? null) : $stamp;
-
-                if ($enrichedAt === null) {
-                    return true;
-                }
-
-                if ((int) (is_array($stamp) ? ($stamp['v'] ?? 1) : 1) < $enricher->version()) {
-                    return true;
-                }
-
-                // The python-side algorithm version the stamp was written
-                // with (ADR 0067). Legacy stamps carry no pv — read as 0, so
-                // every pre-parity stamp is stale exactly once and the sweep
-                // rewrites it in the versioned shape.
-                $pythonVersion = (int) (is_array($stamp) ? ($stamp['pv'] ?? 0) : 0);
-
-                if ($pythonVersion < $enricher->pythonVersion()) {
-                    return true;
-                }
-
-                // max('updated_at') is an aggregate — it comes back as a
-                // raw string, not through the model's datetime cast.
-                return $lastSentenceChange !== null
-                    && Carbon::parse($lastSentenceChange)->gt(Carbon::parse($enrichedAt));
-            },
-        ));
+        return [
+            <<<SQL
+            (
+                {$column} -> ? is null
+                or case when jsonb_typeof({$column} -> ?) = 'object'
+                    then coalesce(({$column} -> ? ->> 'v')::int, 1) else 1 end < ?
+                or case when jsonb_typeof({$column} -> ?) = 'object'
+                    then coalesce(({$column} -> ? ->> 'pv')::int, 0) else 0 end < ?
+                or coalesce(
+                    case when jsonb_typeof({$column} -> ?) = 'object'
+                        then {$column} -> ? ->> 'at'
+                        else {$column} -> ? #>> '{}' end, '') = ''
+                or (
+                    case when jsonb_typeof({$column} -> ?) = 'object'
+                        then {$column} -> ? ->> 'at'
+                        else {$column} -> ? #>> '{}' end
+                )::timestamptz at time zone 'UTC' < updated_at
+            )
+            SQL,
+            [
+                $k,
+                $k, $k, $enricher->version(),
+                $k, $k, $enricher->pythonVersion(),
+                $k, $k, $k,
+                $k, $k, $k,
+            ],
+        ];
     }
 }

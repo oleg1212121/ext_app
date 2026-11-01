@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Definition;
 use App\Models\Entity;
 use App\Models\EntitySentence;
 use App\Models\EntityWord;
@@ -126,6 +127,11 @@ it('generates a crossword for a readable entity', function () {
     $entity = seedCrosswordEntity();
     seedDictionary(['the', 'cat', 'sat', 'dog', 'ran']);
 
+    // The clue payload ships POS-grouped sections; give one word a sense so
+    // its section is non-empty.
+    $ran = Word::query()->where('l_word', 'ran')->first();
+    Definition::query()->create(['word_id' => $ran->id, 'definition' => 'Moved fast.']);
+
     $response = $this->actingAs($user)
         ->post(route('crossword.generate'), ['entity_id' => $entity->id, 'level' => 0])
         ->assertOk()
@@ -134,6 +140,13 @@ it('generates a crossword for a readable entity', function () {
     $payload = $response->json('data.crossword');
     expect(count($payload['words']))->toBeGreaterThan(0);
     expect($payload['dictionary'])->toHaveKey('ran');
+
+    $ranSections = $payload['dictionary']['ran']['sections'];
+    expect($ranSections)->toHaveCount(1)
+        ->and($ranSections[0]['word_class'])->toBe('Noun')
+        ->and($ranSections[0]['definitions'])->toBe(['Moved fast.'])
+        ->and($ranSections[0]['translations'])->toBe([])
+        ->and($ranSections[0]['staged_translations'])->toBe([]);
 
     // Selected words get a familiarity-0 marker row for the user.
     expect(UserWord::query()->where('user_id', $user->id)->where('familiarity', 0)->count())->toBeGreaterThan(0);

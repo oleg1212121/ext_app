@@ -77,6 +77,49 @@ it('skips entities without sentences', function () {
     Queue::assertNotPushed(RefreshEntityWords::class);
 });
 
+it('dispatches for an entity whose sentences were never stamped even when a marker is present', function () {
+    Queue::fake();
+
+    $entity = createEntity('en');
+    addRefreshSentence($entity, 'The cat sat.');
+
+    // A marker without sentence stamps — e.g. a derivation flow copying the
+    // source entity's marker onto sentences that were never indexed
+    // themselves. Sentence-granular staleness must pick this entity.
+    $entity->forceFill(['words_indexed_at' => now()])->save();
+
+    $this->artisan('crossword:refresh')->assertSuccessful();
+
+    Queue::assertPushed(RefreshEntityWords::class, fn ($job) => refreshJobEntityId($job) === $entity->id);
+});
+
+it('dispatches for a fully indexed entity after one sentence goes stale', function () {
+    Queue::fake();
+
+    $entity = createEntity('en');
+    $sentence = addRefreshSentence($entity, 'The cat sat.');
+    createWord('en', 'the');
+    createWord('en', 'cat');
+    createWord('en', 'sat');
+    Artisan::call('crossword:index');
+    Artisan::call('crossword:link');
+
+    // Baseline: fully fresh — stamps equal updated_at, marker current,
+    // everything linked. Skipped.
+    $this->artisan('crossword:refresh')
+        ->expectsOutput('No entities need a word-list refresh.');
+
+    Queue::assertNotPushed(RefreshEntityWords::class);
+
+    // One sentence edited: the sweep picks the entity again.
+    $this->travel(1)->seconds();
+    $sentence->update(['content' => 'The dog sat.']);
+
+    $this->artisan('crossword:refresh')->assertSuccessful();
+
+    Queue::assertPushed(RefreshEntityWords::class, fn ($job) => refreshJobEntityId($job) === $entity->id);
+});
+
 it('forces refresh for explicitly given entity ids', function () {
     Queue::fake();
 

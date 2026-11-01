@@ -20,7 +20,7 @@ interface Enricher
 {
     /**
      * The stable identifier of this analysis — the python dispatch key and
-     * the entities.enrichment_stamps map key.
+     * the entity_sentences.enrichment_stamps map key.
      */
     public function key(): string;
 

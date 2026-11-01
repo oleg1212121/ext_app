@@ -66,12 +66,14 @@
         ],
         "test": [
             "Composer\\Config::disableProcessTimeout",
+            "@php scripts/assert-no-inflight-test.php",
             "@php artisan config:clear --ansi",
             "@php artisan route:clear --ansi",
             "sh -c 'LARAVEL_PARALLEL_TESTING=1 LARAVEL_PARALLEL_TESTING_DROP_DATABASES=1 php vendor/bin/pest --parallel --processes=6 --drop-databases'"
         ],
         "test:tia": [
             "Composer\\Config::disableProcessTimeout",
+            "@php scripts/assert-no-inflight-test.php",
             "@php artisan config:clear --ansi",
             "@php artisan route:clear --ansi",
             "@php scripts/tia-setup.php",

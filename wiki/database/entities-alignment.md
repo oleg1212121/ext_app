@@ -1,12 +1,12 @@
 ---
 type: Database Schema
 title: Works, Entities & Alignment Tables
-description: Works grouping per-language entities, their sentences, and the machine/human alignment between them (unified a/b schema, 2026_09_10 migrations; creator/flags/hashes 2026_09_20; strict junction uniqueness 2026_09_28; illustration columns 2026_09_28; work + entity + alignment tag pools 2026_10_11; first Sentence Alignments edit page 2026_10_11; pdf_renders cache 2026_10_28).
+description: Works grouping per-language entities, their sentences, and the machine/human alignment between them (unified a/b schema, 2026_09_10 migrations; creator/flags/hashes 2026_09_20; strict junction uniqueness 2026_09_28; illustration columns 2026_09_28; work + entity + alignment tag pools 2026_10_11; first Sentence Alignments edit page 2026_10_11; pdf_renders cache 2026_10_28; entity_sentence_words occurrence rows + entity_sentences.words_indexed_at + per-sentence enrichment stamps, entity-level stamps dropped, 2026_10_31).
 tags: [database, schema, alignment, entities, works, hash, illustrations, tags, pdf]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-29T10:20:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-29T10:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-31T18:40:00+03:00 }
+verified: { by: agent:zcode, at: 2026-10-31T13:55:00+03:00 }
 sources:
    - id: migrations
      resource: laravel/database/migrations/2026_09_10_000003_create_works_and_entities_tables.php
@@ -41,6 +41,12 @@ sources:
    - id: align-service
      resource: laravel/app/Classes/MeaningMatchStore.php
      title: Writer of meaning matches (the pipeline's write path, ADR 0063)
+   - id: sentence-words-migration
+     resource: laravel/database/migrations/2026_10_31_000001_create_entity_sentence_words_table.php
+     title: entity_sentence_words occurrence rows + entity_sentences.words_indexed_at
+   - id: sentence-stamps-migration
+     resource: laravel/database/migrations/2026_10_31_000002_add_sentence_enrichment_stamps.php
+     title: entity_sentences.enrichment_stamps — the per-sentence enrichment stamp (ADR 0094; entity-level map dropped by 2026_10_31_000003)
 ---
 
 # Tables
@@ -56,7 +62,8 @@ sources:
 | `tagged_alignments` | (pivot) | Entity matches ↔ alignment tags membership: `entity_match_id` → entity_matches and `alignment_tag_id` → alignment_tags, both `cascadeOnDelete`, unique `(entity_match_id, alignment_tag_id)` (`uk_tagged_alignments_pair`), timestamps |
 | `entities` | `Entity` | A text (book/story/file) in one language — the original or a translation of its work. Carries `work_id`, `language_id`, `created_by` (nullable uploader), an optional translator/edition `label`, a BGE-M3 embedding `signature`, `is_restricted` gating read access, `is_approved` (edit lock), `file_hash` (raw upload bytes) and `text_hash`/`text_hashed_at`/`sentences_updated_at` (exact-copy detection, ADR 0033) |
 | `sentence_types` | `SentenceType` | Classification for sentences; seeded with `sentence`, `title`, `quote`, `subtitle`, `footnote`, `caption`, `illustration` |
-| `entity_sentences` | `EntitySentence` | Split sentences with **sparse order** values; unique `(entity_id, order)`. Image-bearing rows (illustrations, ADR 0050) additionally carry `image_path`/`image_hash`/`image_width`/`image_height`/`image_mime` — `image_path` non-null is the illustration marker, `content` is the optional caption. Enrichment columns (ADR 0052): `stressed_content` (stress-marked display variant, kept beside `content` which is never mutated), `phrasal_verbs` jsonb (hits with char spans into `content`) |
+| `entity_sentences` | `EntitySentence` | Split sentences with **sparse order** values; unique `(entity_id, order)`. Image-bearing rows (illustrations, ADR 0050) additionally carry `image_path`/`image_hash`/`image_width`/`image_height`/`image_mime` — `image_path` non-null is the illustration marker, `content` is the optional caption. Enrichment columns (ADR 0052): `stressed_content` (stress-marked display variant, kept beside `content` which is never mutated), `phrasal_verbs` jsonb (hits with char spans into `content`), and — since staleness moved to the sentence (ADR 0094) — `enrichment_stamps` jsonb (`{enricher key: {v, pv, at}}`, null = never enriched; the per-sentence staleness source; the entity-level `entities.enrichment_stamps` map it succeeded is dropped). Word-index column: `words_indexed_at` (nullable) — when the sentence's `entity_sentence_words` rows were last built, written with the sentence's own `updated_at` so a re-run can't drift the stamp |
+| `entity_sentence_words` | `EntitySentenceWord` | Per-sentence token occurrences behind the [crossword word index](/domains/crossword.md): `entity_id` (denormalized so the entity-level aggregate is a single-table indexed scan, cascade on entity delete), `entity_sentence_id` (cascade on sentence delete), `position` (0-based token ordinal), `start`/`end` (0-based char span into `entity_sentences.content`, same convention as the `phrasal_verbs` hits), `l_word` (the `entity_words.l_word` lookup key), `token` (surface form). Unique `(entity_sentence_id, position)`, indexed on `entity_id`. The entity word list is merged from these rows by aggregation (surviving keys keep their `entity_words` row — dictionary link and unmatchable stamp intact — vanished keys deleted, new keys inserted unlinked); occurrences carry exactly what `WordTokenizer::tokenize()` counts (edge trim + min length — `tokenizeWithSpans` semantics are deliberately wider) | |
 | `entity_matches` | `EntityMatch` | Pairing of two distinct same-work entities ("same text, two versions"; same-language companions like exercises + answers included), stored canonically `a_entity_id < b_entity_id`. `status` (varchar): `pending \| stale \| aligning \| completed \| failed` — see the lifecycle bullet below. `refined_at` (nullable timestamp, 2026_10_09): when the refine round last ran — the align job's auto-refine fires only while it is null |
 | `meaning_matches` | `MeaningMatch` | Sentence-group level alignment result within a match |
 | `sentence_meaning_matches` | `SentenceMeaningMatch` | Per-sentence membership in a meaning match, with a `side` char(1) (`'a'`/`'b'`) naming which entity of the match the sentence belongs to, plus a denormalized NOT NULL `entity_match_id` backing the strict `unique(entity_match_id, entity_sentence_id)` junction-uniqueness index (ADR 0048; auto-filled from the parent meaning match by a model `creating` hook) |

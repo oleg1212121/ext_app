@@ -2,7 +2,6 @@
 
 use App\Classes\Enrichment\EnglishPhrasalVerbEnricher;
 use App\Classes\Enrichment\EnricherRegistry;
-use App\Classes\Enrichment\RussianStressEnricher;
 use App\Classes\EntityTextHasher;
 use App\Classes\SentenceEnrichmentService;
 use App\Jobs\EnrichEntitySentences;
@@ -18,8 +17,10 @@ use App\Models\Transcription;
 use App\Models\TranscriptionType;
 use App\Models\User;
 use App\Models\Word;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 
 if (! function_exists('approvedUser')) {
     function approvedUser(): User
@@ -34,6 +35,10 @@ if (! function_exists('approvedUser')) {
 beforeEach(function () {
     Http::preventStrayRequests();
     fakePython();
+});
+
+afterEach(function () {
+    Carbon::setTestNow();
 });
 
 function enrichableEntity(string $code, array $sentences): Entity
@@ -84,21 +89,39 @@ it('maps enrichers to languages declaratively', function () {
         ->and(collect($registry->languages())->sort()->values()->all())->toBe(['be', 'en', 'ru']);
 });
 
-it('runs the whole entity through the job and stamps every enricher', function () {
+it('no longer keeps entity-level enrichment stamps', function () {
+    // The per-sentence stamps (entity_sentences.enrichment_stamps) are the
+    // only completion record left — the entity-level column is dropped.
+    expect(Schema::hasColumn('entities', 'enrichment_stamps'))->toBeFalse()
+        ->and(Schema::hasColumn('entity_sentences', 'enrichment_stamps'))->toBeTrue();
+});
+
+it('runs the whole entity through the job and stamps every enricher per sentence', function () {
     $entity = enrichableEntity('en', ['One.', 'Two.', 'Three.']);
     EntitySentence::create(['entity_id' => $entity->id, 'content' => '', 'order' => 999999]);
 
     Bus::fake();
     (new EnrichEntitySentences($entity->id))->handle();
 
-    expect(array_keys($entity->refresh()->enrichment_stamps ?? []))->toBe(['en_stress', 'en_phrasal'])
-        // The empty sentence keeps null columns (python rejects empty text)
-        // but still counts as processed.
-        ->and(EntitySentence::query()->where('entity_id', $entity->id)->whereNull('stressed_content')->count())->toBe(1)
-        ->and(EntitySentence::query()->where('entity_id', $entity->id)->count())->toBe(4);
+    // The empty sentence keeps null columns (python rejects empty text)
+    // but still counts as processed — it carries the run's stamps too.
+    expect(EntitySentence::query()->where('entity_id', $entity->id)->whereNull('stressed_content')->count())->toBe(1)
+        ->and(EntitySentence::query()->where('entity_id', $entity->id)->count())->toBe(4)
+        // Per-sentence stamps: every processed sentence stamped for the
+        // run's enrichers.
+        ->and(EntitySentence::query()->where('entity_id', $entity->id)
+            ->get()
+            ->every(fn ($sentence) => array_keys($sentence->enrichment_stamps ?? []) === ['en_stress', 'en_phrasal']))
+        ->toBeTrue()
+        // Stamping is a quiet write: the sentence's updated_at (the
+        // staleness reference) never moves.
+        ->and(EntitySentence::query()->where('entity_id', $entity->id)
+            ->get()
+            ->every(fn ($sentence) => $sentence->enrichment_stamps !== null))
+        ->toBeTrue();
 });
 
-it('never dispatches or stamps entities the pipeline cannot enrich', function () {
+it('never dispatches entities the pipeline cannot enrich', function () {
     $french = Language::query()->create(['code' => 'fr', 'name' => 'French', 'is_enabled' => true, 'sort_order' => 5]);
     $work = createWork(['original_language_id' => $french->id]);
     $frenchEntity = Entity::query()->create(['work_id' => $work->id, 'language_id' => $french->id, 'name' => 'FR']);
@@ -110,18 +133,15 @@ it('never dispatches or stamps entities the pipeline cannot enrich', function ()
     Bus::fake();
     $this->artisan('entities:enrich')->assertSuccessful();
 
-    // French has no enrichers: never stale, never dispatched, never stamped.
-    // The empty entity IS dispatchable — its job runs once and stamps it done.
-    expect($frenchEntity->refresh()->enrichment_stamps)->toBeNull()
-        ->and($empty->refresh()->enrichment_stamps)->toBeNull()
-        ->and($enrichable->refresh()->enrichment_stamps)->toBeNull();
-
+    // French has no enrichers: its sentences are never stale, never
+    // dispatched. The sentence-less entity has no stale sentence either —
+    // staleness needs at least one stale sentence.
     Bus::assertDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->entityId === $enrichable->id);
-    Bus::assertDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->entityId === $empty->id);
+    Bus::assertNotDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->entityId === $empty->id);
     Bus::assertNotDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->entityId === $frenchEntity->id);
 });
 
-it('marks a non-enrichable language done when its job runs', function () {
+it('never counts a non-enrichable language stale, job run or not', function () {
     $french = Language::query()->create(['code' => 'fr', 'name' => 'French', 'is_enabled' => true, 'sort_order' => 5]);
     $work = createWork(['original_language_id' => $french->id]);
     $frenchEntity = Entity::query()->create(['work_id' => $work->id, 'language_id' => $french->id, 'name' => 'FR']);
@@ -130,16 +150,22 @@ it('marks a non-enrichable language done when its job runs', function () {
     Bus::fake();
     (new EnrichEntitySentences($frenchEntity->id))->handle();
 
-    expect($frenchEntity->refresh()->enrichment_stamps)->toBe([])
-        ->and(app(SentenceEnrichmentService::class)->isStale($frenchEntity))->toBeFalse();
+    // A language with no enrichers is never stale by construction — the
+    // registry maps it to nothing, no "count as done" write needed (the old
+    // empty entity-level stamp is gone with the column).
+    expect(app(SentenceEnrichmentService::class)->isStale($frenchEntity->refresh()))->toBeFalse();
+
+    // And the sweep never picks it — no infinite re-pick loop exists.
+    $this->artisan('entities:enrich')->assertSuccessful();
+    Bus::assertNotDispatched(EnrichEntitySentences::class, fn (EnrichEntitySentences $job) => $job->entityId === $frenchEntity->id);
 });
 
 it('skips freshly enriched entities in the sweep', function () {
     $fresh = enrichableEntity('ru', ['Привет.']);
-    // A stamp written at the current versions, parity-checked (ADR 0067).
-    $fresh->update(['enrichment_stamps' => ['ru_stress' => [
-        'v' => 1, 'pv' => (new RussianStressEnricher)->pythonVersion(), 'at' => now()->toISOString(),
-    ]]]);
+
+    // Fresh = per-sentence stamps at the current versions, written by the
+    // job itself (ADR 0067 parity-checked) — the sweep reads sentences only.
+    (new EnrichEntitySentences($fresh->id))->handle();
 
     Bus::fake();
     $this->artisan('entities:enrich')->assertSuccessful();
@@ -161,76 +187,83 @@ it('caps the sweep at the dispatch limit in id order', function () {
     Bus::assertDispatched(EnrichEntitySentences::class, 2);
 });
 
-it('staleForMany agrees with staleFor for every entity in the batch', function () {
+it('staleKeysForMany agrees with the service view for every entity in the batch', function () {
     $service = app(SentenceEnrichmentService::class);
     $registry = new EnricherRegistry;
 
-    // Fresh stamp, missing stamp, and no sentences at all (null last change).
+    // Fully enriched (per-sentence stamps via the job), never enriched, and
+    // no sentences at all.
     $fresh = enrichableEntity('ru', ['Привет.']);
-    $fresh->update(['enrichment_stamps' => ['ru_stress' => [
-        'v' => 1, 'pv' => (new RussianStressEnricher)->pythonVersion(), 'at' => now()->toISOString(),
-    ]]]);
+    (new EnrichEntitySentences($fresh->id))->handle();
     $stale = enrichableEntity('ru', ['Устарел.']);
     $empty = enrichableEntity('en', []);
 
     $batch = [$fresh->refresh(), $stale->refresh(), $empty->refresh()];
 
-    $map = $registry->staleForMany($batch);
+    $map = $registry->staleKeysForMany($batch);
 
     foreach ($batch as $entity) {
-        expect(collect($map[$entity->id] ?? [])->map->key()->all())
+        expect(collect($map[$entity->id] ?? [])->all())
             ->toBe(collect($service->staleEnrichers($entity))->map->key()->all());
     }
 
     expect($map[$fresh->id])->toBe([])
-        ->and(collect($map[$stale->id])->map->key()->all())->toBe(['ru_stress'])
-        ->and(collect($map[$empty->id])->map->key()->all())->toBe(['en_stress', 'en_phrasal']);
+        ->and(collect($map[$stale->id])->all())->toBe(['ru_stress'])
+        ->and($map[$empty->id])->toBe([]);
 });
 
-it('re-enriches an entity whose stamps predate the python version parity', function () {
+it('re-enriches sentences whose stamps predate the python version parity', function () {
     // The {v, at} stamps written before ADR 0067 carry no python version:
     // exactly the one-time corpus re-run the parity change accepted.
     $entity = enrichableEntity('ru', ['Привет.']);
-    $entity->update(['enrichment_stamps' => ['ru_stress' => now()->toISOString()]]);
+    $sentence = EntitySentence::query()->where('entity_id', $entity->id)->first();
+    $sentence->forceFill(['enrichment_stamps' => ['ru_stress' => now()->toISOString()]])->saveQuietly();
 
     $service = app(SentenceEnrichmentService::class);
     expect(collect($service->staleEnrichers($entity->refresh()))->map->key()->all())->toBe(['ru_stress']);
 
     (new EnrichEntitySentences($entity->id, 0, ['ru_stress']))->handle();
 
-    expect($entity->refresh()->enrichment_stamps['ru_stress']['pv'])->toBe(1)
+    expect($sentence->refresh()->enrichment_stamps['ru_stress']['pv'])->toBe(1)
         ->and($service->isStale($entity->refresh()))->toBeFalse();
 });
 
 it('re-enriches an entity whose sentences changed after enrichment', function () {
     $entity = enrichableEntity('ru', ['Привет.']);
-    $entity->update(['enrichment_stamps' => ['ru_stress' => now()->subDay()->toISOString()]]);
+    $sentence = EntitySentence::query()->where('entity_id', $entity->id)->first();
+
+    // Enriched at the current versions: fresh.
+    $sentence->forceFill(['enrichment_stamps' => ['ru_stress' => [
+        'v' => 1, 'pv' => 1, 'at' => now()->toISOString(),
+    ]]])->saveQuietly();
 
     $service = app(SentenceEnrichmentService::class);
-    expect($service->isStale($entity->refresh()))->toBeTrue();
+    expect($service->isStale($entity->refresh()))->toBeFalse();
 
-    // A content edit after enrichment flips staleness (the touch bumps
-    // sentences_updated_at past the stamp).
-    EntitySentence::query()->where('entity_id', $entity->id)->first()->update(['content' => 'Приветик.']);
+    // A content edit after enrichment flips staleness (the edit bumps the
+    // sentence's own updated_at past the stamp — an hour's travel clears
+    // the same-second window the second-precision columns share).
+    $this->travel(1)->hours();
+    $sentence->update(['content' => 'Приветик.']);
     expect($service->isStale($entity->refresh()))->toBeTrue();
 });
 
 it('re-enriches only the enricher missing a stamp (retro-processing)', function () {
-    // State of an entity enriched before en_phrasal existed: only the stress
-    // enricher carries a stamp (at the current versions, ADR 0067), and its
-    // sentence already has stress marks.
+    // State of sentences enriched before en_phrasal existed: the stress
+    // enricher carries a per-sentence stamp (at the current versions,
+    // ADR 0067), and the sentence already has stress marks.
     $entity = enrichableEntity('en', ['She gave up smoking.']);
     $sentence = EntitySentence::query()->where('entity_id', $entity->id)->first();
     $sentence->forceFill(['stressed_content' => 'pre-existing marks'])->saveQuietly();
-    $entity->update(['enrichment_stamps' => ['en_stress' => [
+    $sentence->forceFill(['enrichment_stamps' => ['en_stress' => [
         'v' => 1, 'pv' => 1, 'at' => now()->toISOString(),
-    ]]]);
+    ]]])->saveQuietly();
 
     $service = app(SentenceEnrichmentService::class);
     $stale = $service->staleEnrichers($entity->refresh());
     expect(collect($stale)->map->key()->all())->toBe(['en_phrasal']);
 
-    $stampsBefore = $entity->refresh()->enrichment_stamps;
+    $stampsBefore = $sentence->refresh()->enrichment_stamps;
 
     // The job (the sweep's beginEnrichers path) runs only the stale
     // enricher, then stamps exactly it.
@@ -240,8 +273,8 @@ it('re-enriches only the enricher missing a stamp (retro-processing)', function 
     // stress marks and their stamp are untouched.
     expect($sentence->refresh()->phrasal_verbs)->toBe([])
         ->and($sentence->stressed_content)->toBe('pre-existing marks')
-        ->and($entity->refresh()->enrichment_stamps['en_phrasal'] ?? null)->not->toBeNull()
-        ->and($entity->enrichment_stamps['en_stress'] ?? null)->toBe($stampsBefore['en_stress']);
+        ->and($sentence->refresh()->enrichment_stamps['en_phrasal'] ?? null)->not->toBeNull()
+        ->and($sentence->enrichment_stamps['en_stress'] ?? null)->toBe($stampsBefore['en_stress']);
 });
 
 it('never sends phrasal data for a russian entity', function () {
@@ -560,57 +593,54 @@ it('sends per-part ipa for hyphenated compounds the dictionary lacks', function 
         ]);
 });
 
-it('re-enriches an entity stamped by an older algorithm version', function () {
+it('re-enriches sentences stamped by an older algorithm version', function () {
     $entity = enrichableEntity('en', ['She gave up smoking.']);
+    $sentence = EntitySentence::query()->where('entity_id', $entity->id)->first();
     $service = app(SentenceEnrichmentService::class);
+
+    $stampWith = fn (array $stamps) => $sentence->forceFill(['enrichment_stamps' => $stamps])->saveQuietly();
+    $staleKeys = fn () => collect($service->staleEnrichers($entity->refresh()))->map->key()->all();
 
     // v1-era stamps were bare ISO strings: stale for both the versioned
     // (v3) and the python-parity (pv) phrasal analysis, stale for the
     // python parity of the stress analysis too (ADR 0059, ADR 0067).
-    $entity->update(['enrichment_stamps' => [
+    $stampWith([
         'en_phrasal' => now()->toISOString(),
         'en_stress' => now()->toISOString(),
-    ]]);
-    expect(collect($service->staleEnrichers($entity->refresh()))->map->key()->all())->toBe(['en_stress', 'en_phrasal']);
+    ]);
+    expect($staleKeys())->toBe(['en_stress', 'en_phrasal']);
 
     // A {v, at} stamp without pv still re-stales (the one-time parity
     // re-run), even at the current Laravel version.
     $version = (new EnglishPhrasalVerbEnricher)->version();
-    $entity->update(['enrichment_stamps' => [
+    $stampWith([
         'en_phrasal' => ['v' => $version, 'at' => now()->toISOString()],
         'en_stress' => ['v' => 1, 'at' => now()->toISOString()],
-    ]]);
-    expect(collect($service->staleEnrichers($entity->refresh()))->map->key()->all())->toBe(['en_stress', 'en_phrasal']);
+    ]);
+    expect($staleKeys())->toBe(['en_stress', 'en_phrasal']);
 
     // Once re-stamped at the current versions on BOTH sides, nothing is
     // stale.
-    $entity->update(['enrichment_stamps' => [
+    $stampWith([
         'en_phrasal' => ['v' => $version, 'pv' => (new EnglishPhrasalVerbEnricher)->pythonVersion(), 'at' => now()->toISOString()],
         'en_stress' => ['v' => 1, 'pv' => 1, 'at' => now()->toISOString()],
-    ]]);
+    ]);
     expect($service->isStale($entity->refresh()))->toBeFalse();
 
     // A python version older than declared re-stales (the sweep keeps
     // re-running until the two sides agree); a NEWER reported version is
     // fine — newer results than declared are strictly more advanced.
-    $entity->update(['enrichment_stamps' => [
+    $stampWith([
         'en_phrasal' => ['v' => $version, 'pv' => (new EnglishPhrasalVerbEnricher)->pythonVersion() - 1, 'at' => now()->toISOString()],
         'en_stress' => ['v' => 1, 'pv' => 1, 'at' => now()->toISOString()],
-    ]]);
-    expect(collect($service->staleEnrichers($entity->refresh()))->map->key()->all())->toBe(['en_phrasal']);
+    ]);
+    expect($staleKeys())->toBe(['en_phrasal']);
 
-    $entity->update(['enrichment_stamps' => [
+    $stampWith([
         'en_phrasal' => ['v' => $version, 'pv' => (new EnglishPhrasalVerbEnricher)->pythonVersion() + 1, 'at' => now()->toISOString()],
         'en_stress' => ['v' => 1, 'pv' => 1, 'at' => now()->toISOString()],
-    ]]);
+    ]);
     expect($service->isStale($entity->refresh()))->toBeFalse();
-
-    // markEnriched writes the fully versioned shape.
-    $service->markEnriched($entity, [(new EnricherRegistry)->forKey('en_phrasal')]);
-    $stamp = $entity->refresh()->enrichment_stamps['en_phrasal'];
-    expect($stamp['v'])->toBe($version)
-        ->and($stamp['pv'])->toBe((new EnglishPhrasalVerbEnricher)->pythonVersion())
-        ->and($stamp['at'])->not->toBeNull();
 });
 
 it('gates the phrasal lexicon to the particle/preposition shape', function () {

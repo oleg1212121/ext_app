@@ -135,6 +135,7 @@ alignment pair — see the renumber notes inside those files).
 |---|-------|
 | [0025](0025-crossword-word-index-and-progress.md) | Crossword word index and progress on the new schema |
 | [0026](0026-background-word-list-refresh.md) | Background word-list refresh via scheduled sweep and queue |
+| [0094](0094-per-sentence-staleness.md) | Per-sentence staleness for the word index and sentence enrichment — occurrence-row substrate, link-preserving merge, the derived entity marker, and the entity-level enrichment stamps dropped |
 
 ## Localization & user settings
 

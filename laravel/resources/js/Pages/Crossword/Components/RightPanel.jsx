@@ -40,8 +40,7 @@ export default function RightPanel({
     width,
     currentTab,
     setCurrentTab,
-    definitions,
-    translations,
+    sections,
     onShowUnsolved,
     onStartDrag,
 }) {
@@ -91,8 +90,7 @@ export default function RightPanel({
 
                 <TabContent
                     currentTab={currentTab}
-                    definitions={definitions}
-                    translations={translations}
+                    sections={sections}
                 />
             </div>
         </>

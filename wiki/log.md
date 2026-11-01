@@ -6,6 +6,186 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-01 (crossword clues grouped by part of speech over the word family)
+
+The crossword right panel and the unsolved-words modal now show POS-grouped
+clue sections — `(Verb)` / `(Noun)` — instead of flat string lists. New
+`App\Classes\CrosswordDictionary` builds each placed word's
+`dictionary[word].sections` at generate time by resolving the word's whole
+family through `WordFamily::resolve` (own per-POS rows + form-mapped
+class-scoped base groups — the word popup's engine, ADR 0045 + 0047) and
+reusing the popup's shared helpers: `WordPopupPayload::translations` /
+`stagedTranslations` were extracted to public statics taking the native
+language id directly (the popup payload shape itself is unchanged). Sections
+carry the class title, censored definitions, linked cross-language
+translations (native first) and the staged raw candidates (ADR 0085); every
+family headword is masked `****` inside definitions and staged strings
+(longest first, so "run" cannot split "running"), no headword or form-of
+pointer ships, sections sort by canonical class priority, same-POS family
+entries merge into one section, and empty sections are dropped. Frontend:
+`useCrossword` holds one `sections` state; `TabContent` renders `(Title)`
+headers over rows numbered from 01 per section plus the muted `raw:` line
+for staged candidates; the modal repeats the grouped definitions. Docs
+updated: [Crossword](domains/crossword.md) (new "Clue payload" section).
+
+## 2026-10-31 (retro — in-flight test guard, wiki:sync idempotent writes, stamp-like-write convention)
+
+Test-reliability retro after the sentence-word-index spec, which hit the
+same two infrastructure failures twice each. (1) **In-flight guard**: the
+composer `test` / `test:tia` scripts now refuse to start while another Pest
+process is live (`laravel/scripts/assert-no-inflight-test.php` over the new
+`App\Support\InflightTestRunDetector` — a /proc scan, since the container
+has no procps); a colliding run was the cause of both mass-failure waves
+(worker DBs `ext_app_test_test_{N}` shared between runs), now documented as
+a triage recipe in [Running Tests](playbooks/running-tests.md)
+("Mass-failure waves"). (2) **wiki:sync idempotent writes**: an unchanged
+regeneration keeps the existing reference file instead of rewriting it with
+a fresh `generated.at` — stamp-only churn no longer surfaces as diffs to
+notice and revert (pinned by the new `wiki:sync idempotent reference
+writes` tests). (3) **Stamp-like-write convention**: Laravel 13 maintains
+`updated_at` on the Eloquent builder's `update()` *and* on `saveQuietly()`
+— suppressed events are not suppressed timestamps. The rule (go through
+`toBase()` when a write's `updated_at` feeds a staleness compare) moved to
+[Coding Conventions](conventions/coding-conventions.md) ("Models &
+database"), with the enrichment quiet write as the canonical example; the
+trap had been rediscovered independently in three domains during the spec.
+Also guarded the last unguarded memory-limit probe
+(`WordsNormalizeCommandTest` — the `DemoteFormOfCommandTest` twin).
+
+## 2026-10-31 (spec closure — entity enrichment stamps dropped, ADR 0094, knowledge base current)
+
+sentence-word-index ticket 05 (closing): `entities.enrichment_stamps` is
+dropped — it had no staleness reader left after the per-sentence move
+(the sweep and the job read only `entity_sentences.enrichment_stamps`).
+Removed: `SentenceEnrichmentService::markEnriched`, the job's
+completing-run and empty-language stamp writes, the `Entity` cast/fillable
+entry, and a migration dropping the column. The "a language with no
+enrichers never counts as stale" behavior survives **structurally** — the
+sweep SQL-filters those languages out and `staleKeysForMany` maps them (and
+sentence-less entities) to no stale keys, so nothing needs a "count as
+done" record and no infinite sweep pick can arise (pinned by the adapted
+non-enrichable-language and sentence-less-entity tests). `Stamp` is now
+explicitly the per-sentence contract (`encode`'s `{}`-not-`[]` jsonb
+handling and the quiet-write discipline untouched). ADR
+[0094](../docs/adr/0094-per-sentence-staleness.md) records both
+per-sentence staleness changes (word index: occurrence rows +
+`words_indexed_at` + bounded cursor chain + the entity marker kept as a
+derived max; enrichment: per-sentence stamps + stale-only cursor +
+sentence-granular sweep), the link-preserving merge guarantee (the popup
+outage window is structurally gone), and the deploy choreography (both
+stamp columns start null = one bounded self-healing sweep pass each) —
+referencing ADR 0025/0026/0052/0057/0059/0067 and ADR 0043's bounded-run
+rule rather than rewriting them; `docs/adr/README.md` indexed. Wiki:
+`domains/sentence-enrichment.md` (no entity stamp left anywhere, ADR 0094
+in sources + deployment note), `domains/crossword.md` (ADR link),
+`domains/interactive-words.md` (the word map survives edits — the
+link-preservation guarantee), `database/entities-alignment.md`
+(`entity_sentences.enrichment_stamps` documented, drop migration in
+sources), `database/schema-overview.md`, all `generated.at` bumped;
+`reference/` regenerated by `wiki:sync`; `wiki:validate` clean after
+`--prune`.
+
+## 2026-10-31 (per-sentence enrichment staleness — editing one sentence enriches one sentence)
+
+sentence-word-index ticket 04: enrichment staleness moves from the entity
+to the sentence. `entity_sentences.enrichment_stamps` jsonb now carries
+the same `{enricher key: {v, pv, at}}` stamps as the legacy
+`entities.enrichment_stamps` map (contract factored into
+`App\Classes\Enrichment\Stamp`; legacy tolerances preserved — bare-ISO
+stamps read as v1, missing `pv` as 0), written per chunk by the job
+through `SentenceEnrichmentService::markSentencesEnriched` (quiet,
+jsonb-`||` merged, committed in the same transaction as the chunk's
+annotation writes). A sentence is stale when never enriched, when its own
+`updated_at` moved past its stamp, or when an enricher's declared version
+on either side bumped past it. `EnrichEntitySentences` walks only stale
+sentences in id-cursor windows (`EnricherRegistry::staleSentenceQuery` —
+the SQL mirror of the predicate, `at` pinned to UTC), dispatches each
+chunk as the union of its sentences' stale sets, and persists/stamps
+per-sentence (a sentence stale for a subset keeps its fresh annotations);
+`enrichChunk` gained the per-sentence target map. The sweep
+(`entities:enrich`) picks entities with ≥1 stale sentence via
+`staleKeysForMany` (grouped `bool_or` per key) and dispatches the union of
+stale keys; sentence-less entities are no longer picked. Editing one
+sentence now costs exactly one small `/enrich` payload instead of a
+whole-book re-run; version bumps still re-stale corpus-wide, per sentence.
+The entity-level stamp is still written per run but nothing reads it for
+staleness (ticket 05 removes it); the column starts null everywhere — one
+bounded-sweep corpus pass, no migration backfill, deliberately.
+`domains/sentence-enrichment.md` rewritten (orchestration + deployment
+note, `generated.at` bumped). ADR covering both per-sentence staleness
+changes lands with ticket 05.
+
+## 2026-10-31 (link-preserving entity word list merge — the popup outage window closes)
+
+sentence-word-index ticket 03: the `entity_words` derivation from the
+per-sentence occurrence rows stops wiping and refilling — it is now a
+merge keyed on `l_word` (`EntityWordIndexer::mergeEntityWords()`, shared by
+`index()` full passes and `indexBatch()` completing runs). Surviving keys
+keep their existing row with `word_id`, `unmatchable_at` and the audit
+columns untouched (only count/representative token rewrite, and only when
+they actually changed — the update runs through the base builder so the
+Eloquent `updated_at` injection cannot stamp rows the link/adoption passes
+left in a specific state); keys that vanished from the text are deleted;
+genuinely new keys insert unlinked for the ordinary link pass. Editing a
+sentence therefore no longer empties the popup word map until the next
+relink — `EntityWordMap` stays populated for every surviving word across
+incremental runs AND full rebuilds (post-deploy backfills, dictionary
+re-imports). Idempotent: merging an aggregate that matches the current
+rows writes nothing. Linker, adoption, and their tests untouched and
+green. `domains/crossword.md` (refresh + Pipeline Index step) and
+`database/entities-alignment.md` updated (`generated.at` bumped). The ADR
+covering the link-preservation guarantee lands with ticket 05.
+
+## 2026-10-31 (incremental sentence indexing — only stale sentences re-tokenize)
+
+sentence-word-index ticket 02: word-index staleness goes
+sentence-granular. A sentence is stale when its
+`entity_sentences.words_indexed_at` stamp is null or older than its own
+`updated_at`; `EntityWordIndexer::indexBatch()` re-tokenizes at most
+`SENTENCES_PER_RUN` (500) stale sentences past a cursor — replacing just
+those sentences' occurrence rows and re-stamping just those sentences via
+the base builder (same `updated_at`-copy reasoning as ticket 01) — while
+`index()` stays the synchronous full stale-only pass (`crossword:index`,
+tests). `RefreshEntityWords` becomes a self-restarting cursor chain
+(`EnrichEntitySentences` shape): it re-dispatches itself until no stale
+sentence remains ahead of the cursor, and only the completing run derives
+`entity_words` wholesale and writes the entity marker as the **max
+per-sentence stamp** — so mid-build entities keep their stale/null marker
+and every cheap single-column check (crossword "still building",
+recommendations, word knowledge, frequency accrual) is unchanged. The job
+drops `ShouldBeUnique` (the unique lock releases only after `handle()`
+returns — a same-uniqueId self re-dispatch would be dropped and the chain
+would die after one run; overlapping chains are benign because runs process
+only still-stale sentences). The `crossword:refresh` sweep's pick condition
+switches to "any stale sentence OR unlinked unstamped tokens" (skips fully
+fresh entities; `--limit`/`--dry-run`/`--entity=` unchanged). Link pass,
+adoption, and the wholesale derivation are untouched (ticket 03 makes the
+derivation a merge). `domains/crossword.md` updated (`generated.at`
+bumped).
+
+## 2026-10-31 (entity_sentence_words occurrence rows — the word index gains a per-sentence substrate)
+
+sentence-word-index ticket 01 (expand phase, outward behavior unchanged):
+`EntityWordIndexer` now tokenizes each sentence into individual
+`entity_sentence_words` rows — `entity_id` denormalized for the
+single-table aggregate scan, `entity_sentence_id` cascade delete,
+0-based `position`, char `start`/`end` into the sentence content (the
+`phrasal_verbs` span convention), `l_word` lookup key, surface `token`;
+unique `(entity_sentence_id, position)` — and stamps each sentence's new
+`entity_sentences.words_indexed_at` with the sentence's own `updated_at`
+(one base-builder UPDATE copying the column, deliberately bypassing the
+Eloquent `updated_at` injection: bumping `updated_at` here would
+permanently re-stale the entity). The entity word list derives from the
+rows by aggregation (count = occurrences summed, representative token =
+first in document order) instead of the in-memory tokenizer accumulation;
+staleness stays entity-granular and the list is still wiped + refilled
+wholesale, so links/adoption/popup map/crosswords are untouched. New
+`WordTokenizer::tokenizeCountedOccurrences()` emits exactly what
+`tokenize()` counts with spans (`tokenize`/`tokenizeWithSpans` untouched,
+TokenizerParityTest green). `domains/crossword.md`,
+`database/entities-alignment.md`, `database/schema-overview.md` updated
+(`generated.at` bumped); `reference/models.md` re-synced.
+
 ## 2026-10-29 (alignment show page mirrors the entity page: header actions + inline bilingual rows)
 
 `Library/ShowAlignment` stops being a metadata-only card (ADR 0092 amended

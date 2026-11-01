@@ -4,7 +4,7 @@ title: Coding Conventions
 description: Project-wide rules for code style, structure, testing, and agent behavior in this repository.
 tags: [conventions, style, testing]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-28T22:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-31T19:25:00+03:00 }
 verified: { by: human:alex, at: 2026-07-26T18:45:00Z }
 sources:
   - id: agents
@@ -45,6 +45,16 @@ sources:
   N+1 queries.
 * Eloquent relationship methods with return type hints.
 * Create factories/seeders alongside new models.
+* **Stamp-like writes keep their hands off `updated_at`**: Laravel 13
+  maintains timestamps on the Eloquent builder's `update()` *and* on
+  `saveQuietly()` — suppressed events are not suppressed timestamps, so both
+  paths silently bump `updated_at` and permanently re-stale anything whose
+  staleness compares against it. A write whose `updated_at` feeds a staleness
+  check (word-index/enrichment stamps, quiet enrichment column writes, merge
+  survivors) goes through `Model::query()->...->toBase()->update()` with the
+  timestamp left to the explicit column list. Canonical example: the
+  enrichment quiet write in [Sentence Enrichment](/domains/sentence-enrichment.md)
+  ("Quiet writes").
 
 # Frontend
 

@@ -113,7 +113,6 @@ class CrosswordController extends Controller
             ->whereIn('id', $wordIds)
             ->orderBy('frequency')
             ->orderBy('id')
-            ->with('definitions')
             ->get();
 
         if ($words->count() < self::MIN_WORDS) {

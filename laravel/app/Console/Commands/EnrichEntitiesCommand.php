@@ -34,24 +34,18 @@ class EnrichEntitiesCommand extends Command
             ->whereHas('language', fn ($query) => $query->whereIn('code', $registry->languages()))
             // The scan is bounded like the dispatch (ADR 0043): chunked, and
             // the walk stops at the dispatch cap instead of hydrating the
-            // whole catalog.
+            // whole catalog. Staleness is per-sentence: an entity is picked
+            // when at least one of its sentences is stale, and the dispatch
+            // targets the union of its sentences' stale enrichers.
             ->chunkById(200, function ($entities) use ($registry, $limit, $dryRun, &$picked) {
-                $staleMap = $registry->staleForMany($entities);
+                $staleMap = $registry->staleKeysForMany($entities);
 
                 foreach ($entities as $entity) {
-                    $enrichers = $staleMap[$entity->id] ?? [];
+                    $keys = $staleMap[$entity->id] ?? [];
 
-                    if ($enrichers === []) {
+                    if ($keys === []) {
                         continue;
                     }
-
-                    // Only the enrichers whose stamps are missing or stale
-                    // run — a newly registered enricher backfills itself
-                    // here (ADR 0057).
-                    $keys = collect($enrichers)
-                        ->map(fn ($enricher) => $enricher->key())
-                        ->values()
-                        ->all();
 
                     if ($dryRun) {
                         $this->line("Would enrich entity #{$entity->id} ({$entity->language?->code}): ".implode(', ', $keys));

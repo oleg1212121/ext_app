@@ -17,6 +17,8 @@ class EntitySentence extends Model
         return [
             'order' => 'integer',
             'phrasal_verbs' => 'array',
+            'enrichment_stamps' => 'array',
+            'words_indexed_at' => 'datetime',
         ];
     }
 
@@ -41,6 +43,23 @@ class EntitySentence extends Model
     public function scopeWithoutImage(Builder $query): Builder
     {
         return $query->whereNull('image_path');
+    }
+
+    /**
+     * A sentence is stale for the word index (ADR 0094) when its stamp is
+     * missing or older than its own content update — the one predicate the
+     * indexer's windows and the sweep's whereExists share, so they agree on
+     * the work by construction. The disjunction is wrapped in a nested
+     * where so its or-semantics cannot leak into an enclosing query.
+     */
+    public function scopeWhereStaleForWordIndex(Builder $query): Builder
+    {
+        $table = $query->getModel()->getTable();
+
+        return $query->where(function (Builder $query) use ($table): void {
+            $query->whereNull("{$table}.words_indexed_at")
+                ->orWhereColumn("{$table}.words_indexed_at", '<', "{$table}.updated_at");
+        });
     }
 
     public function entity(): BelongsTo

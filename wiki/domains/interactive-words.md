@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — every 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-10-27T21:50:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-01T19:56:23+03:00 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -161,7 +161,14 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    `{l_word: {w: word id, s: familiarity 0-100|null}}` built by
    `EntityWordMap` (dictionary-linked `entity_words` left-joined to the
    user's `user_word` rows). Unlinked tokens are absent from the map → the
-   missing-word card.
+   missing-word card. **The map survives edits** (ADR 0094): the entity
+   word list is re-derived from the per-sentence occurrence rows by a
+   link-preserving merge, never wiped — a word that survives the edit keeps
+   its `word_id` (its map entry and dictionary popup stay live across the
+   refresh), only words that actually vanished from the text drop out, and
+   genuinely new tokens enter unlinked for the ordinary link pass, so an
+   edit can no longer throw the book's popups into missing-word mode until
+   relinking finishes.
 2. **The browser segments the text.** `WordText` runs
    `lib/wordTokenizer.mjs` — a JS port of the PHP `WordTokenizer` regex —
    over each row and renders EVERY word token as an interactive

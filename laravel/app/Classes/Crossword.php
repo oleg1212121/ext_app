@@ -41,22 +41,11 @@ class Crossword
                 continue;
             }
             $this->words[] = $word->word;
-            $this->dictionary[$word->word] = ['definitions' => [], 'translations' => []];
-            foreach ($word->definitions as $definition) {
-                $this->dictionary[$word->word]['definitions'][] = str_ireplace($word->word, '****', $definition->definition);
-            }
-
-            $translations = $word->translationWords();
-            if ($nativeLanguageId !== null) {
-                $translations = $translations->sortByDesc(
-                    fn ($translation) => (int) $translation->language_id === $nativeLanguageId,
-                )->values();
-            }
-            foreach ($translations as $translation) {
-                $this->dictionary[$word->word]['translations'][] = $translation->word;
-            }
         }
 
+        // POS-grouped clue sections over each word's family, censored —
+        // the same engine as the reader popup (see CrosswordDictionary).
+        $this->dictionary = CrosswordDictionary::build($words, $nativeLanguageId);
     }
 
     public function crossword()

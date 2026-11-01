@@ -96,11 +96,13 @@ it('stamps the belarusian enricher with both algorithm versions and clears stale
     Bus::fake();
     (new EnrichEntitySentences($entity->id))->handle();
 
-    $stamp = $entity->refresh()->enrichment_stamps['be_stress'];
+    $sentence = EntitySentence::query()->where('entity_id', $entity->id)->first();
+    $stamp = $sentence->refresh()->enrichment_stamps['be_stress'];
     expect($stamp['v'])->toBe(1)
         ->and($stamp['pv'])->toBe(1)
         ->and($stamp['at'])->not->toBeNull()
-        // The sweep skips the entity once the fresh stamp is in place.
+        // The sweep skips the entity once the fresh per-sentence stamps are
+        // in place.
         ->and(app(SentenceEnrichmentService::class)->isStale($entity->refresh()))->toBeFalse();
 });
 

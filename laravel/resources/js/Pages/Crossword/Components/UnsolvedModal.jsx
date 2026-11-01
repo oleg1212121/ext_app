@@ -47,14 +47,25 @@ export default function UnsolvedModal({show, onClose, items, hasCrossword}) {
                         <li key={item.word} className="group relative pl-5">
                             <span aria-hidden="true" className="xword-edge absolute left-0 top-1/2 -translate-y-1/2 self-stretch h-8"/>
                             <span className="font-[var(--font-wbench-serif)] text-xl tracking-tight text-[var(--wbench-ink)] dark:text-[var(--wbench-ink-night)]">{item.word}</span>
-                            {item.definitions.map((definition, index) => (
-                                <span
-                                    key={index}
-                                    className="block mt-1 font-[var(--font-wbench-serif)] italic text-base text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]"
-                                >
-                                    {definition}
-                                </span>
-                            ))}
+                            {(item.sections ?? [])
+                                .filter((section) => section.definitions?.length > 0)
+                                .map((section, sIndex) => (
+                                    <div key={sIndex} className="mt-1">
+                                        {section.word_class && (
+                                            <span className="block font-[var(--font-wbench-mono)] text-[10px] tracking-[0.24em] uppercase text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]">
+                                                ({section.word_class})
+                                            </span>
+                                        )}
+                                        {section.definitions.map((definition, index) => (
+                                            <span
+                                                key={index}
+                                                className="block mt-1 font-[var(--font-wbench-serif)] italic text-base text-[var(--wbench-ink-soft)] dark:text-[var(--wbench-ink-soft-night)]"
+                                            >
+                                                {definition}
+                                            </span>
+                                        ))}
+                                    </div>
+                                ))}
                         </li>
                     ))}
                     {hasCrossword && items.length === 0 && (

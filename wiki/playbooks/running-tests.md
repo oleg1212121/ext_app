@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-29T10:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-10-31T19:20:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-29T10:30:00+03:00 }
 sources:
   - id: phpunit
@@ -13,6 +13,12 @@ sources:
   - id: composer
     resource: laravel/composer.json
     title: Composer scripts (test script)
+  - id: guard
+    resource: laravel/scripts/assert-no-inflight-test.php
+    title: In-flight guard (pre-flight refuse in the composer test scripts)
+  - id: detector
+    resource: laravel/app/Support/InflightTestRunDetector.php
+    title: InflightTestRunDetector (the /proc scan behind the guard)
   - id: testcase
     resource: laravel/tests/TestCase.php
     title: Base test case (test-database guard, withoutVite)
@@ -299,23 +305,31 @@ docker exec ext_python python -m pytest /app/ai -q
 # In-flight runs
 
 The container image has no `ps`/`pgrep`/`pkill` (no procps), so "is a test
-run already going?" is answered from `/proc` directly:
+run already going?" is answered from `/proc` directly. The canonical probe
+is the guard script itself (exit 0 = clear; exit 1 lists the pids):
 
 ```bash
-# Probe: list in-flight Pest processes (pid: command). No output = clear.
-docker exec ext_app_laravel sh -c 'for d in /proc/[0-9]*; do c=$(tr "\0" " " < "$d/cmdline" 2>/dev/null); case "$c" in php*pest*) echo "${d#/proc/}: $c";; esac; done'
+docker exec ext_app_laravel php scripts/assert-no-inflight-test.php
 
-# Kill: same loop with kill instead of echo — for an orphaned run whose
-# agent died mid-run and left a pest process holding the test DB.
-docker exec ext_app_laravel sh -c 'for d in /proc/[0-9]*; do c=$(tr "\0" " " < "$d/cmdline" 2>/dev/null); case "$c" in php*pest*) kill "${d#/proc/}";; esac; done'
+# Kill: for an orphaned run whose agent died mid-run and left a pest
+# process holding the test DB. Covers both invocation forms — composer's
+# "php vendor/bin/pest" and artisan test's shebang exec
+# "/usr/local/bin/php vendor/pestphp/pest/bin/pest" — and excludes its own
+# /bin/sh (whose command line carries the pattern text).
+docker exec ext_app_laravel sh -c 'for d in /proc/[0-9]*; do [ "$d" = "/proc/$$" ] && continue; c=$(tr "\0" " " < "$d/cmdline" 2>/dev/null); case "$c" in php*pest*|*bin/php*pest*) kill "${d#/proc/}";; esac; done'
 ```
 
-The glob is anchored on `php` on purpose: the probe's own `/bin/sh -c`
-command line contains the word "pest" (it is part of the pattern text), so
-an unanchored `*pest*` matches — and kills — the probe itself. Wrapper
-processes (`composer run test`, `php artisan test`) don't carry "pest" in
-their command line at all: kill the pest processes and the wrappers exit on
-their own.
+The suite-scale composer scripts (`test`, `test:tia`) run the guard
+themselves before starting (`scripts/assert-no-inflight-test.php` over
+`App\Support\InflightTestRunDetector`): a live Pest process anywhere makes
+them refuse with the offending pids instead of corrupting both runs.
+Raw `php artisan test` has no guard — probe manually first.
+
+The kill loop's `[ "$d" = "/proc/$$" ] && continue` self-exclusion matters:
+the loop's own `/bin/sh -c` command line contains the pattern text, so
+without it the loop kills itself. Wrapper processes (`composer run test`,
+`php artisan test`) don't carry "pest" in their command line at all: kill
+the pest processes and the wrappers exit on their own.
 
 A killed run leaves its `ext_app_test_test_{N}` worker databases behind —
 the next `composer run test` / `test:tia` reclaims them (both scripts
@@ -332,6 +346,31 @@ tests). A foreground call that outlives the tool's inactivity ceiling is
 killed mid-run and orphans exactly the pest process this section cleans up.
 Targeted `php artisan test <specific files>` stays foreground — unless the
 box is already loaded, then background it too.
+
+# Mass-failure waves (worker-DB collision)
+
+A suite run that suddenly exits 2 with dozens-to-hundreds of failures at
+once — `relation "..." does not exist` against an `ext_app_test_test_{N}`
+worker database, or PDO connect timeouts — is a **collision, not your
+diff**: two Pest runs were live at the same time, and their parallel
+workers share the `ext_app_test_test_{N}` databases, so one side's
+drop-and-re-migrate pulled tables out from under the other mid-test. The
+colliding process is usually gone by the time you look (it finished, or its
+agent died), which is what makes this look like breakage.
+
+Remedy, in order:
+
+1. Don't fix phantom breakage — the same tests pass in isolation; treat the
+   wave as infrastructure, not code.
+2. Probe for an in-flight run (loop above). For certainty, check lingering
+   test-DB connections: `docker exec ext_pgdb psql -U test -d ext_app -c
+   "select pid, state from pg_stat_activity where datname like
+   'ext_app_test%'"` — zero rows plus an empty probe means clear.
+3. Re-run once clear; trust that exit code.
+
+Prevention is the guard above: the composer scripts refuse to start while
+another Pest run is live, so a collision needs someone bypassing them with
+raw `php artisan test` (or a leftover orphan nobody killed).
 
 # Python service (pytest)
 

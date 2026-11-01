@@ -4,8 +4,8 @@ title: Crossword
 description: Deterministic crossword puzzles generated from an entity's word list, with frequency-band levels, dictionary-backed definitions/translations, and per-user word familiarity.
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
-stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-10-28T22:30:00+03:00 }
+stale_after: 2027-01-30
+generated: { by: agent:zcode, at: 2026-11-01T19:56:23+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: controller
@@ -14,9 +14,18 @@ sources:
   - id: generator
     resource: laravel/app/Classes/Crossword.php
     title: Grid generator (placement algorithm)
+  - id: dictionary
+    resource: laravel/app/Classes/CrosswordDictionary.php
+    title: CrosswordDictionary (POS-grouped clue payload)
   - id: indexer
     resource: laravel/app/Classes/EntityWordIndexer.php
     title: EntityWordIndexer
+  - id: sentence-words-migration
+    resource: laravel/database/migrations/2026_10_31_000001_create_entity_sentence_words_table.php
+    title: entity_sentence_words occurrence rows + entity_sentences.words_indexed_at
+  - id: tokenizer
+    resource: laravel/app/Classes/WordTokenizer.php
+    title: WordTokenizer (tokenizeCountedOccurrences for the occurrence rows)
   - id: linker
     resource: laravel/app/Classes/EntityWordLinker.php
     title: EntityWordLinker
@@ -60,8 +69,12 @@ its Work in the header select, with a language filter across works — and a
 word Level; the app builds the entity's word list, selects up to 30
 dictionary words from the level band whose **Word familiarity** is below
 100 (fully known words are excluded), and lays them out with the
-deterministic placement algorithm. A right panel shows definitions and
-translations (native language first) for the selected word. Completing a
+deterministic placement algorithm. A right panel shows the selected word's
+clues as **part-of-speech sections** — `(Verb)`, `(Noun)`, … — drawn from
+the word's whole family (see "Clue payload" below); the Definitions tab
+lists censored senses, the Translations tab lists linked cross-language
+words (native language first) plus the staged raw candidates, and the
+unsolved-words modal repeats the grouped definitions. Completing a
 puzzle awards +5 familiarity per puzzle word (ADR 0028).
 
 # Routes
@@ -76,12 +89,37 @@ puzzle awards +5 familiarity per puzzle word (ADR 0028).
 
 Scheduled every five minutes (`routes/console.php`, `withoutOverlapping`),
 `crossword:refresh` picks entities that have sentences and either a stale
-index (never built, or a sentence `updated_at` after
-`entities.words_indexed_at`) or an unlinked `entity_words` row that is not
+**sentence** (its `entity_sentences.words_indexed_at` stamp is null or
+older than that sentence's own `updated_at` — the same check the indexer
+uses, so sweep and refresh agree on the work; never-built entities have
+null stamps and qualify) or an unlinked `entity_words` row that is not
 stamped unmatchable, and dispatches one `RefreshEntityWords` queue job per
-entity (`ShouldBeUnique` keyed by entity id; see ADR
-[0026](../../docs/adr/0026-background-word-list-refresh.md)). The job
-re-indexes when stale and always runs the link pass, then runs
+entity (see ADR
+[0026](../../docs/adr/0026-background-word-list-refresh.md); bounded scan,
+`--limit`/`--dry-run`/`--entity=` as before). The job is a **self-restarting
+chain** (the `EnrichEntitySentences` cursor pattern): each run re-tokenizes
+at most 500 stale sentences past its cursor — replacing just those
+sentences' occurrence rows and re-stamping just those sentences with their
+own `updated_at` (via the base builder: an Eloquent `update()` would inject
+`updated_at = now()` and permanently re-stale the sentence) — then
+re-dispatches itself with the last processed sentence id until no stale
+sentence remains ahead of the cursor. Only the completing run merges
+`entity_words` from the rows (a link-preserving merge — surviving keys keep
+their `word_id`/`unmatchable_at` row, vanished keys are deleted, new keys
+insert unlinked — so an edit no longer empties the popup map until the next
+link pass; ADR
+[0094](../../docs/adr/0094-per-sentence-staleness.md)) and writes the
+entity-level marker
+as the **max per-sentence stamp**, so mid-build entities keep their
+stale/null marker and every cheap single-column check (crossword generate,
+recommendations, word knowledge, frequency accrual) reads the list as
+unfinished exactly as under the old single-job build. The job is
+deliberately NOT `ShouldBeUnique` — the unique lock releases only after
+`handle()` returns, so a same-uniqueId re-dispatch from inside `handle()`
+would be dropped and the chain would die after its first run; the cost (the
+sweep can stack a second chain mid-flight) is benign because every run
+processes only still-actually-stale sentences. After the indexing step the
+run always executes the link pass, then runs
 `EntityWordAdoption`: stamped unmatchable tokens adopt the existing
 same-`l_word` word row when the dictionary already carries one (first
 non-unknown-class row, else lowest id — never an `unknown` twin), and only
@@ -92,7 +130,9 @@ with `entity_words.word_id` pointed at it; every
 entity word still lacking translations gets a background translation fetch
 queued (Yandex → Google; ledger-deduped — see
 [Interactive words](/domains/interactive-words.md) and
-[Dictionary](/database/dictionary.md)), then logs per-entity stats. The same
+[Dictionary](/database/dictionary.md)), then logs per-entity stats
+(`indexed` = sentences re-tokenized, `chained`, `cursor`, plus the
+link/adopt numbers). The same
 adoption pass runs by hand via `words:adopt-from-entities {--entity=*}
 {--language=} {--to=}`. The link pass (ADR 0043) examines a per-run budget of the entity's
 first 20 000 unlinked, unstamped rows, fetches dictionary candidates in
@@ -115,14 +155,34 @@ in id order, bounded by `--limit` (200). Dev:
 # Pipeline
 
 1. **Index** — `EntityWordIndexer` tokenizes `entity_sentences` (PHP
-   `WordTokenizer`, Unicode regex) into `entity_words` (token,
-   `WordLookupKey` key, count) — the key is the dictionary's own
+   `WordTokenizer`, Unicode regex) into per-sentence occurrence rows
+   (`entity_sentence_words`: lookup key, surface form, 0-based token
+   ordinal, char span into the sentence content, cascade-deleted with the
+   sentence), each sentence stamped `entity_sentences.words_indexed_at`
+   with its own `updated_at` — and merges `entity_words` from those rows
+   by aggregation (token, `WordLookupKey` key, count; representative token
+   = first occurrence in document order): surviving keys keep their
+   existing row — `word_id`, `unmatchable_at` and the audit columns stay
+   exactly as the link/adoption passes left them, only count/representative
+   token are rewritten — keys that vanished from the text are deleted, and
+   genuinely new keys insert unlinked for the ordinary link pass, so an
+   edit no longer throws the entity's popups into "not in the dictionary"
+   mode while relinking runs (incremental runs and full rebuilds share the
+   merge) — the key is the dictionary's own
    normalization (lowercase, combining marks and zero-width format
    characters stripped, ё→е folded), so a ёлка token stamps `елка` and
-   resolves against е-keyed word rows directly — with
-   `entities.words_indexed_at` staleness tracking.
-   Rebuilt by the background refresh (or manually via `crossword:index`);
-   generate no longer rebuilds inline.
+   resolves against е-keyed word rows directly. Indexing is
+   **sentence-granular**: a sentence is stale only when its stamp is null
+   or older than its own `updated_at`, and only stale sentences are
+   re-tokenized (bounded batches, self-restarting cursor chain); a fresh
+   sentence keeps its rows and stamp untouched. `isStale()` keeps its
+   single-column entity-marker compare, and the marker is a derived max
+   over the per-sentence stamps written when a chain completes — cheap
+   checks and the crossword "still building" answer behave exactly as
+   before.
+   Rebuilt by the background refresh (or manually via `crossword:index`,
+   which runs the full stale-only pass synchronously); generate no longer
+   rebuilds inline.
 2. **Link** — `EntityWordLinker` (shared by the background refresh and
    the `crossword:link` command) back-fills `entity_words.word_id` by
    matching `(language_id, l_word)` on dictionary words (noun-first class
@@ -167,7 +227,38 @@ in id order, bounded by `--limit` (200). Dev:
    marker rows for the selected words so `complete` can award the bonus;
    `App\Classes\Crossword` places words on a virtual grid (same algorithm
    as the 2025 feature) and emits the typed-cell `newGrid` + `dictionary`
-   JSON the React page consumes.
+   JSON the React page consumes. The dictionary half is built by
+   `CrosswordDictionary` (below); generate no longer eager-loads
+   `definitions` itself — the family resolve brings its own eager load.
+
+# Clue payload (POS-grouped sections)
+
+`CrosswordDictionary::build($words, $nativeLanguageId)` maps every placed
+word to `{sections: [...]}`. Each section is one part of speech of the
+word's **family**, resolved by `WordFamily::resolve($word, $word->word)` —
+the same engine behind the word popup (ADR 0045 + 0047): the word's own
+`words` rows (one per POS, unique per `l_word`+language+class) plus the
+class-scoped base words whose `forms` map the word's surface, with
+relay-gloss entries hidden and the lazy completeness recalc applied. A
+section carries `word_class` (`word_classes.title`, null → headerless),
+`definitions` (censored plain strings), `translations` (linked
+`word_translations` words projected to `{word, language_code}`, native
+language first — assembled by the shared `WordPopupPayload::translations`)
+and `staged_translations` (the raw `words.translations` JSON candidates per
+ADR 0085, via `WordPopupPayload::stagedTranslations`, censored too).
+
+Spoiler hygiene: every family headword is masked `****` inside definition
+texts and staged strings (`str_ireplace`, longest headword first so "run"
+cannot split "running"), and no headword or form-of pointer ever ships —
+sections are keyed by POS alone. Same-POS entries across the family merge
+into one section (definitions concatenated, translations/staged deduped
+case-insensitively, first occurrence — i.e. native-first — kept). Sections
+sort by the canonical class priority (`EntityWordLinker::classPriority`,
+noun before verb before …) — never answer-POS-first, which would hint the
+intended sense — and sections holding neither definitions nor translations
+are omitted. The frontend (`TabContent.jsx`) renders `(Title)` headers over
+rows numbered from 01 per section; the raw staged candidates join their
+section's translations as one muted `raw:` line (`word.raw_translations`).
 
 # Frontend
 
