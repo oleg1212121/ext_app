@@ -59,8 +59,10 @@ export function useCrossword({works: initialWorks = [], languages = [], levels =
     const [currentLevel, setCurrentLevel] = useState(DEFAULT_LEVEL);
     const [currentTab, setCurrentTab] = useState(0);
     const [showUnsolvedModal, setShowUnsolvedModal] = useState(false);
-    const [definitions, setDefinitions] = useState([]);
-    const [translations, setTranslations] = useState([]);
+    // POS-grouped clue sections for the selected word: [{word_class,
+    // definitions, translations, staged_translations}] — served precomputed
+    // (and censored) by the generate endpoint's dictionary.
+    const [sections, setSections] = useState([]);
     const [currentWord, setCurrentWord] = useState('');
     const [solvedWords, setSolvedWords] = useState([]);
     const [vector, setVector] = useState(true);
@@ -142,8 +144,7 @@ export function useCrossword({works: initialWorks = [], languages = [], levels =
         vectorRef.current = true;
         setCurrentTab(0);
         setShowUnsolvedModal(false);
-        setDefinitions([]);
-        setTranslations([]);
+        setSections([]);
         setCellValues({});
         currentEmphasizedRef.current = [];
     }, []);
@@ -302,8 +303,7 @@ export function useCrossword({works: initialWorks = [], languages = [], levels =
         setCurrentWord(word.value);
 
         const dictionary = crosswordRef.current.dictionary[word.value] ?? {};
-        setDefinitions(dictionary.definitions ?? []);
-        setTranslations(dictionary.translations ?? []);
+        setSections(dictionary.sections ?? []);
 
         currentEmphasizedRef.current = [word];
         paintWord(word, 'blue');
@@ -471,7 +471,7 @@ export function useCrossword({works: initialWorks = [], languages = [], levels =
             .filter((word) => !solved.has(('' + word).toLowerCase()))
             .map((word) => ({
                 word,
-                definitions: crossword.dictionary[word].definitions ?? [],
+                sections: crossword.dictionary[word].sections ?? [],
             }));
     }, [crossword, solvedWords]);
 
@@ -501,8 +501,7 @@ export function useCrossword({works: initialWorks = [], languages = [], levels =
         setCurrentTab,
         showUnsolvedModal,
         setShowUnsolvedModal,
-        definitions,
-        translations,
+        sections,
         currentWord,
         solvedWords,
         rightPanelWidth,

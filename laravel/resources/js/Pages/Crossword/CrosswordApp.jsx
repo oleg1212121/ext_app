@@ -50,8 +50,7 @@ export default function CrosswordApp({works = [], languages = [], levels = []}) 
                     width={crosswordState.rightPanelWidth}
                     currentTab={crosswordState.currentTab}
                     setCurrentTab={crosswordState.setCurrentTab}
-                    definitions={crosswordState.definitions}
-                    translations={crosswordState.translations}
+                    sections={crosswordState.sections}
                     onShowUnsolved={() => crosswordState.setShowUnsolvedModal(true)}
                     onStartDrag={crosswordState.startDragRightPanel}
                 />

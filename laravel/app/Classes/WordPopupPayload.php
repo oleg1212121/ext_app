@@ -40,8 +40,9 @@ final class WordPopupPayload
         $bound = $headwords->firstWhere('id', $linked->id) ?? $linked;
         $isForm = $surface !== '' && $surface !== $bound->l_word;
 
+        $nativeLanguageId = $user->nativeLanguage()?->id;
         $entries = $headwords
-            ->map(fn (Word $entry): array => self::entry($entry, $user))
+            ->map(fn (Word $entry): array => self::entry($entry, $nativeLanguageId))
             ->all();
 
         return [
@@ -66,9 +67,9 @@ final class WordPopupPayload
      *
      * @return array{id: int, word: string, word_class: string|null, labels: list<string>, transcriptions: list<array{value: string, type: string|null}>, definitions: list<array{text: string, labels: list<string>}>, translations: array, staged_translations: list<string>, examples: list<string>, etymologies: list<string>}
      */
-    private static function entry(Word $word, Authenticatable $user): array
+    private static function entry(Word $word, ?int $nativeLanguageId): array
     {
-        $linked = self::translations($word, $user);
+        $linked = self::translations($word, $nativeLanguageId);
 
         return [
             'id' => $word->id,
@@ -106,14 +107,16 @@ final class WordPopupPayload
     }
 
     /**
-     * Native language first, then the rest by language and word.
+     * The entry's linked cross-language translation words (the symmetric
+     * `word_translations` pivot), native language first, then the rest by
+     * language and word, capped. Shared with the crossword's clue payload
+     * (CrosswordDictionary), which passes the viewer's native language id
+     * directly.
      *
      * @return Collection<int, array{id: int, word: string, language_code: string|null}>
      */
-    private static function translations(Word $word, Authenticatable $user): Collection
+    public static function translations(Word $word, ?int $nativeLanguageId): Collection
     {
-        $nativeLanguageId = $user->nativeLanguage()?->id;
-
         return $word->translationWords()
             ->load('language:id,code')
             ->sortByDesc(fn (Word $translation): int => (int) $nativeLanguageId !== null && (int) $translation->language_id === $nativeLanguageId)
@@ -138,7 +141,7 @@ final class WordPopupPayload
      * @param  Collection<int, array{id: int, word: string, language_code: string|null}>  $linked
      * @return list<string>
      */
-    private static function stagedTranslations(Word $word, Collection $linked): array
+    public static function stagedTranslations(Word $word, Collection $linked): array
     {
         $linkedWords = $linked
             ->map(fn (array $translation): string => mb_strtolower($translation['word']))

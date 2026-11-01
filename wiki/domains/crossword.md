@@ -4,8 +4,8 @@ title: Crossword
 description: Deterministic crossword puzzles generated from an entity's word list, with frequency-band levels, dictionary-backed definitions/translations, and per-user word familiarity.
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
-stale_after: 2026-12-26
-generated: { by: agent:zcode, at: 2026-10-31T18:40:00+03:00 }
+stale_after: 2027-01-30
+generated: { by: agent:zcode, at: 2026-11-01T19:56:23+03:00 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: controller
@@ -14,6 +14,9 @@ sources:
   - id: generator
     resource: laravel/app/Classes/Crossword.php
     title: Grid generator (placement algorithm)
+  - id: dictionary
+    resource: laravel/app/Classes/CrosswordDictionary.php
+    title: CrosswordDictionary (POS-grouped clue payload)
   - id: indexer
     resource: laravel/app/Classes/EntityWordIndexer.php
     title: EntityWordIndexer
@@ -66,8 +69,12 @@ its Work in the header select, with a language filter across works — and a
 word Level; the app builds the entity's word list, selects up to 30
 dictionary words from the level band whose **Word familiarity** is below
 100 (fully known words are excluded), and lays them out with the
-deterministic placement algorithm. A right panel shows definitions and
-translations (native language first) for the selected word. Completing a
+deterministic placement algorithm. A right panel shows the selected word's
+clues as **part-of-speech sections** — `(Verb)`, `(Noun)`, … — drawn from
+the word's whole family (see "Clue payload" below); the Definitions tab
+lists censored senses, the Translations tab lists linked cross-language
+words (native language first) plus the staged raw candidates, and the
+unsolved-words modal repeats the grouped definitions. Completing a
 puzzle awards +5 familiarity per puzzle word (ADR 0028).
 
 # Routes
@@ -220,7 +227,38 @@ in id order, bounded by `--limit` (200). Dev:
    marker rows for the selected words so `complete` can award the bonus;
    `App\Classes\Crossword` places words on a virtual grid (same algorithm
    as the 2025 feature) and emits the typed-cell `newGrid` + `dictionary`
-   JSON the React page consumes.
+   JSON the React page consumes. The dictionary half is built by
+   `CrosswordDictionary` (below); generate no longer eager-loads
+   `definitions` itself — the family resolve brings its own eager load.
+
+# Clue payload (POS-grouped sections)
+
+`CrosswordDictionary::build($words, $nativeLanguageId)` maps every placed
+word to `{sections: [...]}`. Each section is one part of speech of the
+word's **family**, resolved by `WordFamily::resolve($word, $word->word)` —
+the same engine behind the word popup (ADR 0045 + 0047): the word's own
+`words` rows (one per POS, unique per `l_word`+language+class) plus the
+class-scoped base words whose `forms` map the word's surface, with
+relay-gloss entries hidden and the lazy completeness recalc applied. A
+section carries `word_class` (`word_classes.title`, null → headerless),
+`definitions` (censored plain strings), `translations` (linked
+`word_translations` words projected to `{word, language_code}`, native
+language first — assembled by the shared `WordPopupPayload::translations`)
+and `staged_translations` (the raw `words.translations` JSON candidates per
+ADR 0085, via `WordPopupPayload::stagedTranslations`, censored too).
+
+Spoiler hygiene: every family headword is masked `****` inside definition
+texts and staged strings (`str_ireplace`, longest headword first so "run"
+cannot split "running"), and no headword or form-of pointer ever ships —
+sections are keyed by POS alone. Same-POS entries across the family merge
+into one section (definitions concatenated, translations/staged deduped
+case-insensitively, first occurrence — i.e. native-first — kept). Sections
+sort by the canonical class priority (`EntityWordLinker::classPriority`,
+noun before verb before …) — never answer-POS-first, which would hint the
+intended sense — and sections holding neither definitions nor translations
+are omitted. The frontend (`TabContent.jsx`) renders `(Title)` headers over
+rows numbered from 01 per section; the raw staged candidates join their
+section's translations as one muted `raw:` line (`word.raw_translations`).
 
 # Frontend
 

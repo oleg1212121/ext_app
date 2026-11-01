@@ -6,6 +6,28 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-01 (crossword clues grouped by part of speech over the word family)
+
+The crossword right panel and the unsolved-words modal now show POS-grouped
+clue sections — `(Verb)` / `(Noun)` — instead of flat string lists. New
+`App\Classes\CrosswordDictionary` builds each placed word's
+`dictionary[word].sections` at generate time by resolving the word's whole
+family through `WordFamily::resolve` (own per-POS rows + form-mapped
+class-scoped base groups — the word popup's engine, ADR 0045 + 0047) and
+reusing the popup's shared helpers: `WordPopupPayload::translations` /
+`stagedTranslations` were extracted to public statics taking the native
+language id directly (the popup payload shape itself is unchanged). Sections
+carry the class title, censored definitions, linked cross-language
+translations (native first) and the staged raw candidates (ADR 0085); every
+family headword is masked `****` inside definitions and staged strings
+(longest first, so "run" cannot split "running"), no headword or form-of
+pointer ships, sections sort by canonical class priority, same-POS family
+entries merge into one section, and empty sections are dropped. Frontend:
+`useCrossword` holds one `sections` state; `TabContent` renders `(Title)`
+headers over rows numbered from 01 per section plus the muted `raw:` line
+for staged candidates; the modal repeats the grouped definitions. Docs
+updated: [Crossword](domains/crossword.md) (new "Clue payload" section).
+
 ## 2026-10-31 (retro — in-flight test guard, wiki:sync idempotent writes, stamp-like-write convention)
 
 Test-reliability retro after the sentence-word-index spec, which hit the
