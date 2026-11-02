@@ -53,19 +53,6 @@ if (! function_exists('pdfEntitySentence')) {
     }
 }
 
-if (! function_exists('pdfCssRule')) {
-    /**
-     * The body of a CSS rule from a rendered view, or null when the
-     * selector is absent.
-     */
-    function pdfCssRule(string $html, string $selector): ?string
-    {
-        preg_match('/'.preg_quote($selector, '/').' \{([^}]*)\}/', $html, $matches);
-
-        return $matches[1] ?? null;
-    }
-}
-
 beforeEach(function () {
     createLanguages(['en']);
     app(SentenceTypeSeeder::class)->run();

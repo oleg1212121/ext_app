@@ -6,6 +6,32 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-02 (book-layout review pass — shared pdfCssRule helper, shared book-block partial, required-explicit composeBookBlocks flag)
+
+The Standards fixes from the spec's two-axis review, output-neutral by
+construction: the byte-identical CSS-rule test helpers in EntityPdfTest /
+AlignmentPdfTest collapsed into one shared `pdfCssRule()` in
+`tests/Pest.php` (the established cross-file helper home); the non-title
+type→markup cascade both book blades duplicated extracted into
+`resources/views/pdf/partials/book-block.blade.php` — titles stay in each
+blade, the chapter machinery deliberately diverges (entity page-break
+pages vs the table close/reopen), and the per-book CSS (values and
+selectors differ) stays put; `BookPdfService::composeBookBlocks()`'s
+`bool $perSentenceParagraphs = false` default dropped — every caller
+passes the flag explicitly. Docs: `database/entities-alignment.md`
+sentence_types row's garbled closing sentence rewritten ("Both sentence
+editors list the types from the database …"), `generated.at` bumped, and
+its `verified: { by: agent:zcode }` stamp removed — the review pass found
+the branch itself re-dated that stamp (and `domains/sentence-alignment
+.md`'s) in ticket 01, so both branch-authored agent stamps came off;
+`verified` is reserved for human review stamps and the pre-branch agent
+stamps elsewhere stay untouched. The service edit re-minted source-drift
+warnings on the two concepts listing `BookPdfService.php`
+(`domains/entities.md`, `domains/sentence-alignment.md`) — text still
+accurate, both cleared by the documented `generated.at` bump. Render
+tests re-run green (page counts and CSS-rule pins intact); no
+routes/models/commands changed — no `wiki:sync` needed.
+
 ## 2026-11-02 (book-layout closure — ADR 0095, Paragraph glossary term, ADR cites across the book-PDF concepts)
 
 The knowledge-base closure ticket for the book-layout spec. **ADR

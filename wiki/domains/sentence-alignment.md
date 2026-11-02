@@ -5,8 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations, paragraphs]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-11-02T13:09:00+03:00 }
-verified: { by: agent:zcode, at: 2026-11-02T12:22:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T14:30:00+03:00 }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php

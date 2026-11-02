@@ -291,7 +291,7 @@ class BookPdfService
      * @param  list<array{type: string, content: ?string, image?: ?string}>  $sentences
      * @return list<array{type: string, content: ?string, image?: ?string}>
      */
-    public function composeBookBlocks(array $sentences, bool $perSentenceParagraphs = false): array
+    public function composeBookBlocks(array $sentences, bool $perSentenceParagraphs): array
     {
         $blocks = [];
         $paragraph = [];

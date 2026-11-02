@@ -49,19 +49,6 @@ if (! function_exists('alignmentPdfSentence')) {
     }
 }
 
-if (! function_exists('alignmentPdfCssRule')) {
-    /**
-     * The body of a CSS rule from a rendered view, or null when the
-     * selector is absent.
-     */
-    function alignmentPdfCssRule(string $html, string $selector): ?string
-    {
-        preg_match('/'.preg_quote($selector, '/').' \{([^}]*)\}/', $html, $matches);
-
-        return $matches[1] ?? null;
-    }
-}
-
 if (! function_exists('alignmentPdfRow')) {
     /**
      * One meaning match on the pair, junctioning the given sentences per
@@ -316,7 +303,7 @@ test('the bilingual book view lays out the title page and a header-free two-colu
     expect($html)->toContain('<p class="sentence-paragraph">Alpha text.</p>')
         ->and($html)->toContain('<p class="sentence-paragraph">Текст беты.</p>');
 
-    $paragraphRule = alignmentPdfCssRule($html, 'p.sentence-paragraph');
+    $paragraphRule = pdfCssRule($html, 'p.sentence-paragraph');
 
     expect($paragraphRule)->not->toBeNull()
         ->and($paragraphRule)->toContain('text-align: justify')
@@ -487,7 +474,7 @@ test('a title row opens one shared chapter heading with the table closed around 
     expect($html)->not->toContain('chapter-heading chapter-open')
         ->and($html)->not->toContain('sentence-title');
 
-    $rule = alignmentPdfCssRule($html, 'h2.chapter-heading');
+    $rule = pdfCssRule($html, 'h2.chapter-heading');
 
     expect($rule)->not->toBeNull()
         ->and($rule)->toContain('page-break-before: always')
