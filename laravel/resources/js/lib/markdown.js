@@ -1,5 +1,6 @@
 import {marked} from 'marked';
 import DOMPurify from 'dompurify';
+import {segmentText} from './wordTokenizer.mjs';
 
 marked.setOptions({breaks: true, gfm: true});
 
@@ -50,7 +51,51 @@ function highlightScores(html) {
     });
 }
 
-export function renderMarkdown(text) {
+// Word-token wrapping for the AI answer (ai-answer-words): every tokenizer
+// word token becomes a focusable span carrying the normalized lookup key —
+// the same wordTokenizer.mjs keys the text columns look up — so the panel's
+// Ctrl+click delegation finds words without re-tokenizing (ADR 0030's
+// role="button" span contract; never a real <button>, which would kill the
+// double-click's native selection). A dedicated class keeps the columns'
+// tint/hover-underline styles in app.css from leaking into the panel.
+const WORD_TOKEN_CLASS = 'ai-word-token';
+
+// Tags and character entities are inert: attribute text is never wrapped,
+// and an entity's letters (&quot;) are never mistaken for the word "quot".
+const INERT_HTML_PATTERN = /<[^>]+>|&(?:[a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#[xX][0-9a-fA-F]+);/g;
+
+function wrapTextRun(text) {
+    let wrapped = '';
+    for (const segment of segmentText(text)) {
+        if (segment.key === null) {
+            wrapped += segment.text;
+            continue;
+        }
+        // Keys are letters/apostrophes/hyphens by tokenizer construction, so
+        // the attribute needs no escaping, and tag-shaped text is inert, so
+        // no < can reach the span body.
+        wrapped += `<span role="button" tabindex="0" data-word-key="${segment.key}" class="${WORD_TOKEN_CLASS}">${segment.text}</span>`;
+    }
+    return wrapped;
+}
+
+function wrapWordTokens(html) {
+    let wrapped = '';
+    let cursor = 0;
+    for (const match of html.matchAll(INERT_HTML_PATTERN)) {
+        if (match.index > cursor) {
+            wrapped += wrapTextRun(html.slice(cursor, match.index));
+        }
+        wrapped += match[0];
+        cursor = match.index + match[0].length;
+    }
+    if (cursor < html.length) {
+        wrapped += wrapTextRun(html.slice(cursor));
+    }
+    return wrapped;
+}
+
+export function renderMarkdown(text, {wordTokens = false} = {}) {
     if (!text) return '';
     const html = marked.parse(markDoubleEquals(normalizeArrowNotation(text)));
     const slots = [];
@@ -59,5 +104,14 @@ export function renderMarkdown(text) {
         return `\u0000${slots.length - 1}\u0000`;
     });
     const highlighted = highlightScores(highlightQuotes(highlightCorrections(unmarkDoubleEquals(protectedHtml))));
-    return DOMPurify.sanitize(highlighted.replace(/\u0000(\d+)\u0000/g, (_m, i) => slots[Number(i)]));
+    // The wrap runs after the correction/quote/score passes (their one-word
+    // sides must still see unwrapped text) and before the slot restore, so
+    // code slots are never wrapped: the \u0000N\u0000 placeholders hold only
+    // digits, which the letter tokenizer can never match.
+    const tokenized = wordTokens ? wrapWordTokens(highlighted) : highlighted;
+    const restored = tokenized.replace(/\u0000(\d+)\u0000/g, (_m, i) => slots[Number(i)]);
+    // Node has no window: dompurify's factory then returns early and its
+    // default export carries no sanitize at all — return the raw pass output
+    // there (pure-Node vitest, ADR 0066). The browser always sanitizes.
+    return DOMPurify.isSupported ? DOMPurify.sanitize(restored) : restored;
 }

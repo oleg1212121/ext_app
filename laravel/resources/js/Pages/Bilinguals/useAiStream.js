@@ -8,6 +8,12 @@ import {renderMarkdown} from '../../lib/markdown';
 // into markdown, re-render throttled (~20 renders/second at most), and keep
 // the last payload for Ask again. Owns aiPending alone — page loads no
 // longer block asking and streaming no longer blocks page turns.
+
+// The AI answer renders word tokens (ai-answer-words 01): every word becomes
+// a Ctrl+clickable span like the text columns'. Only this engine opts in —
+// every other renderMarkdown consumer (the word popup's explanation pane)
+// keeps the plain rendering.
+const RENDER_OPTIONS = {wordTokens: true};
 export function useAiStream() {
     const {t} = useI18n();
     const [aiAnswer, setAiAnswer] = useState('');
@@ -63,14 +69,14 @@ export function useAiStream() {
                     const now = Date.now();
                     if (now - lastRender > 50) {
                         lastRender = now;
-                        setAiAnswer(renderMarkdown(markdown));
+                        setAiAnswer(renderMarkdown(markdown, RENDER_OPTIONS));
                     }
                 }
             }
-            setAiAnswer(renderMarkdown(markdown));
+            setAiAnswer(renderMarkdown(markdown, RENDER_OPTIONS));
         } catch (e) {
             // Keep whatever streamed before the failure on screen.
-            if (markdown) setAiAnswer(renderMarkdown(markdown));
+            if (markdown) setAiAnswer(renderMarkdown(markdown, RENDER_OPTIONS));
             setAiError(e instanceof Error ? e.message : t('bilinguals.couldnt_reach_model'));
         } finally {
             setAiPending(false);
