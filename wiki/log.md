@@ -6,6 +6,32 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-02 (book-layout closure — ADR 0095, Paragraph glossary term, ADR cites across the book-PDF concepts)
+
+The knowledge-base closure ticket for the book-layout spec. **ADR
+[0095](../docs/adr/0095-book-layout-paragraph-type.md)** records the
+decisions behind tickets 01–03 as an amendment to ADR 0093 (engine,
+endpoint, cache regime unchanged — its numbering continues from decision
+5): the `paragraph` sentence type is the single carrier of paragraph
+boundaries, with the four rejected alternatives (boolean paragraph-start
+column, meaning-match rows as the only source, re-split backfill,
+PDF-time re-derivation); the typed-block entity book with chapter pages;
+the header-free 50/50 bilingual spread with per-cell composition and
+per-side fallback; the two dompdf page-break limits (no page-break inside
+table rows → the table closes/reopens around chapter headings;
+`break-after` + `break-before` do not collapse → the `chapter-open`
+rule), both pinned by exactly-N-pages render tests; and the per-kind
+digest-version constants (`entity-book/vN`, `alignment-book/vN`) that
+made the layout rework a two-constant deploy. CONTEXT.md gains the
+**Paragraph** term in the Sentence Alignment context (opener semantics
+only, no implementation details). Wiki: `domains/entities.md` (Book PDFs
+section header + ADR 0095 cite), `domains/sentence-alignment.md`
+(paragraph-typing section + bilingual-book Get PDF paragraph cite ADR
+0095, replacing the "see the book-layout tickets" placeholder),
+`database/entities-alignment.md` (the `sentence_types.paragraph` row
+cites ADR 0095); `generated.at` bumped on all three. ADR README index
+row added. No routes/models/commands changed — no `wiki:sync` needed.
+
 ## 2026-11-02 (alignment book renders like a book — per-side block composition, shared chapter pages, header-free spread)
 
 The completed alignment's **Get PDF** now produces a proper bilingual book

@@ -5,7 +5,7 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge, pdf]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-11-02T18:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T13:09:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-29T18:30:00+03:00 }
 sources:
    - id: controller
@@ -271,12 +271,14 @@ stale — a local sha256, not a service call. Equal text hashes ⇒ exact copies
 a completed alignment between one copy pair is reused for another (see
 [sentence alignment](/domains/sentence-alignment.md)).
 
-# Book PDFs (ADR 0093)
+# Book PDFs (ADR 0093, layout ADR 0095)
 
 The entity page's **Get PDF** button (between Read and Edit, trilingual
 `library.get_pdf`) downloads the entity's **monolingual book** — A4, title
 page (work title, author, entity name/label, language), then the text laid
-out as a book, not a web-page mirror: `BookPdfService::composeBookBlocks()`
+out as a book, not a web-page mirror ([ADR
+0095](../../docs/adr/0095-book-layout-paragraph-type.md) holds the layout
+decisions): `BookPdfService::composeBookBlocks()`
 composes the typed sentence rows into **blocks** before the blade renders
 them. Consecutive body sentences concatenate into flowing justified
 paragraphs (trimmed, joined with single spaces; first-line indent, small

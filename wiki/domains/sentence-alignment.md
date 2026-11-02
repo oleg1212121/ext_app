@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations, paragraphs]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-11-02T18:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T13:09:00+03:00 }
 verified: { by: agent:zcode, at: 2026-11-02T12:22:00+03:00 }
 sources:
   - id: align-service
@@ -345,8 +345,10 @@ types **`paragraph`** when it *opens* a paragraph: the first sentence of
 the document, the first after a blank line in the source text, or the
 first after a title line (`title`/`quote` predictions keep their type —
 they break flow visually anyway; plain `sentence` rows continue the
-current paragraph, which the book PDFs concatenate — see the book-layout
-tickets). Detection runs on the line structure **before** the pysbd
+current paragraph, which the book PDFs concatenate — the paragraph-boundary
+design is [ADR
+0095](../../docs/adr/0095-book-layout-paragraph-type.md)). Detection runs
+on the line structure **before** the pysbd
 `selective_flatten`: `flush_buffer` first cuts the buffered lines into
 blocks at blank lines, then flattens/splits each block exactly as before
 (under both engines — a blank line is a paragraph break by definition, so
@@ -1135,7 +1137,9 @@ cross-Work pair the form's same-work error, a limit hit a `limit`
      /works/{work}/alignments/{entityMatch}/pdf`
      (`AlignmentPdfController`, `works.alignments.pdf`, ADR 0093) streams
      the **bilingual book PDF** as an attachment — A4, laid out like a
-     book, not a web-page mirror: the original side left (`originalSide()`
+     book, not a web-page mirror (the layout decisions are [ADR
+     0095](../../docs/adr/0095-book-layout-paragraph-type.md)): the
+     original side left (`originalSide()`
      with side-a fallback) in a borderless fixed 50/50 spread, one row per
      meaning match in `order`, each cell composed by
      `BookPdfService::composeBookBlocks()` (per table cell — paragraph
