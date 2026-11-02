@@ -1,12 +1,12 @@
 ---
 type: Pipeline
 title: Sentence Alignment Pipeline
-description: Embedding-based pipeline that aligns two same-work entities (any language pair) into sentence-level meaning matches, plus the manual editor and hash-based alignment reuse. Illustrations are excluded from the aligner's sentence space (ADR 0050).
-tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
+description: Embedding-based pipeline that aligns two same-work entities (any language pair) into sentence-level meaning matches, plus the manual editor and hash-based alignment reuse. Illustrations are excluded from the aligner's sentence space (ADR 0050). The splitter types paragraph-opening sentences `paragraph` (Nov 2026).
+tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations, paragraphs]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-29T18:30:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-29T18:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T12:22:00+03:00 }
+verified: { by: agent:zcode, at: 2026-11-02T12:22:00+03:00 }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -339,6 +339,34 @@ resolution unit tests: `ai/splitting/test_engine_resolution.py` +
 `ai/splitting/test_preprocessing.py` and
 `ai/api/test_split_endpoint.py` (cache invalidate/reuse on the
 resolved engine).
+
+**Paragraph typing (Nov 2026)** — a sentence predicted plain `sentence`
+types **`paragraph`** when it *opens* a paragraph: the first sentence of
+the document, the first after a blank line in the source text, or the
+first after a title line (`title`/`quote` predictions keep their type —
+they break flow visually anyway; plain `sentence` rows continue the
+current paragraph, which the book PDFs concatenate — see the book-layout
+tickets). Detection runs on the line structure **before** the pysbd
+`selective_flatten`: `flush_buffer` first cuts the buffered lines into
+blocks at blank lines, then flattens/splits each block exactly as before
+(under both engines — a blank line is a paragraph break by definition, so
+razdel and pysbd agree). Because the `/split` requests are stateless
+streaming chunks, the paragraph-start position travels **in the text**:
+a buffer that *begins* with a blank line is itself a paragraph start —
+the PHP splitter (`SentenceSplitter`) prefixes the document-start buffer
+(a fresh run's first python call; in-memory splitting too) with `\n\n`,
+and when python holds back a paragraph-typed sentence as the remainder it
+prefixes the remainder with the same `\n\n` so the next request
+re-derives the type (`normalize` strips the leading blank line, so the
+marker is read off the raw request text). Title/quote types re-derive
+from content alone and need no carry. Tests:
+`ai/splitting/test_paragraph_typing.py` (both engines; blank lines,
+doc-start marker, title lines, quote-keeps-quote, hard wraps stay
+`sentence`, marker carry on the remainder) and
+`laravel/tests/Unit/SentenceSplitterTest.php`
+(`fakeParagraphPythonSplitter` — streamed + in-memory pipelines store
+`paragraph`-typed openers, incl. a one-sentence final paragraph through
+the hold-back + finalize path).
 
 ## 2. Sign
 

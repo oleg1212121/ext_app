@@ -17,6 +17,7 @@ class SentenceTypeSeeder extends Seeder
             ['name' => 'footnote', 'description' => 'An explanatory note at the bottom of a page'],
             ['name' => 'caption', 'description' => 'Text describing an image or illustration'],
             ['name' => 'illustration', 'description' => 'An inline illustration with an optional caption'],
+            ['name' => 'paragraph', 'description' => 'A body sentence that opens a paragraph'],
         ];
 
         SentenceType::upsert($types, ['name'], ['description']);

@@ -6,6 +6,32 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-02 (`paragraph` sentence type — the split pipeline marks paragraph-opening sentences)
+
+New seeded `SentenceType` **`paragraph`** ("A body sentence that opens a
+paragraph", `SentenceTypeSeeder` upsert beside the seven existing rows —
+deployment seeds reach existing databases): a body sentence that *opens* a
+paragraph, typed by the split pipeline wherever the predicted type would be
+plain `sentence` — at the document start, after a blank line in the source
+text, and after a title line; `title`/`quote` predictions keep their type,
+plain `sentence` rows continue the current paragraph. Python
+(`TypedSentenceSplitter`): the buffer is cut into paragraph blocks at blank
+lines **before** pysbd's `selective_flatten` (both engines agree — a blank
+line is a paragraph break), and the stateless streaming chunks carry the
+paragraph-start position in the text: a buffer beginning with a blank line
+is itself a paragraph start — the PHP `SentenceSplitter` prefixes the
+document-start buffer (fresh run's first chunk; in-memory splitting too)
+with `\n\n`, and a remainder holding a paragraph-typed sentence carries the
+same prefix so the next request re-derives the type (one-sentence final
+paragraphs included). The type is stored but invisible on web surfaces
+(like `subtitle`); both sentence editors list types from the database and
+the splitter maps type names dynamically, so no editor/consumer changes —
+alignment, simulator and word-index behavior unchanged. The book PDFs
+consume the type from the book-layout tickets on. Docs updated:
+[Entities & Alignment](database/entities-alignment.md) (sentence_types
+row), [Sentence Alignment Pipeline](domains/sentence-alignment.md) (Split
+stage paragraph-typing contract).
+
 ## 2026-11-01 (crossword clues grouped by part of speech over the word family)
 
 The crossword right panel and the unsolved-words modal now show POS-grouped
