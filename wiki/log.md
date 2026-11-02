@@ -6,6 +6,32 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-02 (ai-answer-words 04 — ADR 0096 records the AI-answer word-lookup decisions; knowledge base closed)
+
+`docs/adr/0096-ai-answer-word-lookup.md` records the four structural
+decisions behind tickets 01–03: AI-answer words are **map-less** (no word
+map, no familiarity tinting, no word-event ledger — lookup happens on
+click, not from shipped state; rejected: per-answer maps and render-time
+pre-resolution), **adopt-less** (no adopt-on-ask from the AI panel — the
+answer's language is ambiguous and enrichment mints into one; the columns
+remain the adoption path), resolution runs **ordered learning→base**
+through the popup's `languageCodes` resolve over the ask-time
+`answerLanguages` snapshot, and the popup **opens instantly and resolves
+in place** (missing-mode mount from the RAW surface before any network;
+the ordered resolve swaps the dictionary card in). The ADR is indexed in
+`docs/adr/README.md` (word popup section) and cross-linked from both
+touched concepts. Consolidation on top of tickets 02/03's edits:
+bilinguals-simulator.md gained the sources it was missing
+(`lib/markdown.js`, `lib/aiAnswerTokens.mjs`, `Components/AI.jsx`; the
+word-token bullet now names the three render sites and the
+instant-open/resolve-in-place contract) and its gloss-run-hover paragraph
+was corrected to the CSS actually shipped (vellum fill on hover, not the
+commented-out text-shadow — stale on dev since commit 8e86309);
+interactive-words.md lists `lib/wordLookup.js` and gained the AI answer
+panel as a third entry under Consuming surfaces. `generated.at` bumped on
+both concepts; validate-baseline needed no new entries (ticket 03 already
+pruned the interim one).
+
 ## 2026-11-02 (ai-answer-words 03 — Ctrl+click on an AI-answer word opens the dictionary popup, resolved learning-first over the ask's languages)
 
 The tracer bullet: every `ai-word-token` in the simulator's streamed AI

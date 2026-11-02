@@ -91,6 +91,7 @@ alignment pair — see the renumber notes inside those files).
 | [0082](0082-ask-ai-enrichment-merge-inline-lock-on-success.md) | Ask-AI word enrichment merges inline with per-row provenance, locks on success, keeps translations link-only (re-askable since the 2026-10-20 amendment) |
 | [0083](0083-usage-labels-and-completeness-v2.md) | Usage labels are a closed, going-forward set; completeness re-weights to 0–9 with live entries before demoted ones |
 | [0085](0085-staged-translations-popup-raw-line.md) | The popup surfaces staged translations as a language-less raw line; Anki keeps linked translations only |
+| [0096](0096-ai-answer-word-lookup.md) | AI-answer words are map-less and adopt-less — lookup happens on click through the popup's ordered learning→base resolve; the popup opens instantly and resolves in place |
 
 ## Familiarity & word knowledge
 
