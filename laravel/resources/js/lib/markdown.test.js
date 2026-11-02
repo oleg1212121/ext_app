@@ -116,6 +116,30 @@ describe('renderMarkdown wordTokens: true', () => {
         expect(out).not.toContain('data-word-key="cetera"');
     });
 
+    it('does not end a tag at a `>` inside a quoted attribute — element content still wraps', () => {
+        // <[^>]+> would end the tag match at the first `>` and wrap the
+        // attribute TAIL (" bomb\">") into span markup INSIDE the attribute,
+        // corrupting the tag; the element's real text must still wrap.
+        const out = renderMarkdown('<a title="a > bomb">word</a>', {wordTokens: true});
+        expect(out).toBe(`<p><a title="a > bomb">${token('word')}</a></p>\n`);
+        expect(out).not.toContain('data-word-key="bomb"');
+    });
+
+    it('leaves a semicolon-less legacy entity intact with nothing wrapped inside', () => {
+        // &copy without a semicolon survives only in raw HTML pass-through
+        // (marked escapes a text `&` to &amp;): treating its letters as a
+        // word wraps span markup after the `&` and the entity renders
+        // literally. The entity stays byte-identical; the real word after
+        // it still wraps.
+        const out = renderMarkdown('<p>&copy acme</p>', {wordTokens: true});
+        expect(out).toBe(`<p>&copy ${token('acme')}</p>`);
+        expect(out).not.toContain('data-word-key="copy"');
+        // A well-formed neighbor stays on the entity path — &amp; is inert,
+        // the word following it wraps (the legacy form must not swallow it).
+        const mixed = renderMarkdown('<p>&amp;copy now</p>', {wordTokens: true});
+        expect(mixed).toBe(`<p>&amp;${token('copy')} ${token('now')}</p>`);
+    });
+
     it('wraps inside correction spans', () => {
         expect(renderMarkdown('wrong => right now', {wordTokens: true})).toBe(
             '<p><span class="ai-correction"><span class="ai-correction-old">'

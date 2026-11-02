@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-11-02T17:55:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T18:34:37+0300 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
@@ -37,7 +37,7 @@ sources:
     title: renderMarkdown (the shared markdown→HTML pipeline — the wordTokens option)
   - id: ai-answer-tokens
     resource: laravel/resources/js/lib/aiAnswerTokens.mjs
-    title: aiAnswerTokens (the token gate + ask-codes derivation, Node-tested)
+    title: aiAnswerTokens (the token gate, the ask-time snapshot + ask-codes derivations, Node-tested)
   - id: ai-panel
     resource: laravel/resources/js/Pages/Bilinguals/Components/AI.jsx
     title: AI (the answer panel — delegated token handling, popup portal)
@@ -300,10 +300,13 @@ wiring over three page-local engine hooks (ADR 0066's layering;
   fetch-loop over the pinned SSE parser (`lib/sseStream.mjs`), throttled
   markdown re-render, last-payload retry, and `aiPending`. Each stream
   start also snapshots the ask payload's language codes into
-  **`answerLanguages`** (`{learning, base}|null`): the displayed answer's
+  **`answerLanguages`** (`{learning, base}|null`) — the pure derivation is
+  `answerLanguagesFromPayload` in `lib/aiAnswerTokens.mjs` (Node-tested;
+  the hook owns only the when — at stream start — and the store): the
+  displayed answer's
   tokens resolve against the ask that produced it, so a side flip after
   the ask never changes resolution — Ask again re-captures by streaming
-  the stored payload through the same snapshot line. Null until the first
+  the stored payload through the same snapshot call. Null until the first
   ask (no answer, no popup). Asking gates on
   `aiPending` alone — asking during a page fetch is allowed and streaming
   no longer disables page turns (the page's Spinner shows on either flag).

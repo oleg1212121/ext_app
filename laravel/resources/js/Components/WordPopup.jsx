@@ -1147,9 +1147,11 @@ export function PopupContent({
  */
 
 // The missing-mode re-resolution POST (popup-ai-enrich ticket 07) lives in
-// lib/wordLookup.js since ai-answer-words ticket 02: the single-code
-// `lookupWordId` (the exact old postLookup contract) plus the sequential
-// `resolveWordId` over an ordered language list, unit-tested in Node.
+// lib/wordLookup.js since ai-answer-words ticket 02: the sequential
+// `resolveWordId` over an ordered language list — a single-code list
+// ([language.code]) is the exact old postLookup contract — unit-tested in
+// Node (the review pass unexported the single-code wrapper; no caller of
+// its own).
 
 export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain, sections, language = null, languageCodes = null}) {
     const {t} = useI18n();

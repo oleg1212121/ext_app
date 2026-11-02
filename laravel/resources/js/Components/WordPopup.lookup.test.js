@@ -25,9 +25,10 @@ const popupSource = readFileSync(new URL('./WordPopup.jsx', import.meta.url), 'u
 
 const popupBody = popupSource.slice(popupSource.indexOf('export default function WordPopup'));
 
-// The shared lookup POST module (ai-answer-words ticket 02): the single
-// lookupWordId — the exact old postLookup contract — plus the sequential
-// resolveWordId over an ordered language list.
+// The shared lookup POST module (ai-answer-words ticket 02): the sequential
+// resolveWordId over an ordered language list — a single-code list is the
+// exact old postLookup contract (the review pass unexported the standalone
+// single-code wrapper).
 const lookupLibSource = readFileSync(new URL('../lib/wordLookup.js', import.meta.url), 'utf8');
 
 // The detail fetch effect: from its useEffect opener to the fetch itself.
@@ -74,9 +75,11 @@ describe('WordPopup: the on-open lookup (ticket 07)', () => {
         // The server derives the lookup key from the RAW surface — the
         // client never folds or strips.
         expect(lookupLibSource).toContain('body: JSON.stringify({surface, language_code: languageCode})');
-        // The single-code contract: a miss and a transport failure both
-        // collapse to one null.
-        expect(lookupLibSource).toMatch(/\.catch\(\(\) => null\)/);
+        // The collapse contract (a transport failure resolves null, never an
+        // error state): the resolver's try/catch — a throw stops the whole
+        // sequence with null; the behavioral pins live in
+        // lib/wordLookup.test.js.
+        expect(lookupLibSource).toMatch(/catch \{\s*return null;/);
     });
 
     it('resolves against the ordered list when given, else the single column language', () => {

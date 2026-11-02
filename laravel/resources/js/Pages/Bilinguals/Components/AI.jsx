@@ -28,33 +28,24 @@ export default function AI(props) {
         });
     };
 
-    // Event DELEGATION on the #ai_answer_div container (both handlers are
-    // props on that one div): the answer HTML is swapped wholesale by
+    // Event DELEGATION on the #ai_answer_div container — one shared handler
+    // on BOTH props (click and keydown decide identically: same token, same
+    // ADR 0030 gate, same open): the answer HTML is swapped wholesale by
     // dangerouslySetInnerHTML on every throttled streaming render, so a
     // per-token handler could never survive mid-stream — the container's
     // handlers always do. Tokens are found through event.target.closest;
     // a non-token target (or a non-activating event) returns untouched, so
     // links and plain text keep their native behavior.
-    const onAnswerClick = (event) => {
+    const onAnswerActivate = (event) => {
         const token = event.target.closest('[data-word-key]');
         if (!token || !opensTokenPopup(event)) {
             return;
         }
-        // Ctrl+click inside a markdown link must open the popup, never the
-        // browser's new-tab navigation: preventDefault before opening.
-        event.preventDefault();
-        openTokenPopup(token);
-    };
-
-    // Keyboard parity with the columns (the WordText contract): Ctrl+Enter
-    // / Ctrl+Space on a focused token — same gate, key swallowed so
-    // nothing underneath activates. Every other key keeps its native
-    // meaning (Ctrl+C stays a copy shortcut).
-    const onAnswerKeyDown = (event) => {
-        const token = event.target.closest('[data-word-key]');
-        if (!token || !opensTokenPopup(event)) {
-            return;
-        }
+        // preventDefault BEFORE the open: Ctrl+click inside a markdown link
+        // must open the popup, never the browser's new-tab navigation; on
+        // keydown the same swallow is the keyboard parity half (the
+        // Ctrl+Enter/Ctrl+Space WordText contract — nothing underneath
+        // activates, every other key keeps its native meaning).
         event.preventDefault();
         openTokenPopup(token);
     };
@@ -128,8 +119,8 @@ export default function AI(props) {
                         <div className="px-4 py-5 pb-8">
                             <div id="ai_answer_div"
                                  className="resizeable_element ai-prose max-w-none break-words"
-                                 onClick={onAnswerClick}
-                                 onKeyDown={onAnswerKeyDown}
+                                 onClick={onAnswerActivate}
+                                 onKeyDown={onAnswerActivate}
                                  dangerouslySetInnerHTML={{__html: (props.aiAnswer ?? '') + (isLoading ? '<span class="ai-stream-cursor"></span>' : '')}}></div>
                         </div>
                     ) : !props.canUseAi ? (

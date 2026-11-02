@@ -5,18 +5,22 @@ import {describe, expect, it} from 'vitest';
 // Cmd, ADR 0030) on any word token in the AI answer opens the SAME
 // dictionary popup the text columns use, resolving learning-first through
 // ticket 02's ordered resolve. Components sit outside vitest's behavioral
-// reach (ADR 0066), so the decisions are pinned as source assertions (the
-// WordText.missing.test.js pattern); the two extractable decisions — the
-// open-or-not gate and the code-order derivation — are behaviorally tested
-// in lib/aiAnswerTokens.test.mjs. What they lock: the handling is event
+// reach (ADR 0066), so the wiring is pinned as source assertions (the
+// WordText.missing.test.js pattern); the extractable decisions — the
+// open-or-not gate, the code-order derivation, and (since the review pass)
+// the ask-payload snapshot derivation — are behaviorally tested in
+// lib/aiAnswerTokens.test.mjs. What the wiring pins lock: ONE shared
+// activation handler sits on both container props (click and keydown
+// decide identically — no duplicated bodies), the handling is event
 // DELEGATION on the #ai_answer_div container (the answer HTML is swapped
 // wholesale by dangerouslySetInnerHTML on every streaming render, so a
 // per-token handler could never survive mid-stream), tokens are found via
 // event.target.closest, a Ctrl+click inside a link prevents the browser's
-// new-tab navigation, the popup mounts in a portal with wordId=null (missing
-// mode) and the RAW token surface, and NOTHING of the columns' ledger
-// reaches it — no column language (that is what suppresses Ask-AI/adopt),
-// no familiarity map, no explain payload, no progress recording.
+// new-tab navigation, the popup mounts in a portal with wordId=null
+// (missing mode) and the RAW token surface, and NOTHING of the columns'
+// ledger reaches it — no column language (that is what suppresses
+// Ask-AI/adopt), no familiarity map, no explain payload, no progress
+// recording.
 
 const aiSource = readFileSync(new URL('./AI.jsx', import.meta.url), 'utf8');
 const bilingualsSource = readFileSync(new URL('../Bilinguals.jsx', import.meta.url), 'utf8');
@@ -30,37 +34,34 @@ const answerDivSource = aiSource.slice(answerDivAt, aiSource.indexOf('</div>', a
 const portalAt = aiSource.indexOf('{popup && createPortal(');
 const portalSource = aiSource.slice(portalAt, aiSource.indexOf('</div>\n    )', portalAt));
 
-// The click delegation handler.
-const clickHandlerSource = aiSource.slice(
-    aiSource.indexOf('const onAnswerClick ='),
-    aiSource.indexOf('const onAnswerKeyDown ='),
-);
-
-// The keydown delegation handler (the columns' Ctrl+Enter/Ctrl+Space parity).
-const keydownHandlerSource = aiSource.slice(
-    aiSource.indexOf('const onAnswerKeyDown ='),
+// The one shared activation handler (review fix: onAnswerClick and
+// onAnswerKeyDown were byte-identical — both props now route through a
+// single onAnswerActivate).
+const handlerSource = aiSource.slice(
+    aiSource.indexOf('const onAnswerActivate ='),
     aiSource.indexOf('return ('),
 );
 
 describe('AI panel: the token event delegation (ticket 03)', () => {
-    it('handles click + keydown on the #ai_answer_div container — never on a token', () => {
+    it('routes click + keydown on the #ai_answer_div container through ONE shared handler', () => {
         // The answer HTML is swapped wholesale on every throttled streaming
-        // render; handlers live on the React-owned container div, so no
-        // rewrite can detach them.
-        expect(answerDivSource).toContain('onClick={onAnswerClick}');
-        expect(answerDivSource).toContain('onKeyDown={onAnswerKeyDown}');
+        // render; the handler lives on the React-owned container div, so no
+        // rewrite can detach it. Click and keydown decide identically, so
+        // both props carry the same function — the duplication the review
+        // pass flagged must not grow back.
+        expect(answerDivSource).toContain('onClick={onAnswerActivate}');
+        expect(answerDivSource).toContain('onKeyDown={onAnswerActivate}');
+        expect(aiSource.match(/const onAnswer\w+ =/g)).toHaveLength(1);
         // The content itself is dangerouslySetInnerHTML — no React-rendered
         // token exists to carry a handler.
         expect(answerDivSource).toContain('dangerouslySetInnerHTML=');
     });
 
     it('finds tokens through event.target.closest — plain clicks fall through', () => {
-        for (const handlerSource of [clickHandlerSource, keydownHandlerSource]) {
-            expect(handlerSource).toContain("event.target.closest('[data-word-key]')");
-            // No token, or the gate says no → return; links and plain text
-            // keep their native behavior.
-            expect(handlerSource).toMatch(/return;\s*\}/);
-        }
+        expect(handlerSource).toContain("event.target.closest('[data-word-key]')");
+        // No token, or the gate says no → return; links and plain text
+        // keep their native behavior.
+        expect(handlerSource).toMatch(/return;\s*\}/);
     });
 
     it('gates on the shared opensTokenPopup helper — Ctrl ONLY, never Cmd', () => {
@@ -70,8 +71,7 @@ describe('AI panel: the token event delegation (ticket 03)', () => {
             tokensLibSource.indexOf('export function opensTokenPopup'),
             tokensLibSource.indexOf('}', tokensLibSource.indexOf('return key === undefined')),
         );
-        expect(clickHandlerSource).toContain('opensTokenPopup(event)');
-        expect(keydownHandlerSource).toContain('opensTokenPopup(event)');
+        expect(handlerSource).toContain('opensTokenPopup(event)');
         expect(aiSource).not.toContain('metaKey');
         expect(gateSource).toContain('ctrlKey !== true');
         expect(gateSource).not.toContain('metaKey');
@@ -80,18 +80,21 @@ describe('AI panel: the token event delegation (ticket 03)', () => {
     it('Ctrl+click inside a link opens the popup without navigating', () => {
         // preventDefault BEFORE the open: the browser's Ctrl+click new-tab
         // navigation must never fire for a token inside a markdown link.
-        const guard = clickHandlerSource.indexOf('if (!token || !opensTokenPopup(event))');
-        const prevent = clickHandlerSource.indexOf('event.preventDefault()');
-        const open = clickHandlerSource.indexOf('openTokenPopup(');
+        const guard = handlerSource.indexOf('if (!token || !opensTokenPopup(event))');
+        const prevent = handlerSource.indexOf('event.preventDefault()');
+        const open = handlerSource.indexOf('openTokenPopup(');
         expect(prevent).toBeGreaterThan(guard);
         expect(open).toBeGreaterThan(prevent);
     });
 
-    it('keyboard parity: Ctrl+Enter / Ctrl+Space on a focused token opens, key swallowed', () => {
+    it('keyboard parity: the keydown prop shares the handler — Ctrl+Enter / Ctrl+Space open, key swallowed', () => {
         // The WordText.jsx:374-386 contract mirrored through delegation:
-        // same helper, preventDefault so nothing activates underneath.
-        expect(keydownHandlerSource).toContain('event.preventDefault()');
-        expect(keydownHandlerSource).toContain('openTokenPopup(');
+        // the same shared handler is the keydown prop, so preventDefault
+        // (nothing activates underneath) and the open ride along for free —
+        // the wiring pin is that the prop IS the shared handler.
+        expect(answerDivSource).toContain('onKeyDown={onAnswerActivate}');
+        expect(handlerSource).toContain('event.preventDefault()');
+        expect(handlerSource).toContain('openTokenPopup(');
     });
 
     it('opens the popup from the RAW token surface and its live rect', () => {
@@ -100,7 +103,7 @@ describe('AI panel: the token event delegation (ticket 03)', () => {
         // getBoundingClientRect for the popup's viewport-aware placement.
         const openFnSource = aiSource.slice(
             aiSource.indexOf('const openTokenPopup ='),
-            aiSource.indexOf('const onAnswerClick ='),
+            aiSource.indexOf('const onAnswerActivate ='),
         );
         expect(openFnSource).toContain('token.textContent');
         expect(openFnSource).toContain('token.getBoundingClientRect()');

@@ -6,6 +6,41 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-02 (ai-answer-words review pass — wrap-pass entity/tag hardening, shared AI handler, lib-derivation move)
+
+The code-review fixes, four of them. (1) `lib/markdown.js`'s word-token
+wrapping pass hardened its inert pattern: the tag alternative now admits
+`>` inside quoted attribute values (`<a title="a > bomb">` — the old
+`<[^>]+>` ended the match at the first `>` and wrapped the attribute tail
+into span markup inside the attribute), and the entity alternatives now
+also protect semicolon-less legacy named references (`&copy`, raw-HTML
+pass-through only — marked escapes a text `&` to `&amp;`) with a
+maximal-name lookahead so a match can never backtrack into a prefix of a
+semicolon-terminated entity; regression pins for both in `markdown.test.js`.
+(2) `AI.jsx`'s byte-identical `onAnswerClick`/`onAnswerKeyDown` collapsed
+into one shared `onAnswerActivate` on both container props;
+`AI.tokens.test.js` pins the shared wiring (one handler definition, both
+props carrying it) instead of the duplication. (3) `lib/wordLookup.js`'s
+zero-caller `lookupWordId` unexported — folded away; a single-code
+`resolveWordId(surface, [code])` list is the old postLookup contract, and
+`wordLookup.test.js` now exercises the public surface only (the
+single-code pins moved to one-code lists; `WordPopup.lookup.test.js`'s
+lib pin points at the resolver's try/catch). (4) The ADR 0066 tension
+resolved: `useAiStream.js`'s inlined snapshot derivation moved to
+`lib/aiAnswerTokens.mjs` as `answerLanguagesFromPayload(payload)`
+(behaviorally tested in `aiAnswerTokens.test.mjs`, including the
+detached-copy semantics) and the Pages-hook source pin
+`useAiStream.answerLanguages.test.js` is deleted — hooks are untested
+wiring again. ADR 0066 gained an append-only 2026-11-02 addendum
+(page-local `Pages/*/Components/` source pins covered by the 2026-10-23
+two-kind rule; the hook-pin exception retired). Playbook + frontend
+architecture wording updated to name page-local component pins
+(`running-tests.md`, `architecture/frontend.md`);
+bilinguals-simulator.md's `useAiStream` bullet and interactive-words.md's
+read-path + AI-answer sections now name the lib derivation and the
+unexported wrapper; `generated.at` bumped on all four touched concepts.
+Full vitest suite green; no PHP touched.
+
 ## 2026-11-02 (ai-answer-words 04 — ADR 0096 records the AI-answer word-lookup decisions; knowledge base closed)
 
 `docs/adr/0096-ai-answer-word-lookup.md` records the four structural

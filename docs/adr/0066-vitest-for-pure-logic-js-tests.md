@@ -75,3 +75,19 @@ impossible for that logic error and only the review pass caught it
 that CAN be imported from `lib/` is still tested behaviorally; the
 lift-and-evaluate form exists for the components that sit outside
 vitest's behavioral reach.
+
+## Amended 2026-11-02 (page-local component pins; the hook-pin exception retired)
+
+Two clarifications from the ai-answer-words review. First, "Components-side"
+in the 2026-10-23 amendment means component files wherever they live:
+page-local components under `Pages/*/Components/` sit under the same
+two-kind rule, exemplar `Pages/Bilinguals/Components/AI.tokens.test.js`
+(wiring pins over the AI panel's delegation + portal mount; its decisions
+are behaviorally tested in `lib/aiAnswerTokens.test.mjs`). Second, the
+amendment's closing rule was applied to the suite's one Pages-**hook** pin:
+`useAiStream.answerLanguages.test.js` had pinned a verbatim snapshot line
+inside the hook — derived logic sitting where vitest cannot reach it
+behaviorally. The derivation moved to `lib/aiAnswerTokens.mjs`
+(`answerLanguagesFromPayload`, Node-tested) and the hook imports it; the
+hook pin is deleted. Hooks are untested React wiring again, exactly as
+Decision 1 has always said.

@@ -62,7 +62,21 @@ const WORD_TOKEN_CLASS = 'ai-word-token';
 
 // Tags and character entities are inert: attribute text is never wrapped,
 // and an entity's letters (&quot;) are never mistaken for the word "quot".
-const INERT_HTML_PATTERN = /<[^>]+>|&(?:[a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#[xX][0-9a-fA-F]+);/g;
+// A tag admits `>` inside quoted attribute values (<a title="a > b">) — a
+// naive <[^>]+> would end the match at the first `>` and wrap the
+// attribute tail into span markup inside the attribute. Entities cover the
+// well-formed shapes AND semicolon-less legacy named references (&copy),
+// which survive only inside raw HTML pass-through (marked escapes a text
+// `&` to &amp;): wrapping their letters corrupts the entity. The legacy
+// form's lookahead spans the whole maximal name so a match can never
+// backtrack into a shorter prefix of a ;-terminated entity, and the
+// well-formed shapes are tried first — &amp;copy keeps `copy` wrappable.
+// Numeric references keep requiring the `;` (HTML5 has no legacy numeric
+// form). Cost of the pragmatic shape: a bare `&` + letters inside raw HTML
+// that is not an entity stays unwrapped — inert is the safe direction.
+const INERT_TAG_PATTERN = /<(?:[^>"']|"[^"]*"|'[^']*')*>/;
+const INERT_ENTITY_PATTERN = /&(?:#[0-9]+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);|&[a-zA-Z][a-zA-Z0-9]*(?![a-zA-Z0-9]*;)/;
+const INERT_HTML_PATTERN = new RegExp(`${INERT_TAG_PATTERN.source}|${INERT_ENTITY_PATTERN.source}`, 'g');
 
 function wrapTextRun(text) {
     let wrapped = '';

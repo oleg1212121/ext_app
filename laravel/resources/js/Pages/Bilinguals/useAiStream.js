@@ -2,6 +2,7 @@ import {useCallback, useRef, useState} from 'react';
 import {useI18n} from '../../i18n';
 import {getCsrfToken, responseErrorMessage} from '../../lib/http';
 import {parseSseEvent, splitSseBuffer} from '../../lib/sseStream.mjs';
+import {answerLanguagesFromPayload} from '../../lib/aiAnswerTokens.mjs';
 import {renderMarkdown} from '../../lib/markdown';
 
 // The AI answer engine: POST /ai/question/stream, accumulate the SSE deltas
@@ -24,14 +25,16 @@ export function useAiStream() {
     // answer's tokens resolve against the ask that produced it — a side
     // flip afterwards changes the columns, never the resolution. A retry
     // re-captures: Ask again streams the stored payload through the same
-    // line below. Null until the first ask — with no answer, no popup can
-    // open anyway.
+    // call below. The derivation itself is pure lib code
+    // (aiAnswerTokens.mjs, behaviorally tested there); what the hook owns
+    // is only the when (at stream start) and the storing. Null until the
+    // first ask — with no answer, no popup can open anyway.
     const [answerLanguages, setAnswerLanguages] = useState(null);
     const lastAskPayloadRef = useRef(null);
 
     const streamAsk = useCallback(async (payload) => {
         lastAskPayloadRef.current = payload;
-        setAnswerLanguages({learning: payload.learning ?? null, base: payload.base ?? null});
+        setAnswerLanguages(answerLanguagesFromPayload(payload));
         setAiPending(true);
         setAiError(null);
         setAiAnswer('');

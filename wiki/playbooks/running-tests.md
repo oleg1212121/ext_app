@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-11-02T17:43:14+0300 }
+generated: { by: agent:zcode, at: 2026-11-02T18:38:10+0300 }
 verified: { by: agent:zcode, at: 2026-10-29T10:30:00+03:00 }
 sources:
   - id: phpunit
@@ -175,8 +175,12 @@ sources:
   chains, and the anki JS trio — wire-shape client, template generator, sync
   orchestration, exercised with `vi.stubGlobal('fetch', …)` since the
   browser-side AnkiConnect client is pure request/response logic) plus the
-  blessed Components-side source pins, which read popup JSX as text
-  (ADR 0066's exception to the lib/-only rule). Every source pin obeys one
+  blessed source pins over component files — the shared `Components/`
+  popups and page-local `Pages/*/Components/` (exemplar
+  `Pages/Bilinguals/Components/AI.tokens.test.js`) — which read JSX as
+  text (ADR 0066's exception to the lib/-only rule; hooks are NOT pinned —
+  derived hook logic belongs in `lib/`, see the 2026-11-02 ADR 0066
+  addendum). Every source pin obeys one
   split — **a pin over DERIVED logic lifts the real expression out of the
   component source and evaluates it against payload states; a
   verbatim-contains pin is allowed only for wiring/structure**
@@ -213,10 +217,11 @@ sources:
   runs without Vite/npm and must stay PHP-only.
 * Test files are colocated next to the module they pin
   (`resources/js/lib/*.test.*`); the standing exception is the blessed
-  Components-side source pins above, which pin assertions inside the
-  component files they read. When extracting logic from a page, put the
-  pure part in `lib/` (`.mjs` if it must stay framework-free) so it has a
-  home to test in.
+  component source pins above, which pin assertions inside the component
+  files they read (shared `Components/` and page-local
+  `Pages/*/Components/` alike — never hooks). When extracting logic from a
+  page or hook, put the pure part in `lib/` (`.mjs` if it must stay
+  framework-free) so it has a home to test in.
 * A module with its own memo cache (e.g. `lib/ankiSync.js` memoizes ensures
   in a module-level Set) is tested with static single-generation imports and
   a unique memo key per test, NOT `vi.resetModules()` + dynamic import:

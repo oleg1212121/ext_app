@@ -3,11 +3,13 @@
 // in Node). The DOM walk itself — event.target.closest, the token span's
 // textContent and rect — has no DOM to run against in Node, so it stays
 // component code pinned by source assertions beside AI.jsx; what is
-// behaviorally testable here: the open-or-not gate for both event kinds and
-// the ordered resolve list derived from the displayed answer's ask codes.
+// behaviorally testable here: the open-or-not gate for both event kinds,
+// the ask-time snapshot derivation (moved out of useAiStream.js by the
+// review pass — no more Pages-hook source pin), and the ordered resolve
+// list derived from the displayed answer's ask codes.
 import {describe, expect, it} from 'vitest';
 
-import {answerLanguageCodes, opensTokenPopup} from './aiAnswerTokens.mjs';
+import {answerLanguageCodes, answerLanguagesFromPayload, opensTokenPopup} from './aiAnswerTokens.mjs';
 
 describe('opensTokenPopup: the ADR 0030 gate for both event kinds', () => {
     it('opens on Ctrl+click — a click event carries no key', () => {
@@ -38,6 +40,35 @@ describe('opensTokenPopup: the ADR 0030 gate for both event kinds', () => {
         expect(opensTokenPopup({ctrlKey: true, key: 'c'})).toBe(false);
         expect(opensTokenPopup({ctrlKey: true, key: 'Escape'})).toBe(false);
         expect(opensTokenPopup({ctrlKey: true, key: 'Tab'})).toBe(false);
+    });
+});
+
+describe('answerLanguagesFromPayload: the ask-time snapshot the stream engine stores', () => {
+    it('copies the codes the ask payload carried, in the {learning, base} shape', () => {
+        expect(answerLanguagesFromPayload({learning: 'ru', base: 'en'})).toEqual({learning: 'ru', base: 'en'});
+    });
+
+    it('normalizes absent codes to null — the snapshot keeps the shape, filtering is the consumer’s job', () => {
+        // buildAskPayload defaults both codes to null; the snapshot stays
+        // {learning: null, base: null} and answerLanguageCodes collapses it
+        // to null codes at popup time.
+        expect(answerLanguagesFromPayload({})).toEqual({learning: null, base: null});
+        expect(answerLanguagesFromPayload({learning: 'ru'})).toEqual({learning: 'ru', base: null});
+    });
+
+    it('no payload — no snapshot: null', () => {
+        expect(answerLanguagesFromPayload(null)).toBeNull();
+        expect(answerLanguagesFromPayload(undefined)).toBeNull();
+    });
+
+    it('the copy is detached — mutating the payload afterwards cannot rewrite the snapshot', () => {
+        // The reason the engine stores this and not the payload reference:
+        // the next ask reuses the same object (retry spreads it), and a
+        // displayed answer must keep the codes of the ask that produced it.
+        const payload = {learning: 'ru', base: 'en'};
+        const snapshot = answerLanguagesFromPayload(payload);
+        payload.learning = 'de';
+        expect(snapshot.learning).toBe('ru');
     });
 });
 

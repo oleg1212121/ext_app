@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — every 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-02T17:55:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T18:34:37+0300 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -82,7 +82,7 @@ sources:
     title: WordPopup (lazy detail popup — toolbar + always-rendered dictionary, no tab strip)
   - id: word-lookup-lib
     resource: laravel/resources/js/lib/wordLookup.js
-    title: wordLookup.js (the popup's lookup POST — single-code contract + the ordered resolver)
+    title: wordLookup.js (the popup's lookup POST — the ordered resolver; a single-code list is the old single-code contract)
   - id: adr-ai-answer-words
     resource: docs/adr/0096-ai-answer-word-lookup.md
     title: ADR 0096 (AI-answer words are map-less and adopt-less — the ordered resolve's first consumer)
@@ -465,8 +465,10 @@ re-resolves the surface server-side before the missing card settles:
 * **The read path.** On open in missing mode with a language to resolve
   against, the popup POSTs `POST /words/lookup` `{surface, language_code}`
   once — through `lib/wordLookup.js` since ai-answer-words ticket 02
-  (the single-code `lookupWordId` is the exact old component helper; the
-  module is pure w.r.t. fetch and unit-tested in Node) (`WordLookupRequest`
+  (a single-code list is the exact old component helper's contract; the
+  module is pure w.r.t. fetch and unit-tested in Node — the review pass
+  unexported the standalone single-code wrapper, no caller of its own)
+  (`WordLookupRequest`
   mirrors the adoption-mode validation rules; throttle 60/min,
   auth+approved). The endpoint answers `{data: {word_id: int|null}}` — the
   id ALONE: the popup then fetches the full payload through the existing
@@ -522,8 +524,9 @@ re-resolves the surface server-side before the missing card settles:
   portal in **missing mode (`wordId={null}`)** from the RAW token surface.
   Resolution runs on the **displayed answer's ask codes** —
   `languageCodes=[learning, base]` snapshotted from the ask payload the
-  moment the stream started (`useAiStream.answerLanguages`; a side flip
-  after the ask never changes resolution, Ask again re-captures) — and the
+  moment the stream started (`useAiStream.answerLanguages`, derived by the
+  pure `answerLanguagesFromPayload` in `lib/aiAnswerTokens.mjs`; a side
+  flip after the ask never changes resolution, Ask again re-captures) — and the
   mount passes **no `language` prop**: that structural absence keeps
   Ask-AI/adopt disabled, so nothing is ever minted into the dictionary
   from AI-answer text. Nothing else of the columns' ledger reaches it
