@@ -36,7 +36,7 @@ class BookPdfService
      * the layout changes in a way that must invalidate every cached render
      * at once.
      */
-    private const DIGEST_VERSION = 'entity-book/v1';
+    private const DIGEST_VERSION = 'entity-book/v2';
 
     /**
      * Render-input version of the bilingual alignment books. Bump it when
@@ -47,12 +47,20 @@ class BookPdfService
 
     private array $tempIllustrations = [];
 
+    /**
+     * Sentence types that are not flowing body text. Each ends the open
+     * paragraph and renders as its own block, so the next body sentence
+     * starts a new paragraph implicitly.
+     */
+    private const NON_BODY_TYPES = ['title', 'subtitle', 'quote', 'footnote', 'caption', 'illustration'];
+
     public function __construct(private readonly EntityTextHasher $textHasher) {}
 
     /**
-     * The render digest: sha256 over the entity's fresh text hash
+     * The render digest: sha256 over the layout version constant (bumped
+     * when the layout changes wholesale), the entity's fresh text hash
      * (refreshIfStale — illustrations participate through their image_hash
-     * markers already) plus every title-page input.
+     * markers already), and every title-page input.
      */
     public function entityDigest(Entity $entity): string
     {
@@ -187,11 +195,11 @@ class BookPdfService
 
     /**
      * The rendered book layout for one entity: the title-page inputs plus
-     * every sentence as a view row (type, plain content, embeddable image
-     * path). Public so the view can be exercised without a full dompdf
-     * render.
+     * the composed book blocks (flowing paragraphs, chapter titles,
+     * subtitles, quotes, footnotes, captions, illustrations). Public so the
+     * view can be exercised without a full dompdf render.
      *
-     * @return array{work: Work, entity: Entity, language: Language, sentences: list<array{type: string, content: ?string, image: ?string}>}
+     * @return array{work: Work, entity: Entity, language: Language, blocks: list<array{type: string, content: ?string, image?: ?string}>}
      */
     public function entityViewData(Entity $entity): array
     {
@@ -208,8 +216,94 @@ class BookPdfService
             'work' => $entity->work,
             'entity' => $entity,
             'language' => $entity->language,
-            'sentences' => $this->cellSentences($sentences),
+            'blocks' => $this->composeBookBlocks(
+                $this->cellSentences($sentences),
+                ! $this->entityHasParagraphTyping($entity),
+            ),
         ];
+    }
+
+    /**
+     * Whether the entity's sentences carry at least one `paragraph`-typed
+     * row — the switch between paragraph-flow composition and the
+     * per-sentence fallback. Texts split before the type existed (anything
+     * uploaded pre ticket 01) hold none; per-entity, so each side of an
+     * alignment book picks its own mode.
+     */
+    public function entityHasParagraphTyping(Entity $entity): bool
+    {
+        return $entity->sentences()
+            ->whereHas('sentenceType', fn ($query) => $query->where('name', 'paragraph'))
+            ->exists();
+    }
+
+    /**
+     * Compose typed sentence rows into the book's blocks. Consecutive body
+     * sentences concatenate into one flowing paragraph (each trimmed,
+     * joined with single spaces); a `paragraph`-typed sentence opens a new
+     * paragraph, and a paragraph also starts implicitly at the document
+     * start and after any non-body element, even on a plain `sentence`.
+     * Non-body types pass through as their own blocks. Empty body
+     * sentences disappear. Unknown types stay body text — they have always
+     * rendered as paragraphs.
+     *
+     * `$perSentenceParagraphs` is the fallback for texts with zero
+     * `paragraph`-typed rows: every body sentence becomes its own
+     * paragraph, so old books never render as one giant paragraph.
+     *
+     * Public so books can be composed — and their layout exercised —
+     * without a full dompdf render.
+     *
+     * @param  list<array{type: string, content: ?string, image?: ?string}>  $sentences
+     * @return list<array{type: string, content: ?string, image?: ?string}>
+     */
+    public function composeBookBlocks(array $sentences, bool $perSentenceParagraphs = false): array
+    {
+        $blocks = [];
+        $paragraph = [];
+
+        // Emit the open paragraph, if it gathered any text.
+        $flush = function () use (&$paragraph, &$blocks): void {
+            if ($paragraph !== []) {
+                $blocks[] = ['type' => 'paragraph', 'content' => implode(' ', $paragraph)];
+                $paragraph = [];
+            }
+        };
+
+        foreach ($sentences as $sentence) {
+            $type = $sentence['type'] ?? 'sentence';
+
+            if (in_array($type, self::NON_BODY_TYPES, true)) {
+                $flush();
+
+                $blocks[] = $type === 'illustration'
+                    ? [
+                        'type' => 'illustration',
+                        'content' => $sentence['content'] ?? null,
+                        'image' => $sentence['image'] ?? null,
+                    ]
+                    : ['type' => $type, 'content' => $sentence['content'] ?? null];
+
+                continue;
+            }
+
+            // Flowing body text; whitespace-only rows contribute nothing.
+            $content = trim((string) ($sentence['content'] ?? ''));
+
+            if ($content === '') {
+                continue;
+            }
+
+            if ($perSentenceParagraphs || $type === 'paragraph' || $paragraph === []) {
+                $flush();
+            }
+
+            $paragraph[] = $content;
+        }
+
+        $flush();
+
+        return $blocks;
     }
 
     /**

@@ -53,6 +53,19 @@ if (! function_exists('pdfEntitySentence')) {
     }
 }
 
+if (! function_exists('pdfCssRule')) {
+    /**
+     * The body of a CSS rule from a rendered view, or null when the
+     * selector is absent.
+     */
+    function pdfCssRule(string $html, string $selector): ?string
+    {
+        preg_match('/'.preg_quote($selector, '/').' \{([^}]*)\}/', $html, $matches);
+
+        return $matches[1] ?? null;
+    }
+}
+
 beforeEach(function () {
     createLanguages(['en']);
     app(SentenceTypeSeeder::class)->run();
@@ -322,9 +335,103 @@ test('the digest tracks the text hash and the title-page inputs', function () {
         ->and($afterAuthor)->not->toBe($afterTitle);
 });
 
+// ─── book composition ────────────────────────────────────────────────────────
+
+test('body sentences concatenate into paragraphs split at the paragraph type', function () {
+    $entity = createEntity('en');
+    pdfEntitySentence($entity, 'sentence', '  First.  ', 1);
+    pdfEntitySentence($entity, 'sentence', 'Second continues.  ', 2);
+    pdfEntitySentence($entity, 'paragraph', 'Third opens fresh.', 3);
+    pdfEntitySentence($entity, 'paragraph', 'Fourth opens another.', 4);
+
+    $blocks = app(BookPdfService::class)->entityViewData($entity->refresh())['blocks'];
+
+    // Trimmed sentences, single spaces between them; every paragraph-typed
+    // sentence opens a new paragraph, even straight after another opener.
+    expect($blocks)->toBe([
+        ['type' => 'paragraph', 'content' => 'First. Second continues.'],
+        ['type' => 'paragraph', 'content' => 'Third opens fresh.'],
+        ['type' => 'paragraph', 'content' => 'Fourth opens another.'],
+    ]);
+});
+
+test('a paragraph starts implicitly at the document start and after any non-body element', function () {
+    $entity = createEntity('en');
+    pdfEntitySentence($entity, 'sentence', 'Opening.', 1);
+    pdfEntitySentence($entity, 'title', 'The Heading', 2);
+    pdfEntitySentence($entity, 'sentence', 'After title one.', 3);
+    pdfEntitySentence($entity, 'sentence', 'After title two.', 4);
+    pdfEntitySentence($entity, 'subtitle', 'The Sub', 5);
+    pdfEntitySentence($entity, 'sentence', 'After subtitle.', 6);
+    pdfEntitySentence($entity, 'quote', 'The Quote.', 7);
+    pdfEntitySentence($entity, 'sentence', 'After quote.', 8);
+    pdfEntitySentence($entity, 'footnote', 'The Note.', 9);
+    pdfEntitySentence($entity, 'sentence', 'After note.', 10);
+    pdfEntitySentence($entity, 'caption', 'The Caption.', 11);
+    pdfEntitySentence($entity, 'sentence', 'After caption.', 12);
+    pdfEntitySentence($entity, 'illustration', 'The Picture.', 13);
+    pdfEntitySentence($entity, 'sentence', 'After picture.', 14);
+    // A paragraph-typed row somewhere: the entity is in typed mode, so the
+    // implicit starts above are observable on plain sentences.
+    pdfEntitySentence($entity, 'paragraph', 'Typed closer.', 15);
+
+    $blocks = app(BookPdfService::class)->entityViewData($entity->refresh())['blocks'];
+
+    expect($blocks)->toBe([
+        ['type' => 'paragraph', 'content' => 'Opening.'],
+        ['type' => 'title', 'content' => 'The Heading'],
+        ['type' => 'paragraph', 'content' => 'After title one. After title two.'],
+        ['type' => 'subtitle', 'content' => 'The Sub'],
+        ['type' => 'paragraph', 'content' => 'After subtitle.'],
+        ['type' => 'quote', 'content' => 'The Quote.'],
+        ['type' => 'paragraph', 'content' => 'After quote.'],
+        ['type' => 'footnote', 'content' => 'The Note.'],
+        ['type' => 'paragraph', 'content' => 'After note.'],
+        ['type' => 'caption', 'content' => 'The Caption.'],
+        ['type' => 'paragraph', 'content' => 'After caption.'],
+        ['type' => 'illustration', 'content' => 'The Picture.', 'image' => null],
+        ['type' => 'paragraph', 'content' => 'After picture.'],
+        ['type' => 'paragraph', 'content' => 'Typed closer.'],
+    ]);
+});
+
+test('entities without paragraph-typed sentences fall back to per-sentence paragraphs', function () {
+    $entity = createEntity('en');
+    pdfEntitySentence($entity, 'sentence', 'One.', 1);
+    pdfEntitySentence($entity, 'sentence', 'Two.', 2);
+    pdfEntitySentence($entity, 'title', 'The Heading', 3);
+    pdfEntitySentence($entity, 'sentence', 'Three.', 4);
+
+    $blocks = app(BookPdfService::class)->entityViewData($entity->refresh())['blocks'];
+
+    // Everything uploaded before the paragraph type existed: every body
+    // sentence renders as its own paragraph with the new styling.
+    expect($blocks)->toBe([
+        ['type' => 'paragraph', 'content' => 'One.'],
+        ['type' => 'paragraph', 'content' => 'Two.'],
+        ['type' => 'title', 'content' => 'The Heading'],
+        ['type' => 'paragraph', 'content' => 'Three.'],
+    ]);
+});
+
+test('an empty body sentence neither opens nor continues a paragraph', function () {
+    $entity = createEntity('en');
+    pdfEntitySentence($entity, 'sentence', 'Before.', 1);
+    pdfEntitySentence($entity, 'sentence', '   ', 2);
+    pdfEntitySentence($entity, 'sentence', 'After.', 3);
+    pdfEntitySentence($entity, 'paragraph', 'Typed closer.', 4);
+
+    $blocks = app(BookPdfService::class)->entityViewData($entity->refresh())['blocks'];
+
+    expect($blocks)->toBe([
+        ['type' => 'paragraph', 'content' => 'Before. After.'],
+        ['type' => 'paragraph', 'content' => 'Typed closer.'],
+    ]);
+});
+
 // ─── book layout ─────────────────────────────────────────────────────────────
 
-test('the book view lays out the title page and every sentence type in order', function () {
+test('the book view lays out the title page and every block type in order', function () {
     $work = createWork(['title' => 'Layout Work', 'author' => 'Layout Author']);
     $entity = createEntity('en', $work, ['name' => 'Layout Entity', 'label' => 'Layout Label']);
 
@@ -362,7 +469,7 @@ test('the book view lays out the title page and every sentence type in order', f
         ->and($html)->toContain('English')
         ->and($html)->toContain('page-break-after');
 
-    // Every sentence type in document order, each with its own treatment.
+    // Every block type in document order, each with its own treatment.
     $positions = [
         'plain body' => mb_strpos($html, 'First plain.'),
         'title' => mb_strpos($html, 'The Heading'),
@@ -384,17 +491,98 @@ test('the book view lays out the title page and every sentence type in order', f
         ->and($positions['caption'])->toBeLessThan($positions['illustration img'])
         ->and($positions['illustration img'])->toBeLessThan($positions['illustration caption']);
 
-    // Per-type markup: headings, justified body, italic quote, smaller
-    // footnote, small caption, embedded image from the private disk.
+    // Per-type markup: chapter heading, inline bold subtitle, justified
+    // indented body paragraph, italic quote, smaller footnote, small
+    // caption, embedded image from the private disk capped at ~70% of the
+    // text width.
     expect($html)->toContain('<h2 class="sentence-title">The Heading</h2>')
         ->and($html)->toContain('<h3 class="sentence-subtitle">The Sub</h3>')
-        ->and($html)->toContain('<p class="sentence-body">First plain.</p>')
-        ->and($html)->toContain('p.sentence-body {')
+        ->and($html)->toContain('<p class="sentence-paragraph">First plain.</p>')
+        ->and($html)->toContain('p.sentence-paragraph {')
         ->and($html)->toContain('text-align: justify;')
+        ->and($html)->toContain('text-indent: 1em;')
         ->and($html)->toContain('<blockquote class="sentence-quote">The Quote.</blockquote>')
         ->and($html)->toContain('<p class="sentence-footnote">The Note.</p>')
         ->and($html)->toContain('<p class="sentence-caption">The Caption.</p>')
+        ->and($html)->toContain('.sentence-illustration img {')
+        ->and($html)->toContain('max-width: 70%;')
         ->and($html)->toContain('<img src="'.Storage::disk('local')->path($imagePath).'"');
+});
+
+test('chapter titles break the page centered while subtitles flow without a break', function () {
+    $entity = createEntity('en');
+    pdfEntitySentence($entity, 'title', 'The Heading', 1);
+    pdfEntitySentence($entity, 'subtitle', 'The Sub', 2);
+    pdfEntitySentence($entity, 'sentence', 'Body text.', 3);
+
+    $html = view('pdf.entity-book', app(BookPdfService::class)->entityViewData($entity->refresh()))->render();
+
+    $titleRule = pdfCssRule($html, 'h2.sentence-title');
+    $subtitleRule = pdfCssRule($html, 'h3.sentence-subtitle');
+
+    // A title opens a chapter: fresh page, centered, larger than body;
+    // sans-serif comes from the shared h1/h2/h3 face rule. A subtitle is
+    // an inline bold heading — no page break of its own.
+    expect($titleRule)->not->toBeNull()
+        ->and($titleRule)->toContain('page-break-before: always')
+        ->and($titleRule)->toContain('text-align: center')
+        ->and($titleRule)->toContain('font-size: 17pt')
+        ->and($subtitleRule)->not->toBeNull()
+        ->and($subtitleRule)->toContain('font-weight: bold')
+        ->and($subtitleRule)->not->toContain('page-break-before');
+});
+
+test('a chapter title starts a fresh page without a blank page after the title page', function () {
+    $entity = createEntity('en');
+    pdfEntitySentence($entity, 'title', 'Chapter One', 1);
+    pdfEntitySentence($entity, 'sentence', 'One short paragraph of body text.', 2);
+
+    $this->actingAs(approvedUser())
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}/pdf")
+        ->assertOk();
+
+    $bytes = Storage::disk('local')->get("pdfs/entities/{$entity->id}.pdf");
+
+    // Title page + chapter page, exactly: the chapter's forced break must
+    // collapse into the title page's own break-after, not add a blank page.
+    expect(preg_match_all('#/Type /Page(?!s)#', $bytes))->toBe(2);
+});
+
+test('a stored cache row carrying the previous layout digest re-renders', function () {
+    Carbon::setTestNow('2026-11-02 10:00:00');
+
+    $entity = createEntity('en');
+    pdfEntitySentence($entity, 'sentence', 'Plain text.', 1);
+
+    // A row left behind by the pre-book-layout renderer: the subject's text
+    // and title-page inputs are unchanged and the file is on disk, so only
+    // the digest version can — and must — force the re-render.
+    $stalePath = "pdfs/entities/{$entity->id}.pdf";
+    Storage::disk('local')->put($stalePath, '%PDF stale');
+    $stale = PdfRender::create([
+        'entity_id' => $entity->id,
+        'content_hash' => str_repeat('0', 64),
+        'path' => $stalePath,
+        'size_bytes' => strlen('%PDF stale'),
+        'generated_at' => now(),
+    ]);
+
+    Carbon::setTestNow('2026-11-02 10:05:00');
+
+    $this->actingAs(approvedUser())
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}/pdf")
+        ->assertOk();
+
+    $render = PdfRender::query()->sole();
+
+    expect($render->id)->toBe($stale->id)
+        ->and($render->content_hash)->toBe(app(BookPdfService::class)->entityDigest($entity->refresh()))
+        ->and($render->content_hash)->not->toBe($stale->content_hash)
+        ->and($render->generated_at)->toEqual(Carbon::parse('2026-11-02 10:05:00'));
+
+    Storage::disk('local')->assertExists($render->path);
+    expect(Storage::disk('local')->get($render->path))->toStartWith('%PDF')
+        ->and(Storage::disk('local')->get($render->path))->not->toBe('%PDF stale');
 });
 
 test('a webp illustration degrades to its caption when gd lacks webp', function () {
@@ -409,14 +597,14 @@ test('a webp illustration degrades to its caption when gd lacks webp', function 
         'image_height' => 2,
     ]);
 
-    $rows = app(BookPdfService::class)->entityViewData($entity->refresh())['sentences'];
+    $blocks = app(BookPdfService::class)->entityViewData($entity->refresh())['blocks'];
 
-    expect($rows)->toHaveCount(1)
-        ->and($rows[0]['type'])->toBe('illustration')
-        ->and($rows[0]['content'])->toBe('The Picture.')
+    expect($blocks)->toHaveCount(1)
+        ->and($blocks[0]['type'])->toBe('illustration')
+        ->and($blocks[0]['content'])->toBe('The Picture.')
         // GD without webp support (this container) or undecodable bytes both
         // degrade: no embeddable image, caption only.
-        ->and($rows[0]['image'])->toBeNull();
+        ->and($blocks[0]['image'])->toBeNull();
 });
 
 test('a webp illustration is gd-converted to a temporary png', function () {
@@ -440,8 +628,8 @@ test('a webp illustration is gd-converted to a temporary png', function () {
         'image_height' => 1,
     ]);
 
-    $rows = app(BookPdfService::class)->entityViewData($entity->refresh())['sentences'];
+    $blocks = app(BookPdfService::class)->entityViewData($entity->refresh())['blocks'];
 
-    expect($rows[0]['image'])->toBeString()
-        ->and((string) file_get_contents((string) $rows[0]['image']))->toStartWith("\x89PNG");
+    expect($blocks[0]['image'])->toBeString()
+        ->and((string) file_get_contents((string) $blocks[0]['image']))->toStartWith("\x89PNG");
 });

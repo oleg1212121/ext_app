@@ -5,7 +5,7 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge, pdf]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-10-29T18:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T12:43:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-29T18:30:00+03:00 }
 sources:
    - id: controller
@@ -275,19 +275,39 @@ a completed alignment between one copy pair is reused for another (see
 
 The entity page's **Get PDF** button (between Read and Edit, trilingual
 `library.get_pdf`) downloads the entity's **monolingual book** — A4, title
-page (work title, author, entity name/label, language), every sentence in
-`order` styled by type (title→h2, subtitle→h3, sentence→justified
-paragraph, quote→italic block, footnote/caption→small type, illustration→
-embedded image + caption), DejaVu fonts (Cyrillic-capable), canvas-drawn
-page numbers, plain `content` only. `BookPdfService` renders via dompdf
-(`barryvdh/laravel-dompdf`, remote loading off — illustrations embed by
-local path, WebP GD-converted to a temp PNG with caption-only degradation)
-and caches: one `pdf_renders` row per subject (partial unique on the FK) +
-one fixed path `pdfs/entities/{id}.pdf` on the `local` disk, keyed by a
-sha256 **digest** over the fresh `text_hash` (refreshed via
-`EntityTextHasher`) + the title-page inputs — a matching digest with the
-file present streams the cache; anything else re-renders and overwrites in
-place (see [Book PDF in the Library
+page (work title, author, entity name/label, language), then the text laid
+out as a book, not a web-page mirror: `BookPdfService::composeBookBlocks()`
+composes the typed sentence rows into **blocks** before the blade renders
+them. Consecutive body sentences concatenate into flowing justified
+paragraphs (trimmed, joined with single spaces; first-line indent, small
+inter-paragraph gap): a `paragraph`-typed sentence opens a new paragraph,
+and a paragraph also starts implicitly at the document start and after any
+non-body element — title, subtitle, quote, footnote, caption, illustration
+— even when the sentence is typed plain `sentence`. A `title` opens a
+**chapter page** (page-break-before, centered, larger, sans-serif — the
+first block's chapter suppresses the extra break, since the title page
+already ends its page and dompdf does not collapse the two), `subtitle` is
+an inline bold heading without a break, quote/footnote/caption keep their
+book styling, and an illustration ends the open paragraph as its own
+centered block (≤ ~70% text width) with its caption in small italics
+beneath, flow resuming as a new paragraph. Entities with zero
+`paragraph`-typed rows (everything uploaded before the type existed) fall
+back to per-sentence paragraphs — `entityHasParagraphTyping()` asks per
+entity (the alignment book will ask it per side) — so old books never
+render as one giant paragraph. DejaVu fonts (Cyrillic-capable),
+canvas-drawn page numbers, plain `content` only; `entityViewData()` exposes
+the composed blocks so the layout is testable without a dompdf render.
+`BookPdfService` renders via dompdf (`barryvdh/laravel-dompdf`, remote
+loading off — illustrations embed by local path, WebP GD-converted to a
+temp PNG with caption-only degradation) and caches: one `pdf_renders` row
+per subject (partial unique on the FK) + one fixed path
+`pdfs/entities/{id}.pdf` on the `local` disk, keyed by a sha256 **digest**
+over the digest version (`entity-book/vN` — bumped with the layout so every
+cached render invalidates at once; match digests fold entity digests, so an
+entity-book bump re-renders alignment caches once too) + the fresh
+`text_hash` (refreshed via `EntityTextHasher`) + the title-page inputs — a
+matching digest with the file present streams the cache; anything else
+re-renders and overwrites in place (see [Book PDF in the Library
 context](../../CONTEXT.md#library-context)). The bilingual twin on the
 alignment detail page is [sentence alignment](/domains/sentence-alignment.md);
 the table lives in [Entities & Alignment](/database/entities-alignment.md).

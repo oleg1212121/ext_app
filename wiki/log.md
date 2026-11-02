@@ -6,6 +6,36 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-02 (entity book renders like a book — typed block composition, chapter pages, per-sentence fallback)
+
+The entity page's **Get PDF** now produces a real monolingual book instead
+of the web-page mirror: `BookPdfService::composeBookBlocks()` composes the
+typed sentence rows into blocks before the blade renders them.
+Consecutive body sentences concatenate into justified paragraphs with a
+first-line indent and a small inter-paragraph gap (trimmed, joined with
+single spaces); a `paragraph`-typed sentence opens a new paragraph, and a
+paragraph also starts implicitly at the document start and after any
+non-body element (title/subtitle/quote/footnote/caption/illustration). A
+`title` opens a chapter page (fresh page, centered, larger, sans-serif);
+`subtitle` stays an inline bold heading without a break; an illustration
+ends the open paragraph as a centered block ≤ ~70% text width with its
+caption in small italics beneath, flow resuming as a new paragraph. The
+first block's chapter suppresses its forced break: dompdf does not
+collapse `page-break-after` with a following `page-break-before`, so an
+unchanged rule put a blank page between the title page and the first
+chapter. Entities with zero `paragraph`-typed rows (everything uploaded
+before the type existed) fall back to per-sentence paragraphs
+(`BookPdfService::entityHasParagraphTyping()`, per entity — the alignment
+book asks it per side), so old books never render as one giant paragraph.
+`entityViewData()` now returns the composed `blocks` (was flat
+`sentences`), keeping the layout testable without a dompdf render.
+Digest version `entity-book/v1` → `v2` invalidates every cached render;
+match digests fold entity digests, so alignment caches re-render once too
+(their layout is unchanged until the alignment-book ticket). Docs updated:
+[Library & entities](domains/entities.md) (Book PDFs section),
+[Entities & Alignment](database/entities-alignment.md) (the
+`sentence_types` paragraph row's book behavior).
+
 ## 2026-11-02 (`paragraph` sentence type — the split pipeline marks paragraph-opening sentences)
 
 New seeded `SentenceType` **`paragraph`** ("A body sentence that opens a
