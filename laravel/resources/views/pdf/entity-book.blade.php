@@ -55,11 +55,27 @@
             color: #555555;
         }
 
-        /* Sentence types, in document order. */
+        /* Book blocks, in document order. A title opens a chapter page:
+           fresh page, centered, larger. A subtitle is an inline bold
+           heading — it flows without a break of its own. */
         h2.sentence-title {
-            font-size: 15pt;
+            font-size: 17pt;
             font-weight: bold;
-            margin: 16pt 0 8pt;
+            text-align: center;
+            page-break-before: always;
+            margin: 0 0 20pt;
+        }
+
+        /* The first block sits right after the title page's own break; a
+           chapter opening the book must not force another, blank page. */
+        h2.sentence-title.chapter-open {
+            page-break-before: auto;
+        }
+
+        /* Adjacent titles merge into one heading at composition time,
+           newline-separated; each line stacks as its own block. */
+        h2.sentence-title .chapter-line {
+            display: block;
         }
 
         h3.sentence-subtitle {
@@ -68,9 +84,10 @@
             margin: 12pt 0 6pt;
         }
 
-        p.sentence-body {
+        p.sentence-paragraph {
             text-align: justify;
-            margin: 0 0 7pt;
+            text-indent: 1em;
+            margin: 0 0 6pt;
         }
 
         blockquote.sentence-quote {
@@ -93,12 +110,12 @@
         }
 
         .sentence-illustration {
-            margin: 10pt 0;
+            margin: 12pt 0;
             text-align: center;
         }
 
         .sentence-illustration img {
-            max-width: 100%;
+            max-width: 70%;
         }
     </style>
 </head>
@@ -115,31 +132,15 @@
         <div class="language-name">{{ $language->name }}</div>
     </div>
 
-    @foreach ($sentences as $sentence)
-        @if ($sentence['type'] === 'title')
-            <h2 class="sentence-title">{{ $sentence['content'] }}</h2>
-        @elseif ($sentence['type'] === 'subtitle')
-            <h3 class="sentence-subtitle">{{ $sentence['content'] }}</h3>
-        @elseif ($sentence['type'] === 'quote')
-            <blockquote class="sentence-quote">{{ $sentence['content'] }}</blockquote>
-        @elseif ($sentence['type'] === 'footnote')
-            <p class="sentence-footnote">{{ $sentence['content'] }}</p>
-        @elseif ($sentence['type'] === 'caption')
-            <p class="sentence-caption">{{ $sentence['content'] }}</p>
-        @elseif ($sentence['type'] === 'illustration')
-            {{-- An illustration's plain content is its optional caption;
-                when the image cannot be embedded (e.g. WebP without GD
-                support) the caption stands alone. --}}
-            <div class="sentence-illustration">
-                @if ($sentence['image'] !== null)
-                    <img src="{{ $sentence['image'] }}" alt="{{ $sentence['content'] }}">
-                @endif
-                @if (trim((string) $sentence['content']) !== '')
-                    <p class="sentence-caption">{{ $sentence['content'] }}</p>
-                @endif
-            </div>
+    @foreach ($blocks as $block)
+        @if ($block['type'] === 'title')
+            <h2 class="sentence-title{{ $loop->first ? ' chapter-open' : '' }}">
+                @foreach (preg_split('/\n/', (string) ($block['content'] ?? '')) as $line)
+                    <span class="chapter-line">{{ $line }}</span>
+                @endforeach
+            </h2>
         @else
-            <p class="sentence-body">{{ $sentence['content'] }}</p>
+            @include('pdf.partials.book-block', ['block' => $block])
         @endif
     @endforeach
 </body>

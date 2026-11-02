@@ -82,7 +82,7 @@ const Bilinguals = (props) => {
         baseSide,
     });
 
-    const {aiAnswer, aiError, aiPending, streamAsk, retryAsk} = useAiStream();
+    const {aiAnswer, aiError, aiPending, answerLanguages, streamAsk, retryAsk} = useAiStream();
 
     let [showWorkplace, setShowWorkplace] = React.useState(props.showWorkplace)
     let [showQuestion, setShowQuestion] = React.useState(props.showQuestion)
@@ -307,7 +307,7 @@ const Bilinguals = (props) => {
                     }
                 </div>
                 {showAI === true &&
-                    <AI aiAnswer={aiAnswer} pending={aiPending} aiError={aiError} onRetry={retryAsk} canUseAi={canUseAi} answerModel={answerModel} explanationModel={props.explanationModel ?? null} width={aiPanelWidth} startDrag={startAiPanelDrag}/>
+                    <AI aiAnswer={aiAnswer} pending={aiPending} aiError={aiError} onRetry={retryAsk} canUseAi={canUseAi} answerModel={answerModel} explanationModel={props.explanationModel ?? null} explain={props.explain ?? null} width={aiPanelWidth} startDrag={startAiPanelDrag} popupFontSize={popupFontSize} answerLanguages={answerLanguages}/>
                 }
             </div>
         </div>

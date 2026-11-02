@@ -92,6 +92,15 @@ reader rely on it. The alignment editor renumbers it when a sentence is dragged
 other mutation paths.
 _Avoid_: line
 
+**Paragraph**:
+A body sentence that *opens* a paragraph, carried by the `paragraph` sentence
+type; plain sentences continue the paragraph it opened. A paragraph also
+starts after any non-body sentence (a title, an illustration, …). The book
+PDFs render the paragraphs; the web surfaces store the type without showing
+it. See ADR 0095.
+_Avoid_: paragraph break (the type marks the opener, not the break),
+blank line (the upload-time signal the type replaces).
+
 **Illustration**:
 A picture inserted into an entity's text at a document-order position, carried
 by a sentence of its own whose text is the optional caption. It participates in

@@ -6,6 +6,318 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-02 (ai-answer-words feedback pass — popup toolbar parity, loading line on the missing card, token hover underline)
+
+User feedback on the shipped branch, three corrections codified as a
+same-day amendment to ADR 0096 (none touching its map-less/adopt-less/
+instant-open core). (1) **Toolbar parity**: the AI-panel popup mount now
+threads the columns' explain config (Bilinguals → AI → WordPopup, no
+sentence id) — `PopupContent` renders the Explanation toggle **disabled**
+(`explainDisabled = explainProps.sentenceId == null`; grey via the shared
+toolbar class's `disabled:opacity-40`, non-responsive) and the robot
+(Models used) **live** with the answer + explanation models, matching the
+panel header's robot; the profile preview's `SAMPLE_EXPLAIN` gained
+`sentenceId: 1` so the preview's toggle stays interactive. (2) **Loading
+line**: while the on-open resolve is in flight, `MissingPopupContent`'s
+body renders the shared `word.loading` line instead of the
+not-in-dictionary note (the note is a verdict — pronouncing it
+mid-resolve read as an empty popup that later swapped itself); a miss
+settles the note back, a hit rides the existing fetch — the same fix
+covers the columns' ticket-07 missing mode (ADR 0096's Decision 4
+loading-placeholder rejection superseded in part; the open stays
+instant). (3) **Hover underline**: `#ai_answer_div .ai-word-token` gains
+the columns' underline hover (`simulator.css`, on top of the vellum
+fill). Tests: source pins updated in `WordPopup.lookup.test.js` /
+`WordText.missing.test.js` / `AI.tokens.test.js` (explain moved from
+structural-absence to parity presence) / `WordPopup.toolbar.test.js`
+(disabled-toggle + sample-sentenceId pins). interactive-words.md updated
+(toolbar, third-surface, missing-card, ordered-resolve first-consumer,
+consuming-surfaces passages) and bilinguals-simulator.md's AI-answer
+surface bullet + hover-affordance bullet; both `generated.at` bumped
+(bilinguals-simulator's bump also clears the review-pass checkout-mtime
+drift on its own sources); the two remaining pre-existing checkout-mtime
+drifts (frontend.md↔ADR 0066, running-tests.md↔the self-referential
+baseline) acknowledged in `validate-baseline.json` with owner+dated
+entries. Full vitest green; no PHP touched.
+
+## 2026-11-02 (ai-answer-words review pass — wrap-pass entity/tag hardening, shared AI handler, lib-derivation move)
+
+The code-review fixes, four of them. (1) `lib/markdown.js`'s word-token
+wrapping pass hardened its inert pattern: the tag alternative now admits
+`>` inside quoted attribute values (`<a title="a > bomb">` — the old
+`<[^>]+>` ended the match at the first `>` and wrapped the attribute tail
+into span markup inside the attribute), and the entity alternatives now
+also protect semicolon-less legacy named references (`&copy`, raw-HTML
+pass-through only — marked escapes a text `&` to `&amp;`) with a
+maximal-name lookahead so a match can never backtrack into a prefix of a
+semicolon-terminated entity; regression pins for both in `markdown.test.js`.
+(2) `AI.jsx`'s byte-identical `onAnswerClick`/`onAnswerKeyDown` collapsed
+into one shared `onAnswerActivate` on both container props;
+`AI.tokens.test.js` pins the shared wiring (one handler definition, both
+props carrying it) instead of the duplication. (3) `lib/wordLookup.js`'s
+zero-caller `lookupWordId` unexported — folded away; a single-code
+`resolveWordId(surface, [code])` list is the old postLookup contract, and
+`wordLookup.test.js` now exercises the public surface only (the
+single-code pins moved to one-code lists; `WordPopup.lookup.test.js`'s
+lib pin points at the resolver's try/catch). (4) The ADR 0066 tension
+resolved: `useAiStream.js`'s inlined snapshot derivation moved to
+`lib/aiAnswerTokens.mjs` as `answerLanguagesFromPayload(payload)`
+(behaviorally tested in `aiAnswerTokens.test.mjs`, including the
+detached-copy semantics) and the Pages-hook source pin
+`useAiStream.answerLanguages.test.js` is deleted — hooks are untested
+wiring again. ADR 0066 gained an append-only 2026-11-02 addendum
+(page-local `Pages/*/Components/` source pins covered by the 2026-10-23
+two-kind rule; the hook-pin exception retired). Playbook + frontend
+architecture wording updated to name page-local component pins
+(`running-tests.md`, `architecture/frontend.md`);
+bilinguals-simulator.md's `useAiStream` bullet and interactive-words.md's
+read-path + AI-answer sections now name the lib derivation and the
+unexported wrapper; `generated.at` bumped on all four touched concepts.
+Full vitest suite green; no PHP touched.
+
+## 2026-11-02 (ai-answer-words 04 — ADR 0096 records the AI-answer word-lookup decisions; knowledge base closed)
+
+`docs/adr/0096-ai-answer-word-lookup.md` records the four structural
+decisions behind tickets 01–03: AI-answer words are **map-less** (no word
+map, no familiarity tinting, no word-event ledger — lookup happens on
+click, not from shipped state; rejected: per-answer maps and render-time
+pre-resolution), **adopt-less** (no adopt-on-ask from the AI panel — the
+answer's language is ambiguous and enrichment mints into one; the columns
+remain the adoption path), resolution runs **ordered learning→base**
+through the popup's `languageCodes` resolve over the ask-time
+`answerLanguages` snapshot, and the popup **opens instantly and resolves
+in place** (missing-mode mount from the RAW surface before any network;
+the ordered resolve swaps the dictionary card in). The ADR is indexed in
+`docs/adr/README.md` (word popup section) and cross-linked from both
+touched concepts. Consolidation on top of tickets 02/03's edits:
+bilinguals-simulator.md gained the sources it was missing
+(`lib/markdown.js`, `lib/aiAnswerTokens.mjs`, `Components/AI.jsx`; the
+word-token bullet now names the three render sites and the
+instant-open/resolve-in-place contract) and its gloss-run-hover paragraph
+was corrected to the CSS actually shipped (vellum fill on hover, not the
+commented-out text-shadow — stale on dev since commit 8e86309);
+interactive-words.md lists `lib/wordLookup.js` and gained the AI answer
+panel as a third entry under Consuming surfaces. `generated.at` bumped on
+both concepts; validate-baseline needed no new entries (ticket 03 already
+pruned the interim one).
+
+## 2026-11-02 (ai-answer-words 03 — Ctrl+click on an AI-answer word opens the dictionary popup, resolved learning-first over the ask's languages)
+
+The tracer bullet: every `ai-word-token` in the simulator's streamed AI
+answer now opens the columns' WordPopup in place. The handling is event
+**delegation on `#ai_answer_div`** (`AI.jsx` — click + keydown props on the
+container div; tokens found via `event.target.closest('[data-word-key]')`),
+which survives the wholesale innerHTML rewrites of streaming. The gesture
+is Ctrl-only (ADR 0030, no Cmd) with Ctrl+Enter/Ctrl+Space keyboard parity
+and Ctrl+click-inside-a-link navigation suppressed; both event decisions
+and the code-order derivation live in the new pure
+`laravel/resources/js/lib/aiAnswerTokens.mjs` (`opensTokenPopup`,
+`answerLanguageCodes` — Node-tested), the DOM walk stays pinned by source
+assertions (`AI.tokens.test.js`). The popup mounts in a `document.body`
+portal, missing mode (`wordId={null}`) from the RAW token surface, and
+resolves through ticket 02's ordered resolver with
+`languageCodes=[learning, base]` snapshotted from the ask payload the
+moment the stream started (`useAiStream.answerLanguages` — a side flip
+after the ask never changes resolution; Ask again re-captures). No
+`language` prop (Ask-AI/adopt stay disabled — nothing is ever minted from
+AI-answer text), no familiarity, no explain, no word-event recording; the
+page's `popupFontSize` threads `Bilinguals` → `AI` → `WordPopup` (ADR
+0031). bilinguals-simulator.md (word-token bullet, `useAiStream` +
+popup-typography bullets) and interactive-words.md (first consumer of the
+ordered list) refreshed, `generated.at` bumped; the interim
+validate-baseline entry for bilinguals-simulator.md is now prunable. ADR
+0096 + concept cross-links stay ticket 04's closure.
+
+## 2026-11-02 (ai-answer-words 02 — the popup lookup POST moves to lib/wordLookup.js with an ordered-language resolver)
+
+`WordPopup.jsx`'s module-scope `postLookup` (the missing-mode
+`POST /words/lookup` helper, popup-ai-enrich ticket 07) moved to
+`laravel/resources/js/lib/wordLookup.js`: the single-code `lookupWordId`
+keeps the exact old contract (RAW surface + `language_code`, CSRF-signed,
+miss and transport failure both collapse to null), and a new sequential
+`resolveWordId(surface, codes)` runs an ordered list — first non-null word
+id wins (short-circuit), a miss falls through, any transport failure
+collapses the whole sequence to null immediately. `WordPopup` gains an
+optional ordered `languageCodes` prop (keyed as a joined string so an
+inline-array prop can't re-trigger the effect); without it the resolve runs
+against the single column language exactly as before — reader and
+simulator text columns unchanged, and the ask-AI/adopt gating stays keyed
+on the single `language` prop (an ordered list never enables adoption).
+Covered by `wordLookup.test.js` (9 Node/fetch-mock tests) and updated
+`WordPopup.lookup.test.js` source pins. interactive-words.md: the
+re-resolution section gained the ordered-resolve bullet, `generated.at`
+bumped. Prepares the AI-answer popup mount (ai-answer-words ticket 03:
+`languageCodes=[learning, base]`, no `language`).
+
+## 2026-11-02 (book-layout fix — per-sentence fallback reversed to concatenation, adjacent titles merge into one heading)
+
+Author-reported after rendering a real pre-`paragraph` book (1,463
+sentences, 23 titles): every sentence sat on its own line, and four
+adjacent-title pairs («ЧАСТЬ ПЯТАЯ» / «СВИСТУН» …) each stranded the first
+title alone on its page. Two changes, both in
+`BookPdfService::composeBookBlocks()` + the book blades: the per-sentence
+fallback (ADR 0095 decision 7's original rule) is **reversed** — every
+entity composes with the same flow rules now, so a zero-`paragraph` book
+concatenates its sentences and breaks paragraphs at the implicit starts
+only (`entityHasParagraphTyping()` and the alignment
+`uses_paragraphs` flags deleted); and **adjacent titles stack into one
+chapter heading** (newline-separated lines, rendered as stacked
+chapter-line spans in both books — the entity blade gains the
+`h2 .chapter-line { display: block }` rule the alignment heading already
+had, and the alignment heading explodes merged blocks back into per-line
+entries). Digests bumped `entity-book/v2`→`v3`, `alignment-book/v2`→`v3`
+(every cached book re-renders on its next Get PDF). ADR 0095 decision 7
+rewritten with the dated amendment (the honest cost, accepted: a text
+with no markers and no non-body elements renders as a single paragraph —
+the stored data carries no boundary information; re-split backfill stays
+rejected), decision 6 records the merge rule, decision 10 the second
+bump. Tests: the fallback pins flipped to concatenation (entity +
+alignment), new unit pins for the title merge (entity) and the cell-level
+merged-title heading (alignment), a 2-page render pin for the
+adjacent-titles case, the order/document-order cell pin updated to the
+joined string; TIA green. `generated.at` bumped on `domains/entities.md`,
+`domains/sentence-alignment.md`, `database/entities-alignment.md` (all
+three reworded); no routes/models/commands changed — no `wiki:sync`
+needed.
+
+## 2026-11-02 (book-layout review pass — shared pdfCssRule helper, shared book-block partial, required-explicit composeBookBlocks flag)
+
+The Standards fixes from the spec's two-axis review, output-neutral by
+construction: the byte-identical CSS-rule test helpers in EntityPdfTest /
+AlignmentPdfTest collapsed into one shared `pdfCssRule()` in
+`tests/Pest.php` (the established cross-file helper home); the non-title
+type→markup cascade both book blades duplicated extracted into
+`resources/views/pdf/partials/book-block.blade.php` — titles stay in each
+blade, the chapter machinery deliberately diverges (entity page-break
+pages vs the table close/reopen), and the per-book CSS (values and
+selectors differ) stays put; `BookPdfService::composeBookBlocks()`'s
+`bool $perSentenceParagraphs = false` default dropped — every caller
+passes the flag explicitly. Docs: `database/entities-alignment.md`
+sentence_types row's garbled closing sentence rewritten ("Both sentence
+editors list the types from the database …"), `generated.at` bumped, and
+its `verified: { by: agent:zcode }` stamp removed — the review pass found
+the branch itself re-dated that stamp (and `domains/sentence-alignment
+.md`'s) in ticket 01, so both branch-authored agent stamps came off;
+`verified` is reserved for human review stamps and the pre-branch agent
+stamps elsewhere stay untouched. The service edit re-minted source-drift
+warnings on the two concepts listing `BookPdfService.php`
+(`domains/entities.md`, `domains/sentence-alignment.md`) — text still
+accurate, both cleared by the documented `generated.at` bump. Render
+tests re-run green (page counts and CSS-rule pins intact); no
+routes/models/commands changed — no `wiki:sync` needed.
+
+## 2026-11-02 (book-layout closure — ADR 0095, Paragraph glossary term, ADR cites across the book-PDF concepts)
+
+The knowledge-base closure ticket for the book-layout spec. **ADR
+[0095](../docs/adr/0095-book-layout-paragraph-type.md)** records the
+decisions behind tickets 01–03 as an amendment to ADR 0093 (engine,
+endpoint, cache regime unchanged — its numbering continues from decision
+5): the `paragraph` sentence type is the single carrier of paragraph
+boundaries, with the four rejected alternatives (boolean paragraph-start
+column, meaning-match rows as the only source, re-split backfill,
+PDF-time re-derivation); the typed-block entity book with chapter pages;
+the header-free 50/50 bilingual spread with per-cell composition and
+per-side fallback; the two dompdf page-break limits (no page-break inside
+table rows → the table closes/reopens around chapter headings;
+`break-after` + `break-before` do not collapse → the `chapter-open`
+rule), both pinned by exactly-N-pages render tests; and the per-kind
+digest-version constants (`entity-book/vN`, `alignment-book/vN`) that
+made the layout rework a two-constant deploy. CONTEXT.md gains the
+**Paragraph** term in the Sentence Alignment context (opener semantics
+only, no implementation details). Wiki: `domains/entities.md` (Book PDFs
+section header + ADR 0095 cite), `domains/sentence-alignment.md`
+(paragraph-typing section + bilingual-book Get PDF paragraph cite ADR
+0095, replacing the "see the book-layout tickets" placeholder),
+`database/entities-alignment.md` (the `sentence_types.paragraph` row
+cites ADR 0095); `generated.at` bumped on all three. ADR README index
+row added. No routes/models/commands changed — no `wiki:sync` needed.
+
+## 2026-11-02 (alignment book renders like a book — per-side block composition, shared chapter pages, header-free spread)
+
+The completed alignment's **Get PDF** now produces a proper bilingual book
+while keeping the side-by-side 50/50 spread (original side left): each
+meaning-match row renders as **one paragraph per side** — that side's
+sentences composed per table cell by
+`BookPdfService::composeBookBlocks()` (ticket 02's API — paragraph flow
+stays within a cell), justified, first-line indented, small gap — so
+paired paragraphs stay visually level, with a `paragraph`-typed sentence
+mid-row starting a new paragraph within its cell. Each side falls back to
+per-sentence paragraphs independently when its entity holds zero
+`paragraph` rows (`entityHasParagraphTyping()` asked once per side
+entity). A row carrying a `title` on either side opens a **chapter page**
+shared by both languages: the sides' titles stack into one centered
+17pt heading, consecutive title rows merge into one heading, and — because
+dompdf cannot page-break inside table rows — the table closes and reopens
+around the heading, the columns resuming paired after the break; the
+first heading after the title page suppresses its forced break
+(`chapter-open`, the same blank-page rule the entity book pinned). The
+repeating two-language table header is gone: language names live on the
+title page only. Illustrations render as separated centered blocks inside
+their column (≤ ~70% width, caption below), row pairing preserved.
+`alignmentViewData()` now returns per-side composed `blocks` plus a
+per-side `uses_paragraphs` flag and a per-row `chapter` marker, keeping
+the layout testable without a dompdf render. Digest version
+`alignment-book/v1` → `v2` invalidates every cached alignment render.
+Docs updated: [Sentence alignment](domains/sentence-alignment.md) (Get PDF
+paragraph), [Library & entities](domains/entities.md) (Book PDFs digest
+constants).
+
+## 2026-11-02 (entity book renders like a book — typed block composition, chapter pages, per-sentence fallback)
+
+The entity page's **Get PDF** now produces a real monolingual book instead
+of the web-page mirror: `BookPdfService::composeBookBlocks()` composes the
+typed sentence rows into blocks before the blade renders them.
+Consecutive body sentences concatenate into justified paragraphs with a
+first-line indent and a small inter-paragraph gap (trimmed, joined with
+single spaces); a `paragraph`-typed sentence opens a new paragraph, and a
+paragraph also starts implicitly at the document start and after any
+non-body element (title/subtitle/quote/footnote/caption/illustration). A
+`title` opens a chapter page (fresh page, centered, larger, sans-serif);
+`subtitle` stays an inline bold heading without a break; an illustration
+ends the open paragraph as a centered block ≤ ~70% text width with its
+caption in small italics beneath, flow resuming as a new paragraph. The
+first block's chapter suppresses its forced break: dompdf does not
+collapse `page-break-after` with a following `page-break-before`, so an
+unchanged rule put a blank page between the title page and the first
+chapter. Entities with zero `paragraph`-typed rows (everything uploaded
+before the type existed) fall back to per-sentence paragraphs
+(`BookPdfService::entityHasParagraphTyping()`, per entity — the alignment
+book asks it per side), so old books never render as one giant paragraph.
+`entityViewData()` now returns the composed `blocks` (was flat
+`sentences`), keeping the layout testable without a dompdf render.
+Digest version `entity-book/v1` → `v2` invalidates every cached render;
+match digests fold entity digests, so alignment caches re-render once too
+(their layout is unchanged until the alignment-book ticket). Docs updated:
+[Library & entities](domains/entities.md) (Book PDFs section),
+[Entities & Alignment](database/entities-alignment.md) (the
+`sentence_types` paragraph row's book behavior).
+
+## 2026-11-02 (`paragraph` sentence type — the split pipeline marks paragraph-opening sentences)
+
+New seeded `SentenceType` **`paragraph`** ("A body sentence that opens a
+paragraph", `SentenceTypeSeeder` upsert beside the seven existing rows —
+deployment seeds reach existing databases): a body sentence that *opens* a
+paragraph, typed by the split pipeline wherever the predicted type would be
+plain `sentence` — at the document start, after a blank line in the source
+text, and after a title line; `title`/`quote` predictions keep their type,
+plain `sentence` rows continue the current paragraph. Python
+(`TypedSentenceSplitter`): the buffer is cut into paragraph blocks at blank
+lines **before** pysbd's `selective_flatten` (both engines agree — a blank
+line is a paragraph break), and the stateless streaming chunks carry the
+paragraph-start position in the text: a buffer beginning with a blank line
+is itself a paragraph start — the PHP `SentenceSplitter` prefixes the
+document-start buffer (fresh run's first chunk; in-memory splitting too)
+with `\n\n`, and a remainder holding a paragraph-typed sentence carries the
+same prefix so the next request re-derives the type (one-sentence final
+paragraphs included). The type is stored but invisible on web surfaces
+(like `subtitle`); both sentence editors list types from the database and
+the splitter maps type names dynamically, so no editor/consumer changes —
+alignment, simulator and word-index behavior unchanged. The book PDFs
+consume the type from the book-layout tickets on. Docs updated:
+[Entities & Alignment](database/entities-alignment.md) (sentence_types
+row), [Sentence Alignment Pipeline](domains/sentence-alignment.md) (Split
+stage paragraph-typing contract).
+
 ## 2026-11-01 (crossword clues grouped by part of speech over the word family)
 
 The crossword right panel and the unsolved-words modal now show POS-grouped

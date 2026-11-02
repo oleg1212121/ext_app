@@ -1,12 +1,11 @@
 ---
 type: Pipeline
 title: Sentence Alignment Pipeline
-description: Embedding-based pipeline that aligns two same-work entities (any language pair) into sentence-level meaning matches, plus the manual editor and hash-based alignment reuse. Illustrations are excluded from the aligner's sentence space (ADR 0050).
-tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations]
+description: Embedding-based pipeline that aligns two same-work entities (any language pair) into sentence-level meaning matches, plus the manual editor and hash-based alignment reuse. Illustrations are excluded from the aligner's sentence space (ADR 0050). The splitter types paragraph-opening sentences `paragraph` (Nov 2026).
+tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations, paragraphs]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-10-29T18:30:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-29T18:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T17:30:00+03:00 }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -339,6 +338,36 @@ resolution unit tests: `ai/splitting/test_engine_resolution.py` +
 `ai/splitting/test_preprocessing.py` and
 `ai/api/test_split_endpoint.py` (cache invalidate/reuse on the
 resolved engine).
+
+**Paragraph typing (Nov 2026)** — a sentence predicted plain `sentence`
+types **`paragraph`** when it *opens* a paragraph: the first sentence of
+the document, the first after a blank line in the source text, or the
+first after a title line (`title`/`quote` predictions keep their type —
+they break flow visually anyway; plain `sentence` rows continue the
+current paragraph, which the book PDFs concatenate — the paragraph-boundary
+design is [ADR
+0095](../../docs/adr/0095-book-layout-paragraph-type.md)). Detection runs
+on the line structure **before** the pysbd
+`selective_flatten`: `flush_buffer` first cuts the buffered lines into
+blocks at blank lines, then flattens/splits each block exactly as before
+(under both engines — a blank line is a paragraph break by definition, so
+razdel and pysbd agree). Because the `/split` requests are stateless
+streaming chunks, the paragraph-start position travels **in the text**:
+a buffer that *begins* with a blank line is itself a paragraph start —
+the PHP splitter (`SentenceSplitter`) prefixes the document-start buffer
+(a fresh run's first python call; in-memory splitting too) with `\n\n`,
+and when python holds back a paragraph-typed sentence as the remainder it
+prefixes the remainder with the same `\n\n` so the next request
+re-derives the type (`normalize` strips the leading blank line, so the
+marker is read off the raw request text). Title/quote types re-derive
+from content alone and need no carry. Tests:
+`ai/splitting/test_paragraph_typing.py` (both engines; blank lines,
+doc-start marker, title lines, quote-keeps-quote, hard wraps stay
+`sentence`, marker carry on the remainder) and
+`laravel/tests/Unit/SentenceSplitterTest.php`
+(`fakeParagraphPythonSplitter` — streamed + in-memory pipelines store
+`paragraph`-typed openers, incl. a one-sentence final paragraph through
+the hold-back + finalize path).
 
 ## 2. Sign
 
@@ -1106,14 +1135,36 @@ cross-Work pair the form's same-work error, a limit hit a `limit`
      button (only while `status = completed`): `GET
      /works/{work}/alignments/{entityMatch}/pdf`
      (`AlignmentPdfController`, `works.alignments.pdf`, ADR 0093) streams
-     the **bilingual book PDF** as an attachment — A4, a borderless 50/50
-     table with a repeating two-language header, one row per meaning match
-     in `order`, the original side left (`originalSide()` with side-a
-     fallback), each cell stacking its side's junctioned sentences in
-     document order. `BookPdfService::matchDigest` caches it under the
-     same `pdf_renders` regime as the entity book (both sides' text
-     digests + title-page inputs + the ordered pairing — `updated_at`
-     churn is deliberately not an input); see
+     the **bilingual book PDF** as an attachment — A4, laid out like a
+     book, not a web-page mirror (the layout decisions are [ADR
+     0095](../../docs/adr/0095-book-layout-paragraph-type.md)): the
+     original side left (`originalSide()`
+     with side-a fallback) in a borderless fixed 50/50 spread, one row per
+     meaning match in `order`, each cell composed by
+     `BookPdfService::composeBookBlocks()` (per table cell — paragraph
+     flow stays within a cell) into **one justified, first-line-indented
+     paragraph per side** with mid-row `paragraph`-typed breaks; plain
+     sentences concatenate on both sides alike, so a side with zero
+     `paragraph` rows flows too (paragraphs break at the implicit starts
+     only — an early per-side per-sentence fallback was reversed: one
+     paragraph per sentence is a line list, not a book). A row carrying a
+     `title` on either side opens a **chapter
+     page** shared by both languages — the sides' titles stack into one
+     centered heading, consecutive title rows merge into it (and adjacent
+     titles within one cell arrive pre-merged, newline-separated, from
+     composition) — with the
+     table closed and reopened around the heading (dompdf cannot
+     page-break inside table rows) and the columns resuming paired after
+     the break; the first heading after the title page suppresses its
+     forced break (`chapter-open`, same blank-page rule as the entity
+     book). There is no repeating two-language table header — the language
+     names appear on the title page only — and illustrations render as
+     separated centered blocks inside their column (caption below), row
+     pairing preserved. `BookPdfService::matchDigest` caches it under the
+     same `pdf_renders` regime as the entity book (its own
+     `alignment-book/vN` digest version + both sides' entity digests +
+     title-page inputs + the ordered pairing — `updated_at` churn is
+     deliberately not an input); see
      [Library & entities](/domains/entities.md#book-pdfs-adr-0093) and the
      [Book PDF term](../../CONTEXT.md#library-context). The editor itself
 (route `works.alignments.edit`, `AlignmentController@edit`) is a

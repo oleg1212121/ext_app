@@ -264,7 +264,7 @@ test('the rendered bilingual pdf embeds cyrillic text with the dejavu fonts', fu
 
 // ─── layout ──────────────────────────────────────────────────────────────────
 
-test('the bilingual book view lays out the title page and the repeating two-column table', function () {
+test('the bilingual book view lays out the title page and a header-free two-column spread', function () {
     $pair = alignmentPdfPopulated();
 
     $data = app(BookPdfService::class)->alignmentViewData($pair['match']);
@@ -281,23 +281,33 @@ test('the bilingual book view lays out the title page and the repeating two-colu
         ->and($html)->toContain('Pair Author')
         ->and($html)->toContain('Alpha')
         ->and($html)->toContain('Beta')
-        ->and($html)->toContain('English')
-        ->and($html)->toContain('Russian')
         ->and($html)->toContain('(original)')
         ->and($html)->toContain('page-break-after');
 
-    // The two-column table: fixed 50/50 cells, the language labels in a
-    // thead that repeats on every page, rows kept whole when possible.
+    // The language names live on the title page only — the spread carries
+    // no repeating header row.
+    expect(substr_count($html, 'English'))->toBe(1)
+        ->and(substr_count($html, 'Russian'))->toBe(1)
+        ->and($html)->not->toContain('<th')
+        ->and($html)->not->toContain('table-header-group')
+        ->and($html)->not->toContain('language-label');
+
+    // The two-column spread: borderless fixed 50/50 cells, rows kept whole
+    // when possible.
     expect($html)->toContain('<table class="alignment">')
         ->and($html)->toContain('table-layout: fixed')
-        ->and($html)->toContain('display: table-header-group')
-        ->and($html)->toContain('page-break-inside: avoid')
-        ->and($html)->toContain('<th class="language-label">English</th>')
-        ->and($html)->toContain('<th class="language-label">Russian</th>');
+        ->and($html)->toContain('page-break-inside: avoid');
 
-    // Both cells carry their side's sentences.
-    expect($html)->toContain('Alpha text.')
-        ->and($html)->toContain('Текст беты.');
+    // Both cells render their side's sentences as book paragraphs:
+    // justified, first-line indent.
+    expect($html)->toContain('<p class="sentence-paragraph">Alpha text.</p>')
+        ->and($html)->toContain('<p class="sentence-paragraph">Текст беты.</p>');
+
+    $paragraphRule = pdfCssRule($html, 'p.sentence-paragraph');
+
+    expect($paragraphRule)->not->toBeNull()
+        ->and($paragraphRule)->toContain('text-align: justify')
+        ->and($paragraphRule)->toContain('text-indent: 1em');
 });
 
 test('the original side sits in the left column', function () {
@@ -324,10 +334,10 @@ test('the original side sits in the left column', function () {
     expect($data['left']['entity']->id)->toBe($en->id)
         ->and($data['left']['is_original'])->toBeTrue()
         ->and($data['right']['entity']->id)->toBe($ru->id)
-        // Title page order and header order both follow the columns.
+        // The title page follows the columns: the left side's entity name
+        // and language name come first.
         ->and(mb_strpos($html, 'Eng Second'))->toBeLessThan(mb_strpos($html, 'Rus First'))
-        ->and(mb_strpos($html, '<th class="language-label">English</th>'))
-        ->toBeLessThan(mb_strpos($html, '<th class="language-label">Russian</th>'));
+        ->and(mb_strpos($html, 'English'))->toBeLessThan(mb_strpos($html, 'Russian'));
 });
 
 test('without a determinable original side the left column falls back to side a', function () {
@@ -365,8 +375,8 @@ test('rows follow the meaning-match order and each side stacks its sentences in 
 
     expect($rows)->toHaveCount(2)
         ->and($rows[0]['order'])->toBe(5)
-        ->and($rows[0]['left'][0]['content'])->toBe('Alpha first.')
-        ->and($rows[0]['left'][1]['content'])->toBe('Alpha second.')
+        // The cell's plain sentences concatenate, in document order.
+        ->and($rows[0]['left'][0]['content'])->toBe('Alpha first. Alpha second.')
         ->and($rows[0]['right'][0]['content'])->toBe('Бета первая.')
         // Single-sided row: the other cell is empty.
         ->and($rows[1]['order'])->toBe(10)
@@ -397,7 +407,7 @@ test('empty-content non-image junctions contribute nothing to a cell', function 
         ->and($rows[0]['left'][0]['content'])->toBe('Alpha real.');
 });
 
-test('illustrations embed inside their own side\'s cell', function () {
+test('illustrations render as separated centered blocks inside their column', function () {
     $pair = alignmentPdfPair();
     $enSentence = alignmentPdfSentence($pair['en'], 'sentence', 'Alpha text.', 1);
     $imagePath = 'illustrations/ru/alignment.png';
@@ -412,13 +422,207 @@ test('illustrations embed inside their own side\'s cell', function () {
 
     $data = app(BookPdfService::class)->alignmentViewData($pair['match']);
 
-    expect($data['rows'][0]['right'][0]['image'])->toBe(Storage::disk('local')->path($imagePath))
-        ->and($data['rows'][0]['left'][0]['image'])->toBeNull()
-        ->and($data['rows'][0]['right'][0]['content'])->toBe('Картина.');
+    expect($data['rows'][0]['right'][0])->toBe([
+        'type' => 'illustration',
+        'content' => 'Картина.',
+        'image' => Storage::disk('local')->path($imagePath),
+    ])
+        ->and($data['rows'][0]['left'][0]['type'])->toBe('paragraph')
+        ->and($data['rows'][0]['left'][0]['content'])->toBe('Alpha text.');
 
     $html = view('pdf.alignment-book', $data)->render();
 
-    expect($html)->toContain('<img src="'.Storage::disk('local')->path($imagePath).'"');
+    expect($html)->toContain('<img src="'.Storage::disk('local')->path($imagePath).'"')
+        ->and($html)->toContain('<div class="sentence-illustration">')
+        ->and($html)->toContain('<p class="sentence-caption">Картина.</p>')
+        ->and($html)->toContain('.sentence-illustration {')
+        ->and($html)->toContain('max-width: 70%;');
+});
+
+test('a title row opens one shared chapter heading with the table closed around it', function () {
+    $pair = alignmentPdfPair();
+    $enOpens = alignmentPdfSentence($pair['en'], 'sentence', 'Alpha opens.', 1);
+    $ruOpens = alignmentPdfSentence($pair['ru'], 'sentence', 'Бета открывает.', 1);
+    $enTitle = alignmentPdfSentence($pair['en'], 'title', 'Chapter One', 2);
+    $ruTitle = alignmentPdfSentence($pair['ru'], 'title', 'Глава одна', 2);
+    $enAfter = alignmentPdfSentence($pair['en'], 'sentence', 'Alpha continues.', 3);
+    $ruAfter = alignmentPdfSentence($pair['ru'], 'sentence', 'Бета продолжает.', 3);
+    alignmentPdfRow($pair['match'], 0, [$enOpens], [$ruOpens]);
+    alignmentPdfRow($pair['match'], 1, [$enTitle], [$ruTitle]);
+    alignmentPdfRow($pair['match'], 2, [$enAfter], [$ruAfter]);
+
+    $html = view('pdf.alignment-book', app(BookPdfService::class)->alignmentViewData($pair['match']))->render();
+
+    // One centered chapter heading carrying both sides' titles stacked.
+    expect(substr_count($html, '<h2 class="chapter-heading'))->toBe(1)
+        ->and($html)->toContain('Chapter One')
+        ->and($html)->toContain('Глава одна');
+
+    // The table closes before the heading and reopens after it: dompdf
+    // cannot page-break inside table rows.
+    $close = (int) mb_strpos($html, '</table>');
+    $reopen = (int) mb_strpos($html, '<table class="alignment">', $close);
+
+    expect(mb_strpos($html, 'Alpha opens.'))->toBeLessThan($close)
+        ->and($close)->toBeLessThan(mb_strpos($html, 'Chapter One'))
+        ->and(mb_strpos($html, 'Глава одна'))->toBeLessThan($reopen)
+        ->and($reopen)->toBeLessThan(mb_strpos($html, 'Alpha continues.'));
+
+    // Content preceded the heading, so its forced page break stands (no
+    // chapter-open suppression on the element — the stylesheet keeps the
+    // rule), and titles never render inside the cells.
+    expect($html)->not->toContain('chapter-heading chapter-open')
+        ->and($html)->not->toContain('sentence-title');
+
+    $rule = pdfCssRule($html, 'h2.chapter-heading');
+
+    expect($rule)->not->toBeNull()
+        ->and($rule)->toContain('page-break-before: always')
+        ->and($rule)->toContain('text-align: center')
+        ->and($rule)->toContain('font-size: 17pt');
+});
+
+test('consecutive title rows merge into one chapter heading', function () {
+    $pair = alignmentPdfPair();
+    $enPart = alignmentPdfSentence($pair['en'], 'title', 'Part One', 1);
+    $ruPart = alignmentPdfSentence($pair['ru'], 'title', 'Часть первая', 1);
+    $enChapter = alignmentPdfSentence($pair['en'], 'title', 'Chapter One', 2);
+    $ruChapter = alignmentPdfSentence($pair['ru'], 'title', 'Глава одна', 2);
+    $enBody = alignmentPdfSentence($pair['en'], 'sentence', 'Alpha body.', 3);
+    $ruBody = alignmentPdfSentence($pair['ru'], 'sentence', 'Тело беты.', 3);
+    alignmentPdfRow($pair['match'], 0, [$enPart], [$ruPart]);
+    alignmentPdfRow($pair['match'], 1, [$enChapter], [$ruChapter]);
+    alignmentPdfRow($pair['match'], 2, [$enBody], [$ruBody]);
+
+    $html = view('pdf.alignment-book', app(BookPdfService::class)->alignmentViewData($pair['match']))->render();
+
+    // Both title rows stack into the single heading — left side first,
+    // rows in document order — with one close/reopen around it.
+    expect(substr_count($html, '<h2 class="chapter-heading'))->toBe(1)
+        ->and(substr_count($html, '<span class="chapter-line">'))->toBe(4)
+        ->and(mb_strpos($html, 'Part One'))->toBeLessThan(mb_strpos($html, 'Часть первая'))
+        ->and(mb_strpos($html, 'Часть первая'))->toBeLessThan(mb_strpos($html, 'Chapter One'))
+        ->and(mb_strpos($html, 'Chapter One'))->toBeLessThan(mb_strpos($html, 'Глава одна'))
+        ->and(substr_count($html, '</table>'))->toBe(2)
+        ->and(substr_count($html, '<table class="alignment">'))->toBe(2);
+});
+
+test('titles merged inside a cell still stack as separate chapter lines', function () {
+    $pair = alignmentPdfPair();
+    // Two adjacent titles in one cell: composition merges them into a
+    // single multi-line title block.
+    $enPart = alignmentPdfSentence($pair['en'], 'title', 'Part One', 1);
+    $enChapter = alignmentPdfSentence($pair['en'], 'title', 'Chapter One', 2);
+    $ruBody = alignmentPdfSentence($pair['ru'], 'sentence', 'Тело беты.', 1);
+    alignmentPdfRow($pair['match'], 0, [$enPart, $enChapter], [$ruBody]);
+
+    $html = view('pdf.alignment-book', app(BookPdfService::class)->alignmentViewData($pair['match']))->render();
+
+    // The merged block's lines stack as separate chapter lines in the
+    // shared heading, in the same order.
+    expect(substr_count($html, '<h2 class="chapter-heading'))->toBe(1)
+        ->and(substr_count($html, '<span class="chapter-line">'))->toBe(2)
+        ->and(mb_strpos($html, 'Part One'))->toBeLessThan(mb_strpos($html, 'Chapter One'));
+});
+
+test('a chapter heading right after the title page opens the book without a blank page', function () {
+    $pair = alignmentPdfPair();
+    $enTitle = alignmentPdfSentence($pair['en'], 'title', 'Chapter One', 1);
+    $ruTitle = alignmentPdfSentence($pair['ru'], 'title', 'Глава одна', 1);
+    $enBody = alignmentPdfSentence($pair['en'], 'sentence', 'One short paragraph of body text.', 2);
+    $ruBody = alignmentPdfSentence($pair['ru'], 'sentence', 'Короткий абзац основного текста.', 2);
+    alignmentPdfRow($pair['match'], 0, [$enTitle], [$ruTitle]);
+    alignmentPdfRow($pair['match'], 1, [$enBody], [$ruBody]);
+
+    $data = app(BookPdfService::class)->alignmentViewData($pair['match']);
+
+    // The heading is the first content after the title page: its forced
+    // break is suppressed so the two collapse into one page turn.
+    expect(view('pdf.alignment-book', $data)->render())->toContain('chapter-heading chapter-open');
+
+    $this->actingAs(approvedUser())
+        ->get("/works/{$pair['work']->id}/alignments/{$pair['match']->id}/pdf")
+        ->assertOk();
+
+    $bytes = Storage::disk('local')->get("pdfs/matches/{$pair['match']->id}.pdf");
+
+    // Title page + chapter page, exactly.
+    expect(preg_match_all('#/Type /Page(?!s)#', $bytes))->toBe(2);
+});
+
+test('a chapter row with body content renders the heading first, then the paired content', function () {
+    $pair = alignmentPdfPair();
+    $enTitle = alignmentPdfSentence($pair['en'], 'title', 'Chapter One', 1);
+    $ruTitle = alignmentPdfSentence($pair['ru'], 'title', 'Глава одна', 1);
+    $ruText = alignmentPdfSentence($pair['ru'], 'sentence', 'Русский текст под заголовком.', 2);
+    alignmentPdfRow($pair['match'], 0, [$enTitle], [$ruTitle, $ruText]);
+
+    $html = view('pdf.alignment-book', app(BookPdfService::class)->alignmentViewData($pair['match']))->render();
+
+    // The heading renders, the table reopens, and the row's non-title
+    // content lands paired in the reopened table (empty left cell).
+    $reopen = (int) mb_strpos($html, '<table class="alignment">', (int) mb_strpos($html, '</table>'));
+
+    expect(mb_strpos($html, 'Глава одна'))->toBeLessThan($reopen)
+        ->and($reopen)->toBeLessThan(mb_strpos($html, 'Русский текст под заголовком.'))
+        ->and($html)->toMatch('/<td>\s*<\/td>/');
+});
+
+// ─── book composition ────────────────────────────────────────────────────────
+
+test('cells compose into per-side book blocks with mid-row paragraph breaks', function () {
+    $pair = alignmentPdfPair();
+
+    $enOpens = alignmentPdfSentence($pair['en'], 'paragraph', 'Alpha opens.', 1);
+    $enContinues = alignmentPdfSentence($pair['en'], 'sentence', 'Alpha continues.', 2);
+    $enAgain = alignmentPdfSentence($pair['en'], 'paragraph', 'Alpha again.', 3);
+    $ruOne = alignmentPdfSentence($pair['ru'], 'sentence', 'Бета раз.', 1);
+    $ruTwo = alignmentPdfSentence($pair['ru'], 'sentence', 'Бета два.', 2);
+    alignmentPdfRow($pair['match'], 0, [$enOpens, $enContinues, $enAgain], [$ruOne, $ruTwo]);
+
+    $data = app(BookPdfService::class)->alignmentViewData($pair['match']);
+
+    // Both sides flow paragraphs within the cell: explicit paragraph
+    // markers break where typed, plain sentences concatenate — typing or
+    // no typing, a side reads like a book.
+    expect($data['rows'][0]['left'])->toBe([
+        ['type' => 'paragraph', 'content' => 'Alpha opens. Alpha continues.'],
+        ['type' => 'paragraph', 'content' => 'Alpha again.'],
+    ])
+        ->and($data['rows'][0]['right'])->toBe([
+            ['type' => 'paragraph', 'content' => 'Бета раз. Бета два.'],
+        ]);
+});
+
+test('an untyped pair composes the same flowing paragraphs', function () {
+    $pair = alignmentPdfPopulated();
+
+    $data = app(BookPdfService::class)->alignmentViewData($pair['match']);
+
+    // No paragraph markers anywhere in the pair: sides still flow.
+    expect($data['rows'][0]['left'])->toBe([['type' => 'paragraph', 'content' => 'Alpha text.']])
+        ->and($data['rows'][0]['right'])->toBe([['type' => 'paragraph', 'content' => 'Текст беты.']]);
+});
+
+test('a row carrying a title on either side is marked as a chapter row', function () {
+    $pair = alignmentPdfPair();
+    $enPlain = alignmentPdfSentence($pair['en'], 'sentence', 'Alpha plain.', 1);
+    $ruPlain = alignmentPdfSentence($pair['ru'], 'sentence', 'Бета обычная.', 1);
+    $enTitle = alignmentPdfSentence($pair['en'], 'title', 'Alpha Heading', 2);
+    $ruTitle = alignmentPdfSentence($pair['ru'], 'title', 'Заголовок беты', 2);
+    alignmentPdfRow($pair['match'], 0, [$enPlain], [$ruPlain]);
+    alignmentPdfRow($pair['match'], 1, [$enTitle], []);
+    alignmentPdfRow($pair['match'], 2, [], [$ruTitle]);
+
+    $rows = app(BookPdfService::class)->alignmentViewData($pair['match'])['rows'];
+
+    expect($rows[0]['chapter'])->toBeFalse()
+        ->and($rows[1]['chapter'])->toBeTrue()
+        ->and($rows[2]['chapter'])->toBeTrue()
+        // The title rides its side's block list; the blade lifts it into
+        // the shared chapter heading.
+        ->and($rows[1]['left'][0]['type'])->toBe('title')
+        ->and($rows[2]['right'][0]['type'])->toBe('title');
 });
 
 // ─── cache ───────────────────────────────────────────────────────────────────
@@ -587,6 +791,41 @@ test('a deleted cache file forces a re-render on the next request', function () 
 });
 
 // ─── digest ──────────────────────────────────────────────────────────────────
+
+test('a stored cache row carrying the previous layout digest re-renders', function () {
+    Carbon::setTestNow('2026-11-02 10:00:00');
+    $pair = alignmentPdfPopulated();
+
+    // A row left behind by the pre-book-layout renderer: the subject's text,
+    // pairing, and title-page inputs are unchanged and the file is on disk,
+    // so only the digest version can — and must — force the re-render.
+    $stalePath = "pdfs/matches/{$pair['match']->id}.pdf";
+    Storage::disk('local')->put($stalePath, '%PDF stale');
+    $stale = PdfRender::create([
+        'entity_match_id' => $pair['match']->id,
+        'content_hash' => str_repeat('0', 64),
+        'path' => $stalePath,
+        'size_bytes' => strlen('%PDF stale'),
+        'generated_at' => now(),
+    ]);
+
+    Carbon::setTestNow('2026-11-02 10:05:00');
+
+    $this->actingAs(approvedUser())
+        ->get("/works/{$pair['work']->id}/alignments/{$pair['match']->id}/pdf")
+        ->assertOk();
+
+    $render = PdfRender::query()->sole();
+
+    expect($render->id)->toBe($stale->id)
+        ->and($render->content_hash)->toBe(app(BookPdfService::class)->matchDigest($pair['match']->refresh()))
+        ->and($render->content_hash)->not->toBe($stale->content_hash)
+        ->and($render->generated_at)->toEqual(Carbon::parse('2026-11-02 10:05:00'));
+
+    Storage::disk('local')->assertExists($render->path);
+    expect(Storage::disk('local')->get($render->path))->toStartWith('%PDF')
+        ->and(Storage::disk('local')->get($render->path))->not->toBe('%PDF stale');
+});
 
 test('the match digest tracks both sides, the title-page inputs, and the pairing', function () {
     // Sentence-set staleness compares truncated (second-precision)

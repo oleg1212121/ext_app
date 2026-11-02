@@ -1,17 +1,54 @@
 import {useState} from 'react';
+import {createPortal} from 'react-dom';
 import {Link} from '@inertiajs/react';
 import ModelsUsedPopup, {RobotHelpIcon} from '../../../Components/ModelsUsedPopup.jsx';
+import WordPopup from '../../../Components/WordPopup.jsx';
+import {answerLanguageCodes, opensTokenPopup} from '../../../lib/aiAnswerTokens.mjs';
 import {useI18n} from '../../../i18n';
 
 export default function AI(props) {
     const {t} = useI18n();
     const [modelsOpen, setModelsOpen] = useState(false);
+    // The open AI-answer popup (ai-answer-words ticket 03): the RAW token
+    // surface plus the token span's viewport rect — wordId is structurally
+    // null (missing mode); ticket 02's ordered resolve swaps the full card
+    // in when a code hits.
+    const [popup, setPopup] = useState(null);
     const startDrag = props.startDrag;
     const panelWidth = props.width ?? 560;
 
     const hasAnswer = Boolean(props.aiAnswer);
     const isLoading = props.pending === true;
     const hasError = Boolean(props.aiError);
+
+    const openTokenPopup = (token) => {
+        setPopup({
+            surface: token.textContent,
+            rect: token.getBoundingClientRect(),
+        });
+    };
+
+    // Event DELEGATION on the #ai_answer_div container — one shared handler
+    // on BOTH props (click and keydown decide identically: same token, same
+    // ADR 0030 gate, same open): the answer HTML is swapped wholesale by
+    // dangerouslySetInnerHTML on every throttled streaming render, so a
+    // per-token handler could never survive mid-stream — the container's
+    // handlers always do. Tokens are found through event.target.closest;
+    // a non-token target (or a non-activating event) returns untouched, so
+    // links and plain text keep their native behavior.
+    const onAnswerActivate = (event) => {
+        const token = event.target.closest('[data-word-key]');
+        if (!token || !opensTokenPopup(event)) {
+            return;
+        }
+        // preventDefault BEFORE the open: Ctrl+click inside a markdown link
+        // must open the popup, never the browser's new-tab navigation; on
+        // keydown the same swallow is the keyboard parity half (the
+        // Ctrl+Enter/Ctrl+Space WordText contract — nothing underneath
+        // activates, every other key keeps its native meaning).
+        event.preventDefault();
+        openTokenPopup(token);
+    };
 
     return (
         <div
@@ -82,6 +119,8 @@ export default function AI(props) {
                         <div className="px-4 py-5 pb-8">
                             <div id="ai_answer_div"
                                  className="resizeable_element ai-prose max-w-none break-words"
+                                 onClick={onAnswerActivate}
+                                 onKeyDown={onAnswerActivate}
                                  dangerouslySetInnerHTML={{__html: (props.aiAnswer ?? '') + (isLoading ? '<span class="ai-stream-cursor"></span>' : '')}}></div>
                         </div>
                     ) : !props.canUseAi ? (
@@ -117,6 +156,31 @@ export default function AI(props) {
                 answerModel={props.answerModel ?? null}
                 explanationModel={props.explanationModel ?? null}
             />
+            {/* The same WordPopup the text columns portal (WordText's mount
+                pattern), with everything the columns' ledger needs
+                structurally absent: no `language` prop — that absence is
+                what disables Ask-AI/adopt, so nothing is ever minted from
+                AI-answer text whose language is ambiguous; no familiarity
+                map (opens showing untouched, tokens untinted); no progress
+                recording (no sentence identity reaches this panel).
+                The columns' explain config rides along for toolbar parity
+                (ADR 0096 amendment): the toggle renders disabled (no
+                sentence context exists to ask about) and the robot opens
+                the Models used popup with the panel's answer + explanation
+                models. Resolution runs on the displayed answer's ask codes
+                — learning first, base fallback. */}
+            {popup && createPortal(
+                <WordPopup
+                    wordId={null}
+                    surface={popup.surface}
+                    rect={popup.rect}
+                    fontSize={props.popupFontSize}
+                    explain={props.explain ?? undefined}
+                    languageCodes={answerLanguageCodes(props.answerLanguages)}
+                    onClose={() => setPopup(null)}
+                />,
+                document.body,
+            )}
         </div>
     )
 }

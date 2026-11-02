@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-29T10:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T19:25:00+0300 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
@@ -31,7 +31,19 @@ sources:
     title: useSimulatorText (text engine: rows, paging, position store, side flip, familiarity)
   - id: ai-stream-hook
     resource: laravel/resources/js/Pages/Bilinguals/useAiStream.js
-    title: useAiStream (AI answer engine: SSE stream, aiPending, retry)
+    title: useAiStream (AI answer engine: SSE stream, aiPending, retry, answerLanguages snapshot)
+  - id: markdown-lib
+    resource: laravel/resources/js/lib/markdown.js
+    title: renderMarkdown (the shared markdown→HTML pipeline — the wordTokens option)
+  - id: ai-answer-tokens
+    resource: laravel/resources/js/lib/aiAnswerTokens.mjs
+    title: aiAnswerTokens (the token gate, the ask-time snapshot + ask-codes derivations, Node-tested)
+  - id: ai-panel
+    resource: laravel/resources/js/Pages/Bilinguals/Components/AI.jsx
+    title: AI (the answer panel — delegated token handling, popup portal)
+  - id: adr-ai-answer-words
+    resource: docs/adr/0096-ai-answer-word-lookup.md
+    title: ADR 0096 — AI-answer words are map-less and adopt-less; the popup opens instantly and resolves in place
   - id: question-hook
     resource: laravel/resources/js/Pages/Bilinguals/useAssessmentQuestion.js
     title: useAssessmentQuestion (question template / task-list split)
@@ -206,6 +218,38 @@ variants.
   `.ai-correction` spans, quotes in four styles — `"…"`, `«…»`, `“…”`, `‘…’`
   — → `<mark class="ai-quote">`, and `\d{1,3}%` scores →
   `<mark class="ai-score">` → DOMPurify sanitize.
+* The answer is an **interactive word surface** (ai-answer-words, ADR
+  0096): the engine calls `renderMarkdown(markdown, {wordTokens: true})`
+  at all three render sites — throttled mid-stream, final, error
+  keep-partial, so tokens exist while the answer still streams — the only
+  consumer that opts in, wrapping every tokenizer word in a focusable
+  `ai-word-token` span (the shared `wordTokenizer.mjs` keys in
+  `data-word-key`; code, tags and entities never wrap; the columns'
+  `word-token` classes are deliberately not reused so their tint/hover
+  styles stay out of the panel). **Ctrl+click** — Ctrl-only, never Cmd
+  (ADR 0030), gated through `lib/aiAnswerTokens.mjs` — or
+  **Ctrl+Enter/Ctrl+Space** on a focused token opens the columns'
+  WordPopup right from the panel: event **delegation on `#ai_answer_div`**
+  (click + keydown on the container; the answer HTML is rewritten
+  wholesale while streaming, so per-token handlers could not survive).
+  The popup **opens instantly** — a missing-mode mount (`wordId={null}`)
+  from the RAW token surface, before any network — and **resolves in
+  place**: ordered learning→base through `lib/wordLookup.js` against the
+  **ask's** language snapshot (`useAiStream.answerLanguages`, captured at
+  stream start — a side flip afterwards never changes it), a miss or
+  transport failure leaving the plain missing card — see
+  [interactive words](/domains/interactive-words.md). The surface is
+  map-less and adopt-less (ADR 0096): no word map ships for the answer
+  (tokens render untinted), and none of the columns' sentence-bound
+  ledger reaches the popup — no `language` prop (that absence disables
+  Ask-AI/adopt — nothing is ever minted from AI-answer text), no
+  familiarity map (opens untouched), no word-event recording. The
+  columns' explain config does ride down for toolbar parity (ADR 0096's
+  amendment, no sentence id attached): the resolved card's Explanation
+  toggle renders disabled (grey, non-responsive — no sentence context to
+  ask about) and the robot opens the Models used popup; while the
+  resolve is in flight the missing card holds the loading line, the
+  not-in-dictionary note only settling after it answers.
 * Styling in `public/css/simulator.css` (day + night, `--wbench-*` tokens;
   loaded page-scoped via a `<Head>` link in `Bilinguals.jsx`, not globally —
   the global `app.blade.php` link was removed in the 2026-09-23 reader-freeze
@@ -226,14 +270,22 @@ variants.
   (`DEFAULT_FONT_SIZE = 26` in `Bilinguals.jsx`, adjustable ±2px via the
   toolbar `+`/`−` buttons): `.ai-prose h1–h4` are mono-caps labels sized at
   `1.15em` so they stay visibly larger than body text at any size. The
-  **gloss-run hover** affordance on `#ai_answer_div` text elements casts a
-  soft gray shadow just below the glyphs
-  (`text-shadow: 1px 1px 5px rgb(128 128 128 / 50%)`) instead of a background
-  fill.
+  **gloss-run hover** affordance on `#ai_answer_div` text elements is a
+  pointer cursor everywhere plus a vellum background fill on hover (day +
+  night; the earlier text-shadow variant sits commented out in
+  `simulator.css`) — committed before the panel was interactive and
+  functional since the word tokens landed (ADR 0096); a word token
+  (`ai-word-token`) adds the columns' hover underline on top of the fill
+  (`text-decoration: underline`, `text-underline-offset: 2px` — the
+  columns' `.word-token:hover` affordance scoped to the panel), and a
+  focused token adds the columns' 2px accent focus ring
+  (`ai-word-token:focus-visible`).
 * The same `+`/`−` buttons also drive the **word-popup typography** (ADR
   0031): `popupFontSizeFor(font_size)` — 65% of the page font, floored at
   14px, capped at 32px — flows `Bilinguals` → `TextContent` → `WordText` →
-  `WordPopup`, whose width scales with it (560px at the default 17px). The
+  `WordPopup` for the columns and `Bilinguals` → `AI` → `WordPopup` for the
+  AI answer panel's popup, whose width scales with it (560px at the default
+  17px). The
   dictionary words themselves are selectable `role="button"` spans, so a
   plain double-click natively selects a word for browser extensions; the
   popup stays Ctrl+click (ADR 0030).
@@ -255,7 +307,16 @@ wiring over three page-local engine hooks (ADR 0066's layering;
   alone.
 * **`useAiStream`** — the AI answer engine: `POST /ai/question/stream`
   fetch-loop over the pinned SSE parser (`lib/sseStream.mjs`), throttled
-  markdown re-render, last-payload retry, and `aiPending`. Asking gates on
+  markdown re-render, last-payload retry, and `aiPending`. Each stream
+  start also snapshots the ask payload's language codes into
+  **`answerLanguages`** (`{learning, base}|null`) — the pure derivation is
+  `answerLanguagesFromPayload` in `lib/aiAnswerTokens.mjs` (Node-tested;
+  the hook owns only the when — at stream start — and the store): the
+  displayed answer's
+  tokens resolve against the ask that produced it, so a side flip after
+  the ask never changes resolution — Ask again re-captures by streaming
+  the stored payload through the same snapshot call. Null until the first
+  ask (no answer, no popup). Asking gates on
   `aiPending` alone — asking during a page fetch is allowed and streaming
   no longer disables page turns (the page's Spinner shows on either flag).
 * **`useAssessmentQuestion`** — the question template / task-list split

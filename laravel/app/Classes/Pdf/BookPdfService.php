@@ -36,23 +36,31 @@ class BookPdfService
      * the layout changes in a way that must invalidate every cached render
      * at once.
      */
-    private const DIGEST_VERSION = 'entity-book/v1';
+    private const DIGEST_VERSION = 'entity-book/v3';
 
     /**
      * Render-input version of the bilingual alignment books. Bump it when
      * the layout changes in a way that must invalidate every cached render
      * at once.
      */
-    private const MATCH_DIGEST_VERSION = 'alignment-book/v1';
+    private const MATCH_DIGEST_VERSION = 'alignment-book/v3';
 
     private array $tempIllustrations = [];
+
+    /**
+     * Sentence types that are not flowing body text. Each ends the open
+     * paragraph and renders as its own block, so the next body sentence
+     * starts a new paragraph implicitly.
+     */
+    private const NON_BODY_TYPES = ['title', 'subtitle', 'quote', 'footnote', 'caption', 'illustration'];
 
     public function __construct(private readonly EntityTextHasher $textHasher) {}
 
     /**
-     * The render digest: sha256 over the entity's fresh text hash
+     * The render digest: sha256 over the layout version constant (bumped
+     * when the layout changes wholesale), the entity's fresh text hash
      * (refreshIfStale — illustrations participate through their image_hash
-     * markers already) plus every title-page input.
+     * markers already), and every title-page input.
      */
     public function entityDigest(Entity $entity): string
     {
@@ -139,13 +147,14 @@ class BookPdfService
 
     /**
      * The rendered bilingual layout for one match: the title-page inputs
-     * plus the ordered rows, each carrying both sides' sentence cells in
-     * document order. The left column shows the work's original side when
-     * one is determinable, else canonical side a — the original marker
-     * rides the left side, and there is none when both are translations.
-     * Public so the view can be exercised without a full dompdf render.
+     * plus the ordered rows, each carrying both sides' composed book blocks
+     * in document order (paragraph flow stays within a cell). The left
+     * column shows the work's original side when one is determinable, else
+     * canonical side a — the original marker rides the left side, and there
+     * is none when both are translations. Public so the view can be
+     * exercised without a full dompdf render.
      *
-     * @return array{work: ?Work, left: array{entity: ?Entity, language: ?Language, is_original: bool}, right: array{entity: ?Entity, language: ?Language, is_original: bool}, rows: list<array{order: int, left: list<array{type: string, content: ?string, image: ?string}>, right: list<array{type: string, content: ?string, image: ?string}>}>}
+     * @return array{work: ?Work, left: array{entity: ?Entity, language: ?Language, is_original: bool}, right: array{entity: ?Entity, language: ?Language, is_original: bool}, rows: list<array{order: int, left: list<array{type: string, content: ?string, image?: ?string}>, right: list<array{type: string, content: ?string, image?: ?string}>}>}
      */
     public function alignmentViewData(EntityMatch $match): array
     {
@@ -162,10 +171,22 @@ class BookPdfService
         $rows = [];
 
         foreach ($this->meaningMatches($match) as $meaningMatch) {
+            $leftBlocks = $this->composeBookBlocks(
+                $this->cellSentences($this->sideSentences($meaningMatch, $leftSide)),
+            );
+            $rightBlocks = $this->composeBookBlocks(
+                $this->cellSentences($this->sideSentences($meaningMatch, $rightSide)),
+            );
+
             $rows[] = [
                 'order' => (int) $meaningMatch->order,
-                'left' => $this->cellSentences($this->sideSentences($meaningMatch, $leftSide)),
-                'right' => $this->cellSentences($this->sideSentences($meaningMatch, $rightSide)),
+                // A title on either side lifts the row out of the columns
+                // into the shared chapter heading (the blade closes the
+                // table around it — dompdf cannot page-break inside table
+                // rows).
+                'chapter' => $this->carriesTitle($leftBlocks) || $this->carriesTitle($rightBlocks),
+                'left' => $leftBlocks,
+                'right' => $rightBlocks,
             ];
         }
 
@@ -187,11 +208,11 @@ class BookPdfService
 
     /**
      * The rendered book layout for one entity: the title-page inputs plus
-     * every sentence as a view row (type, plain content, embeddable image
-     * path). Public so the view can be exercised without a full dompdf
-     * render.
+     * the composed book blocks (flowing paragraphs, chapter titles,
+     * subtitles, quotes, footnotes, captions, illustrations). Public so the
+     * view can be exercised without a full dompdf render.
      *
-     * @return array{work: Work, entity: Entity, language: Language, sentences: list<array{type: string, content: ?string, image: ?string}>}
+     * @return array{work: Work, entity: Entity, language: Language, blocks: list<array{type: string, content: ?string, image?: ?string}>}
      */
     public function entityViewData(Entity $entity): array
     {
@@ -208,8 +229,103 @@ class BookPdfService
             'work' => $entity->work,
             'entity' => $entity,
             'language' => $entity->language,
-            'sentences' => $this->cellSentences($sentences),
+            'blocks' => $this->composeBookBlocks($this->cellSentences($sentences)),
         ];
+    }
+
+    /**
+     * Whether the composed blocks hold a `title` — the marker that lifts a
+     * row out of the two-column spread into a chapter page.
+     *
+     * @param  list<array{type: string, content: ?string, image?: ?string}>  $blocks
+     */
+    private function carriesTitle(array $blocks): bool
+    {
+        return in_array('title', array_column($blocks, 'type'), true);
+    }
+
+    /**
+     * Compose typed sentence rows into the book's blocks. Consecutive body
+     * sentences concatenate into one flowing paragraph (each trimmed,
+     * joined with single spaces); a `paragraph`-typed sentence opens a new
+     * paragraph, and a paragraph also starts implicitly at the document
+     * start and after any non-body element, even on a plain `sentence` —
+     * so texts without any `paragraph`-typed rows still read like a book.
+     * Non-body types pass through as their own blocks, except that
+     * adjacent titles stack into a single heading (newline-separated
+     * lines; the blades split them into stacked chapter lines) — two
+     * consecutive forced page breaks would strand the first title alone
+     * on its page. Empty body sentences disappear. Unknown types stay
+     * body text — they have always rendered as paragraphs.
+     *
+     * Public so books can be composed — and their layout exercised —
+     * without a full dompdf render.
+     *
+     * @param  list<array{type: string, content: ?string, image?: ?string}>  $sentences
+     * @return list<array{type: string, content: ?string, image?: ?string}>
+     */
+    public function composeBookBlocks(array $sentences): array
+    {
+        $blocks = [];
+        $paragraph = [];
+
+        // Emit the open paragraph, if it gathered any text.
+        $flush = function () use (&$paragraph, &$blocks): void {
+            if ($paragraph !== []) {
+                $blocks[] = ['type' => 'paragraph', 'content' => implode(' ', $paragraph)];
+                $paragraph = [];
+            }
+        };
+
+        foreach ($sentences as $sentence) {
+            $type = $sentence['type'] ?? 'sentence';
+
+            if (in_array($type, self::NON_BODY_TYPES, true)) {
+                $flush();
+
+                $block = $type === 'illustration'
+                    ? [
+                        'type' => 'illustration',
+                        'content' => $sentence['content'] ?? null,
+                        'image' => $sentence['image'] ?? null,
+                    ]
+                    : ['type' => $type, 'content' => $sentence['content'] ?? null];
+
+                // Merge into a run of adjacent titles (both ends must
+                // carry text; blank titles pass through as before).
+                $last = array_key_last($blocks);
+                $stacks = $type === 'title'
+                    && $last !== null
+                    && $blocks[$last]['type'] === 'title'
+                    && trim((string) ($blocks[$last]['content'] ?? '')) !== ''
+                    && trim((string) ($block['content'] ?? '')) !== '';
+
+                if ($stacks) {
+                    $blocks[$last]['content'] .= "\n".$block['content'];
+                } else {
+                    $blocks[] = $block;
+                }
+
+                continue;
+            }
+
+            // Flowing body text; whitespace-only rows contribute nothing.
+            $content = trim((string) ($sentence['content'] ?? ''));
+
+            if ($content === '') {
+                continue;
+            }
+
+            if ($type === 'paragraph' || $paragraph === []) {
+                $flush();
+            }
+
+            $paragraph[] = $content;
+        }
+
+        $flush();
+
+        return $blocks;
     }
 
     /**

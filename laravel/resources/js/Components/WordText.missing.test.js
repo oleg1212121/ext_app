@@ -187,6 +187,18 @@ describe('MissingPopupContent', () => {
         expect(missingContentSource).toContain('word-popup-missing');
     });
 
+    it('holds the loading line while the on-open resolve is in flight (ADR 0096 amendment)', () => {
+        // The not-in-dictionary note is a verdict — it may only show once
+        // the resolve answered. While `resolving` the body renders the
+        // shared word.loading line instead (the same string the detail
+        // fetch's word-popup-loading uses); the note keeps its own hook and
+        // settles back in on a miss.
+        expect(missingContentSource).toMatch(/export function MissingPopupContent\(\{[^}]*resolving = false/);
+        expect(missingContentSource).toContain('{resolving ? (');
+        expect(missingContentSource).toContain("t('word.loading')");
+        expect(missingContentSource).toContain('word-popup-loading');
+    });
+
     it('carries only the Ask-AI icon — live, but no progress, Anki, explain, robot', () => {
         expect(missingContentSource).toContain('word-popup-ask-ai');
         expect(missingContentSource).toContain("t('word.ask_ai')");

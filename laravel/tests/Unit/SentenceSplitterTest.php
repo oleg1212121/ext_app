@@ -6,6 +6,7 @@ use App\Classes\SparseOrderService;
 use App\Jobs\ProcessEntityFile;
 use App\Jobs\SplitEntityFileSentences;
 use App\Models\SentenceType;
+use Database\Seeders\SentenceTypeSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Bus;
@@ -48,6 +49,59 @@ function fakePythonSplitter(): void
             $last = array_pop($sentences)['content'];
             $pos = strrpos($text, $last);
             $remainder = $pos === false ? $last : substr($text, $pos);
+        }
+
+        return Http::response(['sentences' => $sentences, 'remainder' => $remainder]);
+    });
+}
+
+/**
+ * Emulates the paragraph-aware python /split contract (see
+ * ai/splitting/test_paragraph_typing.py): blank-line separated blocks,
+ * paragraph typing for block-opening sentences, the leading-blank-line
+ * marker for a document-start buffer, and the same marker carried on a
+ * remainder that holds a paragraph-typed sentence.
+ */
+function fakeParagraphPythonSplitter(): void
+{
+    Http::fake(function (Request $request) {
+        $text = (string) ($request->data()['text'] ?? '');
+        $finalize = (bool) ($request->data()['finalize'] ?? false);
+
+        $startsWithParagraphMark = str_starts_with($text, "\n\n");
+        $normalized = trim($text);
+
+        $sentences = [];
+        if ($normalized !== '') {
+            $blocks = preg_split('/\n\s*\n/', $normalized) ?: [];
+            $blockIndex = 0;
+            foreach ($blocks as $block) {
+                $block = trim($block);
+                if ($block === '') {
+                    continue;
+                }
+                $parts = preg_split('/(?<=[.!?])\s+/', $block, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+                foreach ($parts as $partIndex => $part) {
+                    $sentences[] = [
+                        'content' => $part,
+                        'type' => $partIndex === 0
+                            && ($blockIndex > 0 || ($blockIndex === 0 && $startsWithParagraphMark))
+                            ? 'paragraph'
+                            : 'sentence',
+                    ];
+                }
+                $blockIndex++;
+            }
+        }
+
+        $remainder = '';
+        if (! $finalize && $sentences !== []) {
+            $last = array_pop($sentences);
+            $pos = strrpos($text, $last['content']);
+            $remainder = $pos === false ? $last['content'] : substr($text, $pos);
+            if ($last['type'] === 'paragraph') {
+                $remainder = "\n\n".$remainder;
+            }
         }
 
         return Http::response(['sentences' => $sentences, 'remainder' => $remainder]);
@@ -407,8 +461,13 @@ it('resumes from a mid-file offset without re-reading committed text', function 
 
     $splitter->process($entity->id, $filePath);
 
-    // One chunk per run: the run consumed exactly the bytes it sent.
-    $firstRunEnd = max(array_map(strlen(...), $requests));
+    // One chunk per run: the run consumed exactly the bytes it sent. The
+    // document-start request carries a 2-byte leading blank line marker
+    // that is not file bytes — subtract it before comparing.
+    $firstRunEnd = max(array_map(
+        fn (string $text): int => strlen($text) - (str_starts_with($text, "\n\n") ? 2 : 0),
+        $requests,
+    ));
     expect($entity->fresh()->split_offset)->toBe($firstRunEnd);
 
     $requests = [];
@@ -489,4 +548,73 @@ it('decodes html numeric character references before splitting', function () {
         ->toContain('т')
         ->not->toContain('&#252;')
         ->not->toContain('&#1090;');
+});
+
+it('types paragraph-opening sentences through the streamed pipeline', function () {
+    app(SentenceTypeSeeder::class)->run();
+    config(['services.python.sentence_split_chunk_bytes' => 24]);
+
+    fakeParagraphPythonSplitter();
+
+    $text = "First para opens. First para continues with more words.\n\n"
+        ."Second para opens. Second para continues too.\n\n"
+        .'Final one-sentence para.';
+    $filePath = 'entities/'.uniqid('para_', true).'.txt';
+    Storage::disk('local')->put($filePath, $text);
+
+    $entity = createEntity('en', null, ['name' => 'Paragraphs', 'file_path' => $filePath]);
+
+    makeSplitter()->process($entity->id, $filePath);
+
+    $types = $entity->sentences()
+        ->with('sentenceType')
+        ->orderBy('order')
+        ->get()
+        ->map(fn ($sentence): array => [$sentence->content, $sentence->sentenceType->name])
+        ->all();
+
+    // The last paragraph holds a single sentence: its paragraph type can
+    // only survive through python's hold-back + the finalize call, i.e.
+    // the paragraph marker carried on the stored remainder.
+    expect($types)->toEqual([
+        ['First para opens.', 'paragraph'],
+        ['First para continues with more words.', 'sentence'],
+        ['Second para opens.', 'paragraph'],
+        ['Second para continues too.', 'sentence'],
+        ['Final one-sentence para.', 'paragraph'],
+    ]);
+
+    // Document start: the first python request of a fresh run carries the
+    // leading blank line paragraph marker.
+    $firstRequestText = collect(Http::recorded())->first()[0]->data()['text'];
+    expect($firstRequestText)->toStartWith("\n\n");
+});
+
+it('types paragraph-opening sentences identically when splitting in memory', function () {
+    app(SentenceTypeSeeder::class)->run();
+
+    fakeParagraphPythonSplitter();
+
+    $text = "First para opens. First para continues with more words.\n\n"
+        ."Second para opens. Second para continues too.\n\n"
+        .'Final one-sentence para.';
+    $filePath = 'entities/'.uniqid('para_mem_', true).'.txt';
+    Storage::disk('local')->put($filePath, $text);
+
+    $entity = createEntity('en', null, ['name' => 'ParagraphsMemory', 'file_path' => $filePath]);
+
+    makeSplitter()->process($entity->id, $filePath, $text);
+
+    expect($entity->sentences()
+        ->with('sentenceType')
+        ->orderBy('order')
+        ->get()
+        ->map(fn ($sentence): array => [$sentence->content, $sentence->sentenceType->name])
+        ->all())->toEqual([
+            ['First para opens.', 'paragraph'],
+            ['First para continues with more words.', 'sentence'],
+            ['Second para opens.', 'paragraph'],
+            ['Second para continues too.', 'sentence'],
+            ['Final one-sentence para.', 'paragraph'],
+        ]);
 });

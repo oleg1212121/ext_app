@@ -1,14 +1,20 @@
 """Typed sentence segmentation for the /split endpoint.
 
 Combines a configurable sentence boundary detector (``razdel`` or ``pysbd``)
-with title/quote typing heuristics ported from the old PHP splitter.
+with title/quote/paragraph typing heuristics ported from the old PHP
+splitter (paragraph typing is new — see ``split``).
 
 Title detection is line-based (a short stand-alone line).  Buffered prose
 is handed to the chosen backend.  When the backend is ``pysbd``,
 newlines are selectively flattened so that pysbd's quote-region heuristic
 cannot merge long dialogue spans into a single "sentence" while mid-sentence
 hard wraps are still collapsed.  When the backend is ``razdel`` this step
-is skipped because razdel does not have the quote-region bug.
+is skipped because razdel does not have the quote-region bug.  Paragraph
+detection runs on the line structure BEFORE that flattening: the buffer is
+cut into blocks at blank lines, and the first sentence of each block (plus
+the sentence right after a title line, plus a document-start buffer —
+marked by a leading blank line) types ``paragraph`` instead of plain
+``sentence`` when nothing else claims it.
 """
 
 from __future__ import annotations
@@ -85,7 +91,21 @@ class TypedSentenceSplitter:
         Returns (sentences, remainder). With finalize=False the last
         sentence is held back as the remainder so callers can stream a
         file chunk by chunk without cutting a sentence in half.
+
+        A sentence predicted ``sentence`` is typed ``paragraph`` when it
+        opens a paragraph: the first sentence of the document, the first
+        after a blank line, or the first after a title line (``quote`` /
+        ``title`` predictions keep their type — they break flow visually
+        anyway). Streaming carries the paragraph-start position in the
+        text itself: a buffer that *begins* with a blank line is a
+        paragraph start — the PHP caller marks a document-start buffer
+        that way, and when the held-back sentence below is
+        paragraph-typed the remainder gets the same blank-line prefix so
+        the next request re-derives the type (normalize strips the
+        leading blank line, so the marker must be read off the raw text
+        here, before normalize).
         """
+        starts_paragraph = text.startswith("\n\n")
         normalized = self.normalize(text)
         # Apply language-specific preprocessing (quote normalisation, noise
         # removal, German date protection, etc.) before splitting.
@@ -95,27 +115,60 @@ class TypedSentenceSplitter:
 
         if normalized:
             buffer_lines: list[str] = []
+            # Whether the first sentence of the buffer's first block opens
+            # a paragraph (document start / carried marker / title above).
+            pending_paragraph_start = starts_paragraph
 
             def flush_buffer() -> None:
+                nonlocal pending_paragraph_start
                 if not buffer_lines:
                     return
-                raw = "\n".join(buffer_lines)
-                # pysbd needs selective newline flattening; razdel does not.
-                if self.backend == "pysbd":
-                    raw = self.selective_flatten(raw)
-                pending = raw.strip()
+                # Split the buffer into paragraph blocks at blank lines
+                # BEFORE pysbd's selective newline flattening: a blank line
+                # is a paragraph break, and flattening first would reduce
+                # it to whitespace inside one text (pysbd's dialogue
+                # handling stays untouched — blocks flatten exactly as
+                # before, just one per paragraph).
+                blocks: list[list[str]] = []
+                current: list[str] = []
+                for line in buffer_lines:
+                    if line.strip():
+                        current.append(line)
+                    elif current:
+                        blocks.append(current)
+                        current = []
+                if current:
+                    blocks.append(current)
                 buffer_lines.clear()
-                if not pending:
-                    return
-                for sentence in self.splitter.split_text(pending):
-                    sentences.append(
-                        {"content": sentence, "type": self.typer.predict_type(sentence)}
-                    )
+
+                for block_index, block in enumerate(blocks):
+                    raw = "\n".join(block)
+                    # pysbd needs selective newline flattening; razdel does not.
+                    if self.backend == "pysbd":
+                        raw = self.selective_flatten(raw)
+                    pending = raw.strip()
+                    if not pending:
+                        continue
+                    for sentence_index, sentence in enumerate(
+                        self.splitter.split_text(pending)
+                    ):
+                        sentence_type = self.typer.predict_type(sentence)
+                        if (
+                            sentence_index == 0
+                            and sentence_type == "sentence"
+                            and (block_index > 0 or pending_paragraph_start)
+                        ):
+                            sentence_type = "paragraph"
+                        sentences.append(
+                            {"content": sentence, "type": sentence_type}
+                        )
+                pending_paragraph_start = False
 
             for line in normalized.split("\n"):
                 if line and self.typer.is_likely_title_line(line):
                     flush_buffer()
                     sentences.append({"content": line, "type": "title"})
+                    pending_paragraph_start = True
                 else:
                     buffer_lines.append(line)
 
@@ -133,7 +186,16 @@ class TypedSentenceSplitter:
 
         remainder = ""
         if sentences and not finalize:
-            remainder = self._raw_tail(text, sentences.pop()["content"])
+            held_back = sentences.pop()
+            remainder = self._raw_tail(text, held_back["content"])
+            if held_back["type"] == "paragraph":
+                # Carry the paragraph-start position across the chunk
+                # boundary: the blank line rides on the raw remainder (it is
+                # the caller's stitching prefix, never sentence content) and
+                # re-marks the sentence as a paragraph start on the next
+                # request. Title/quote types re-derive from content alone,
+                # so they need no carry.
+                remainder = "\n\n" + remainder
 
         return sentences, remainder
 

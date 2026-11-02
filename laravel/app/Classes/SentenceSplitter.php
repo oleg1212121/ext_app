@@ -63,7 +63,11 @@ class SentenceSplitter
         $order = 0;
         $stats = ['sentences' => 0, 'batches' => 0, 'bytes_read' => strlen($content), 'max_buffer_bytes' => strlen($content), 'eof' => true];
 
-        $result = $this->splitViaPython($content, $lang, true);
+        // Leading blank line = paragraph-start marker: tells python this
+        // buffer begins the document, so its first sentence types
+        // `paragraph` (the splitter carries the same marker on a
+        // paragraph-typed remainder — see insertSentencesFromFile).
+        $result = $this->splitViaPython("\n\n".$content, $lang, true);
 
         foreach ($result['sentences'] as $sentence) {
             $this->appendSentenceToBatch($sentence, $entityId, $defaultTypeId, $batch, $order);
@@ -117,6 +121,11 @@ class SentenceSplitter
         $order = $freshRun ? 0 : $entity->sentences()->count();
         $chunksThisRun = 0;
         $eof = false;
+        // Leading blank line = paragraph-start marker: the first buffer of a
+        // fresh run begins the document, so python types its first sentence
+        // `paragraph`. Cleared only when a python call actually happens, so
+        // a whitespace-only leading chunk does not consume the mark.
+        $docStart = $freshRun;
         $stats = ['sentences' => 0, 'batches' => 0, 'bytes_read' => 0, 'max_buffer_bytes' => 0, 'eof' => false];
 
         try {
@@ -145,7 +154,8 @@ class SentenceSplitter
                 $stats['max_buffer_bytes'] = max($stats['max_buffer_bytes'], strlen($buffer));
 
                 if (trim($buffer) !== '') {
-                    $result = $this->splitViaPython($buffer, $lang, false);
+                    $result = $this->splitViaPython($docStart ? "\n\n".$buffer : $buffer, $lang, false);
+                    $docStart = false;
                     $remainder = $result['remainder'];
                     $this->appendSentences($result['sentences'], $entity->id, $defaultTypeId, $batch, $order);
                 }
@@ -163,7 +173,10 @@ class SentenceSplitter
                 // End of file: the carry and the tail remainder were never
                 // sentence-delimited — finalize them through python, then
                 // persist the completion point (offset = file size, no
-                // remainder) so no run ever revisits this file.
+                // remainder) so no run ever revisits this file. This is not
+                // a document start (no marker): the remainder may carry
+                // python's own leading-blank-line paragraph marker, which
+                // this call consumes.
                 $remainder .= $rawCarry;
 
                 if (trim($remainder) !== '') {

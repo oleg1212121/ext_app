@@ -309,6 +309,27 @@ function fakePython(): FakePythonClient
 
 /*
 |--------------------------------------------------------------------------
+| Book-PDF view fixtures (entity + alignment books)
+|--------------------------------------------------------------------------
+|
+| Defined here — not inside a single test file — because EntityPdfTest and
+| AlignmentPdfTest both assert on the same rendered book markup, and Pest's
+| parallel workers each load a subset of files.
+*/
+
+/**
+ * The body of a CSS rule from a rendered view, or null when the
+ * selector is absent.
+ */
+function pdfCssRule(string $html, string $selector): ?string
+{
+    preg_match('/'.preg_quote($selector, '/').' \{([^}]*)\}/', $html, $matches);
+
+    return $matches[1] ?? null;
+}
+
+/*
+|--------------------------------------------------------------------------
 | Filament admin fixtures
 |--------------------------------------------------------------------------
 |

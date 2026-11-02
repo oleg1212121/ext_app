@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Interactive Words
-description: Interactive words on the reader and bilinguals simulator — every tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (ADR 0030); dictionary-linked tokens open a word popup aggregating the word family (ADR 0045 + 0047, stable-sorted live-before-demoted then completeness-descending, ADR 0083) with an action toolbar — per-word Anki send (ADR 0077), an on-demand AI Context explanation, and the ledger-tracked, re-askable Ask-AI enrichment (ADR 0082) — per-user block visibility (ADR 0046) and typography following the host page's font (ADR 0031). Unmapped tokens open a missing-word card whose Ask-AI icon adopts onto the existing row or mints one word through the ADR 0081 lookup key (the card re-resolves on open so an adopt stays found, ADR 0079). Segmentation is render-time (ADR 0027), familiarity events are ledger-deduped (ADR 0028), and missing translations auto-fetch in the background (Yandex→Google, link-only, ledger-deduped with a permanent exclusions list).
+description: Interactive words on the reader and bilinguals simulator — every tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (ADR 0030); dictionary-linked tokens open a word popup aggregating the word family (ADR 0045 + 0047, stable-sorted live-before-demoted then completeness-descending, ADR 0083) with an action toolbar — per-word Anki send (ADR 0077), an on-demand AI Context explanation, and the ledger-tracked, re-askable Ask-AI enrichment (ADR 0082) — per-user block visibility (ADR 0046) and typography following the host page's font (ADR 0031). Unmapped tokens open a missing-word card whose Ask-AI icon adopts onto the existing row or mints one word through the ADR 0081 lookup key (the card re-resolves on open so an adopt stays found, ADR 0079). The simulator's streamed AI answer is a third interactive surface (ADR 0096): its tokens open the same popup missing-first, ordered learning→base over the ask's language snapshot, map-less and adopt-less. Segmentation is render-time (ADR 0027), familiarity events are ledger-deduped (ADR 0028), and missing translations auto-fetch in the background (Yandex→Google, link-only, ledger-deduped with a permanent exclusions list).
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-01T19:56:23+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T16:15:00+0000 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -80,6 +80,12 @@ sources:
   - id: word-popup
     resource: laravel/resources/js/Components/WordPopup.jsx
     title: WordPopup (lazy detail popup — toolbar + always-rendered dictionary, no tab strip)
+  - id: word-lookup-lib
+    resource: laravel/resources/js/lib/wordLookup.js
+    title: wordLookup.js (the popup's lookup POST — the ordered resolver; a single-code list is the old single-code contract)
+  - id: adr-ai-answer-words
+    resource: docs/adr/0096-ai-answer-word-lookup.md
+    title: ADR 0096 (AI-answer words are map-less and adopt-less — the ordered resolve's first consumer)
   - id: usage-label-display
     resource: laravel/resources/js/lib/usageLabelDisplay.js
     title: usageLabelDisplay.js (the usage-label display tiers — DIMMING/REGISTER sets, chips + Anki prefix helpers)
@@ -140,7 +146,9 @@ only toolbar elements
 the `progress_actions` visibility opt-out still hides; inapplicable
 toolbar icons disable rather than disappear, and the Explanation toggle +
 robot additionally require an explain payload and answer to the ADR 0046
-`explanation` key). There is **no tab strip**: the dictionary content always
+`explanation` key — a payload without a sentence id, the AI-answer mount's
+(ADR 0096 amendment), renders the toggle disabled for toolbar parity while
+the robot stays live). There is **no tab strip**: the dictionary content always
 renders, and a hairline closes the header block (word / familiarity /
 frequency / form-of). Unmapped tokens open the **missing-word card**
 (below) instead. A plain click does
@@ -150,7 +158,15 @@ dictionaries) can act on it. Their text is
 tinted by the reader's **Word familiarity** (0–19 → rose, 20–59 →
 amber, 60–99 → verdigris, ≥ 100 → green). Revealing a sentence pair on the
 simulator credits its words a read (+1); opening a word's popup costs a
-lookup (−2), once per word per sentence pair on both surfaces. All
+lookup (−2), once per word per sentence pair on both surfaces. Since
+ai-answer-words (ADR 0096) the simulator's streamed AI answer is a third
+interactive surface: its markdown-rendered tokens (a dedicated
+`ai-word-token` class — hover- and focus-underlined like the columns'
+tokens, scoped to the panel) open the same popup missing-first, resolved
+learning→base over the ask's language snapshot — **map-less and
+adopt-less**, no ledger, with the columns' explain config riding for
+toolbar parity (a disabled Explanation toggle — no sentence context
+exists — and a live robot; ADR 0096's amendment). All
 segmentation is derived at render time — **no word positions are stored
 anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
 
@@ -389,7 +405,10 @@ surface** as the title — the folded `l_word` key would show ё-folded,
 mark-stripped text — and one honest note, `word.not_in_dictionary` ("This
 word isn't in the dictionary yet."). **Almost nothing runs on open**: the
 one request is ticket 07's re-resolution lookup (below) when a column
-descriptor exists; no `GET /words/` fires until it resolves an id (the
+descriptor exists — and while it is in flight the card's body holds the
+shared "Loading…" line instead of the not-in-dictionary note (the note is
+a verdict; ADR 0096's amendment), settling back in on a miss; no
+`GET /words/` fires until it resolves an id (the
 detail-fetch effect returns before its fetch while `fetchId` — `wordId ??
 lookedUpId` — is null), no `/word-events` lookup (there is no word id to
 ledger), and no familiarity / frequency / form-of lines. The toolbar shows
@@ -451,9 +470,13 @@ runs no scheduler), so after any reload the token re-opened the missing
 card with a live Ask-AI icon over an already-asked word. The popup now
 re-resolves the surface server-side before the missing card settles:
 
-* **The read path.** On open in missing mode with a column language
-  descriptor (the same condition the ask uses), `WordPopup.jsx` POSTs
-  `POST /words/lookup` `{surface, language_code}` once (`WordLookupRequest`
+* **The read path.** On open in missing mode with a language to resolve
+  against, the popup POSTs `POST /words/lookup` `{surface, language_code}`
+  once — through `lib/wordLookup.js` since ai-answer-words ticket 02
+  (a single-code list is the exact old component helper's contract; the
+  module is pure w.r.t. fetch and unit-tested in Node — the review pass
+  unexported the standalone single-code wrapper, no caller of its own)
+  (`WordLookupRequest`
   mirrors the adoption-mode validation rules; throttle 60/min,
   auth+approved). The endpoint answers `{data: {word_id: int|null}}` — the
   id ALONE: the popup then fetches the full payload through the existing
@@ -479,6 +502,52 @@ re-resolves the surface server-side before the missing card settles:
   effect guards late answers with the fetch effect's `cancelled` pattern
   (popup closed / surface moved drop the response). No descriptor → no
   lookup, the card as ticket 03 rendered it.
+* **Ordered resolve (ai-answer-words ticket 02).** The popup accepts an
+  ordered `languageCodes` list alongside the single column `language`
+  descriptor: `resolveWordId` runs the codes in list order, the first
+  non-null word id wins (short-circuit — later codes never fire), a miss
+  falls through to the next code, and ANY transport failure collapses the
+  whole sequence to null immediately — the same plain-missing-card
+  degradation, never an error state, and a broken transport never hammers
+  the remaining codes. `lookupBusy` and the cancelled stale-guard span the
+  whole sequence (the resolve list keys as a joined string, so an
+  inline-array prop cannot re-trigger the effect). Without the prop the
+  resolve runs against the single column language exactly as before — the
+  reader and simulator text columns pass no list. The ask-AI/adopt gating
+  stays keyed on the single `language` prop regardless: an ordered list
+  never enables adoption.
+* **First consumer of the ordered list: the AI answer panel
+  (ai-answer-words ticket 03).** Every word token of the simulator's
+  streamed AI answer (rendered through `renderMarkdown`'s off-by-default
+  `wordTokens` option as dedicated `ai-word-token` spans — never the
+  columns' `word-token` classes, so the columns' tint/hover styles do not
+  leak into the panel) opens this same popup. The handling is **event
+  delegation on the `#ai_answer_div` container** (click + keydown; tokens
+  found via `event.target.closest('[data-word-key]')`) because the answer
+  HTML is rewritten wholesale while streaming — a per-token handler could
+  never survive mid-stream. The gesture is ADR 0030's, Ctrl-only through
+  the shared `lib/aiAnswerTokens.mjs` gate (Cmd never triggers;
+  Ctrl+Enter/Ctrl+Space keyboard parity; Ctrl+click inside a link is
+  prevented from navigating), and the popup mounts in a `document.body`
+  portal in **missing mode (`wordId={null}`)** from the RAW token surface.
+  Resolution runs on the **displayed answer's ask codes** —
+  `languageCodes=[learning, base]` snapshotted from the ask payload the
+  moment the stream started (`useAiStream.answerLanguages`, derived by the
+  pure `answerLanguagesFromPayload` in `lib/aiAnswerTokens.mjs`; a side
+  flip after the ask never changes resolution, Ask again re-captures) — and the
+  mount passes **no `language` prop**: that structural absence keeps
+  Ask-AI/adopt disabled, so nothing is ever minted into the dictionary
+  from AI-answer text. Nothing else of the columns' ledger reaches it
+  either: no familiarity map (opens showing untouched, tokens untinted)
+  and no word-event recording (no sentence identity exists for an AI
+  answer). The columns' **explain config does ride along** (ADR 0096's
+  amendment, threaded Bilinguals → AI → WordPopup without a sentence id):
+  once the resolve hits, the dictionary card's toolbar shows the
+  Explanation toggle **disabled** (grey, non-responsive — no sentence
+  context to ask about) and the robot **live** (the Models used popup
+  with the answer + explanation models, matching the panel header's own
+  robot); a miss leaves the missing card, whose toolbar is the columns'
+  own Ask-AI-only card (its icon disabled — no `language`).
 * **The 409 sync.** A 409 from the ask (the fresh-pending "in progress"
   gate — the only enrich 409 left since the ADR 0082 re-ask amendment)
   no longer leaves the ask state stale: the known path refetches
@@ -1028,3 +1097,22 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   side by `explainable`), fires read
   events from the row/column checkboxes, and enables the popup's Context
   explanation toggle.
+* **Bilinguals simulator AI answer panel** (ai-answer-words, ADR 0096):
+  the streamed answer's tokens — `ai-word-token` spans rendered by
+  `renderMarkdown`'s off-by-default `wordTokens` option, never the
+  columns' `word-token` classes — open the same popup through **event
+  delegation on the `#ai_answer_div` container** (the answer HTML is
+  rewritten wholesale while streaming, so per-token handlers could not
+  survive), the gesture ADR 0030's, gated through
+  `lib/aiAnswerTokens.mjs`. The mount is **map-less and adopt-less**:
+  missing mode (`wordId={null}`) from the RAW token surface, opening
+  instantly before any network and resolving in place by the ordered
+  learning→base resolve over the ask's language snapshot
+  (`useAiStream.answerLanguages`), and passing **no `language` prop** —
+  Ask-AI/adopt stay disabled, nothing is ever minted from AI-answer
+  text; no familiarity map, no word-event recording. The columns'
+  explain config rides for toolbar parity (disabled Explanation toggle +
+  live robot, no sentence id — ADR 0096's amendment), and the tokens
+  carry the columns' hover-underline affordance scoped to the panel
+  (simulator.css). The deep description lives in the re-resolution
+  section's ordered-resolve and first-consumer bullets above.

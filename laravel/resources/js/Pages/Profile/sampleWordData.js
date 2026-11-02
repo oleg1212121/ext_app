@@ -96,7 +96,11 @@ export const SAMPLE_DATA = {
 }
 
 export const SAMPLE_FAMILIARITY = 40
-export const SAMPLE_EXPLAIN = {rowKind: 'preview', rowId: 1, modelKey: 'preview', enabled: true, modelLabel: 'Sample model', followsAnswer: false}
+// `sentenceId` keeps the preview's Explanation toggle enabled: PopupContent
+// disables a payload without sentence identity (the AI-answer mount's
+// no-context case, ADR 0096 amendment), and the preview stands in for a
+// real clicked column popup — its canned answer never posts anyway.
+export const SAMPLE_EXPLAIN = {rowKind: 'preview', rowId: 1, sentenceId: 1, modelKey: 'preview', enabled: true, modelLabel: 'Sample model', followsAnswer: false}
 
 // Anki preview only: the fixture carries no `tags` (the real popup passes
 // the payload's `tags: [names]`), so the tab's card preview and sample card
