@@ -250,6 +250,19 @@ describe('WordPopup action toolbar', () => {
         expect(toolbar.match(/showExplain &&/g)).toHaveLength(2);
     });
 
+    it('disables the toggle on a payload without sentence identity — the AI-answer mount (ADR 0096 amendment)', () => {
+        // Toolbar parity without a false promise: the AI-answer mount passes
+        // the columns' explain config but no sentence context exists to ask
+        // about, so the toggle renders disabled — grey through the shared
+        // class's disabled:opacity-40, non-responsive as a disabled button —
+        // while the robot beside it stays live.
+        expect(contentSource).toMatch(
+            /const explainDisabled = explainProps != null && explainProps\.sentenceId == null;/,
+        );
+        expect(buttonIn('word-popup-explain-toggle')).toContain('disabled={explainDisabled}');
+        expect(buttonIn('word-popup-models-button')).not.toContain('disabled=');
+    });
+
     it('toggles the Explanation pane: pressed state, click to show, click to hide', () => {
         const toggle = buttonIn('word-popup-explain-toggle');
         // Pressed semantics travel to assistive tech…
@@ -465,5 +478,14 @@ describe('Popups tab preview', () => {
         // The preview keeps the explain payload + canned-answer flag that
         // make the Explanation toggle render its pane without any request.
         expect(previewSource).toContain('preview');
+    });
+
+    it('keeps the preview’s Explanation toggle enabled — the sample payload carries a sentence id', () => {
+        // PopupContent disables a sentence-less payload (the AI-answer
+        // mount's no-context case, ADR 0096 amendment); the preview stands
+        // in for a real clicked column popup, so SAMPLE_EXPLAIN carries one
+        // — its pane is the canned answer and never posts either way.
+        const sampleSource = readFileSync(new URL('../Pages/Profile/sampleWordData.js', import.meta.url), 'utf8');
+        expect(sampleSource).toMatch(/SAMPLE_EXPLAIN = \{[^}]*sentenceId: 1/);
     });
 });

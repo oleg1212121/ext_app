@@ -161,16 +161,21 @@ export default function AI(props) {
                 structurally absent: no `language` prop — that absence is
                 what disables Ask-AI/adopt, so nothing is ever minted from
                 AI-answer text whose language is ambiguous; no familiarity
-                map (opens showing untouched, tokens untinted); no explain
-                payload and no progress recording (no sentence identity
-                reaches this panel). Resolution runs on the displayed
-                answer's ask codes — learning first, base fallback. */}
+                map (opens showing untouched, tokens untinted); no progress
+                recording (no sentence identity reaches this panel).
+                The columns' explain config rides along for toolbar parity
+                (ADR 0096 amendment): the toggle renders disabled (no
+                sentence context exists to ask about) and the robot opens
+                the Models used popup with the panel's answer + explanation
+                models. Resolution runs on the displayed answer's ask codes
+                — learning first, base fallback. */}
             {popup && createPortal(
                 <WordPopup
                     wordId={null}
                     surface={popup.surface}
                     rect={popup.rect}
                     fontSize={props.popupFontSize}
+                    explain={props.explain ?? undefined}
                     languageCodes={answerLanguageCodes(props.answerLanguages)}
                     onClose={() => setPopup(null)}
                 />,

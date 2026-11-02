@@ -411,6 +411,16 @@ table.table:has(#all_target:checked) .hide_target {
     border-radius: 2px;
 }
 
+/* Hover affordance on the tokens themselves — the columns' underline
+   (app.css .word-token:hover), scoped to the panel so the columns'
+   familiarity-tint styles never leak in. Sits on top of the vellum
+   background fill above, which still marks every hovered element. */
+#ai_answer_div .ai-word-token:hover,
+#ai_answer_div .ai-word-token:focus-visible {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
 .dark #ai_answer_div .ai-word-token:focus-visible {
     box-shadow: 0 0 0 2px var(--wbench-accent-night);
 }

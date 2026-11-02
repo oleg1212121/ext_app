@@ -152,6 +152,20 @@ describe('WordPopup: the on-open lookup (ticket 07)', () => {
         expect(lookupEffectSource).toContain('setLookupBusy(true)');
         expect(lookupEffectSource).toContain('setLookupBusy(false)');
     });
+
+    it('shows the loading line while the resolve is in flight — the note only after it settles', () => {
+        // ADR 0096 amendment: the not-in-dictionary note is a verdict, and
+        // pronouncing it mid-resolve read as an empty popup that later
+        // swapped itself. The card body holds the shared word.loading line
+        // (the same one the detail fetch uses) while lookupBusy, then
+        // settles to the note on a miss — or swaps to the dictionary view
+        // on a hit (the fetch effect's own loading line).
+        const missingBranch = popupRenderSource.slice(
+            popupRenderSource.indexOf('wordId == null && lookedUpId == null && data == null ? ('),
+            popupRenderSource.indexOf(') : ('),
+        );
+        expect(missingBranch).toContain('resolving={lookupBusy}');
+    });
 });
 
 describe('WordPopup: the 409 ask sync (ticket 07)', () => {

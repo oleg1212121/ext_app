@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-11-02T18:34:37+0300 }
+generated: { by: agent:zcode, at: 2026-11-02T19:25:00+0300 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
@@ -243,8 +243,13 @@ variants.
   (tokens render untinted), and none of the columns' sentence-bound
   ledger reaches the popup — no `language` prop (that absence disables
   Ask-AI/adopt — nothing is ever minted from AI-answer text), no
-  familiarity map (opens untouched), no explain payload, no word-event
-  recording.
+  familiarity map (opens untouched), no word-event recording. The
+  columns' explain config does ride down for toolbar parity (ADR 0096's
+  amendment, no sentence id attached): the resolved card's Explanation
+  toggle renders disabled (grey, non-responsive — no sentence context to
+  ask about) and the robot opens the Models used popup; while the
+  resolve is in flight the missing card holds the loading line, the
+  not-in-dictionary note only settling after it answers.
 * Styling in `public/css/simulator.css` (day + night, `--wbench-*` tokens;
   loaded page-scoped via a `<Head>` link in `Bilinguals.jsx`, not globally —
   the global `app.blade.php` link was removed in the 2026-09-23 reader-freeze
@@ -269,8 +274,12 @@ variants.
   pointer cursor everywhere plus a vellum background fill on hover (day +
   night; the earlier text-shadow variant sits commented out in
   `simulator.css`) — committed before the panel was interactive and
-  functional since the word tokens landed (ADR 0096); a focused token
-  adds the columns' 2px accent focus ring (`ai-word-token:focus-visible`).
+  functional since the word tokens landed (ADR 0096); a word token
+  (`ai-word-token`) adds the columns' hover underline on top of the fill
+  (`text-decoration: underline`, `text-underline-offset: 2px` — the
+  columns' `.word-token:hover` affordance scoped to the panel), and a
+  focused token adds the columns' 2px accent focus ring
+  (`ai-word-token:focus-visible`).
 * The same `+`/`−` buttons also drive the **word-popup typography** (ADR
   0031): `popupFontSizeFor(font_size)` — 65% of the page font, floored at
   14px, capped at 32px — flows `Bilinguals` → `TextContent` → `WordText` →

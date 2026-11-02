@@ -19,8 +19,11 @@ import {describe, expect, it} from 'vitest';
 // new-tab navigation, the popup mounts in a portal with wordId=null
 // (missing mode) and the RAW token surface, and NOTHING of the columns'
 // ledger reaches it — no column language (that is what suppresses
-// Ask-AI/adopt), no familiarity map, no explain payload, no progress
-// recording.
+// Ask-AI/adopt), no familiarity map, no progress recording. The columns'
+// explain CONFIG does ride along (ADR 0096 amendment) — toolbar parity:
+// the toggle renders disabled inside WordPopup (no sentence context to ask
+// about) and the robot opens the Models used popup — but no sentence id is
+// ever attached, so the payload stays context-free.
 
 const aiSource = readFileSync(new URL('./AI.jsx', import.meta.url), 'utf8');
 const bilingualsSource = readFileSync(new URL('../Bilinguals.jsx', import.meta.url), 'utf8');
@@ -128,16 +131,27 @@ describe('AI panel: the WordPopup mount', () => {
         expect(portalSource).toContain('languageCodes={answerLanguageCodes(props.answerLanguages)}');
     });
 
-    it('reaches nothing of the columns’ ledger — no language, familiarity, explain, onProgress', () => {
+    it('reaches nothing of the columns’ ledger — no language, familiarity, onProgress', () => {
         // Structural absences, each one load-bearing: no `language` prop is
         // what suppresses the Ask-AI/adopt icon (nothing is ever minted from
         // AI-answer text), no familiarity map opens the card untouched, no
-        // explain payload (it needs a sentence id), no progress recording
-        // (no word-event ledger without sentence identity).
+        // progress recording (no word-event ledger without sentence
+        // identity).
         expect(portalSource).not.toContain('language=');
         expect(portalSource).not.toContain('familiarity=');
-        expect(portalSource).not.toContain('explain=');
         expect(portalSource).not.toContain('onProgress=');
+        // The explain config rides along (ADR 0096 amendment) but never
+        // gains sentence identity — the popup disables its toggle on
+        // exactly that absence.
+        expect(portalSource).toContain('explain={props.explain ?? undefined}');
+        expect(portalSource).not.toContain('sentenceId');
+    });
+
+    it('the page threads the columns’ explain config into the panel (toolbar parity, ADR 0096 amendment)', () => {
+        // The same server config the text columns gate per side: the panel
+        // does no `explainable` gating of its own — the answer quotes both
+        // columns' languages, so the toolbar shows on every answer.
+        expect(bilingualsSource).toContain('explain={props.explain ?? null}');
     });
 
     it('typography follows the page font — the host page’s popupFontSize rides down (ADR 0031)', () => {

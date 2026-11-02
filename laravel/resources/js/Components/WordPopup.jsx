@@ -436,7 +436,7 @@ function AskAiError({message, status, onRetry = null}) {
  * hairlines and stable `word-popup-*` hooks) so the card stays addressable
  * from outside styles the same way.
  */
-export function MissingPopupContent({surface, onAskAi = null, aiBusy = false, aiError = null, aiErrorStatus = null}) {
+export function MissingPopupContent({surface, onAskAi = null, aiBusy = false, aiError = null, aiErrorStatus = null, resolving = false}) {
     const {t} = useI18n();
 
     const askAiLabel = aiBusy ? t('word.ask_ai_sending') : t('word.ask_ai');
@@ -470,9 +470,18 @@ export function MissingPopupContent({surface, onAskAi = null, aiBusy = false, ai
             </div>
 
             <div className="word-popup-dictionary min-h-0 flex-1 overflow-y-auto px-3.5 pb-2.5">
-                <p className="word-popup-missing mt-1 text-[0.929em] leading-snug opacity-70">
-                    {t('word.not_in_dictionary')}
-                </p>
+                {/* While the on-open resolve is in flight the body holds the
+                    loading line instead of the not-in-dictionary note — the
+                    note is a verdict, and pronouncing it before the resolve
+                    answers reads as an empty popup that later swaps itself
+                    (ADR 0096 amendment). A miss settles the note back in. */}
+                {resolving ? (
+                    <p className="word-popup-loading mt-1 text-[0.929em] leading-snug opacity-70">{t('word.loading')}</p>
+                ) : (
+                    <p className="word-popup-missing mt-1 text-[0.929em] leading-snug opacity-70">
+                        {t('word.not_in_dictionary')}
+                    </p>
+                )}
             </div>
         </>
     );
@@ -616,6 +625,12 @@ export function PopupContent({
     // both (exactly as it once dropped the whole tab strip, Models-used
     // icon included).
     const showExplain = explainProps != null && sections.explanation !== false;
+    // A payload without sentence identity (the AI-answer mount, ADR 0096
+    // amendment) can mount no Context explanation — there is no sentence to
+    // ask about — so its toggle renders disabled (grey, non-responsive) for
+    // toolbar parity while the robot beside it stays live. ExplainPane's own
+    // auto-ask already refuses such a payload, so this only formalizes it.
+    const explainDisabled = explainProps != null && explainProps.sentenceId == null;
     const entries = sections.word_family === false
         ? (data.entries ?? []).filter((entry) => entryMatchesHeadword(entry, data.word))
         : data.entries;
@@ -739,13 +754,17 @@ export function PopupContent({
                         never refetches). While shown, the icon reads as
                         pressed. Exists only with an explain payload and
                         vanishes with the ADR 0046 `explanation: false` key,
-                        like the old tab strip. */}
+                        like the old tab strip. A payload without sentence
+                        identity (the AI-answer mount, ADR 0096 amendment)
+                        disables it — grey, non-responsive — so toolbar
+                        parity never implies an askable context. */}
                     {showExplain && (
                         <button
                             type="button"
                             title={t('word.explain_toggle')}
                             aria-label={t('word.explain_toggle')}
                             aria-pressed={explainShown}
+                            disabled={explainDisabled}
                             onClick={() => setExplainShown((shown) => !shown)}
                             className={`word-popup-explain-toggle ${toolbarButtonClass('neutral', explainShown)}`}
                         >
@@ -1757,6 +1776,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                     aiBusy={aiBusy}
                     aiError={aiError}
                     aiErrorStatus={aiErrorStatus}
+                    resolving={lookupBusy}
                 />
             ) : (
                 <>

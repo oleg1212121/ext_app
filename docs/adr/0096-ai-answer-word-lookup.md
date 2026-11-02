@@ -1,7 +1,7 @@
 # ADR 0096: AI-answer words are map-less and adopt-less — the popup opens instantly and resolves in place
 
 Date: 2026-11-02
-Status: Accepted (the gesture is [ADR 0030](0030-lookup-requires-ctrl-click.md)'s, Ctrl-only; the render-time segmentation it looks up through is [ADR 0027](0027-render-time-word-segmentation.md)'s)
+Status: Accepted (the gesture is [ADR 0030](0030-lookup-requires-ctrl-click.md)'s, Ctrl-only; the render-time segmentation it looks up through is [ADR 0027](0027-render-time-word-segmentation.md)'s). Amended same-day on user feedback — see the amendment section (toolbar parity: disabled explain toggle + live robot; a loading line while the resolve runs).
 
 ## Context
 
@@ -128,6 +128,47 @@ before anything renders, on the surface whose defining property is that
 its text arrived over a stream; and **a loading placeholder card** in
 place of the missing card — same latency cost, plus a fourth popup state
 to style and test for what is a sub-second swap.
+
+## Amendment (2026-11-02, user feedback on the shipped branch)
+
+Three corrections to the posture above, none touching its core (map-less,
+adopt-less, instant open):
+
+### 5. Toolbar parity: the explain config rides along — toggle disabled, robot live
+
+The mount now passes the columns' explain config
+(`{enabled, modelKey, modelLabel, followsAnswer, answerLabel}` — the same
+server payload the text columns gate per side, threaded
+Bilinguals → AI → WordPopup) **without a sentence id**. `PopupContent`
+renders the Explanation toggle **disabled** on exactly that absence
+(`explainDisabled = explainProps.sentenceId == null`; grey through the
+shared toolbar class's `disabled:opacity-40`, non-responsive as a
+disabled button) and the robot (Models used) **live** — it reads
+`answerLabel`/`modelLabel`/`followsAnswer` from the config and shows the
+answer + explanation models, matching the panel header's own robot.
+Decision 2's adopt-less stance is untouched: the `language` prop stays
+structurally absent, Ask-AI/adopt stay disabled, nothing is minted.
+
+Rejected: **a working explain toggle with an answer-context mode** (a new
+context_text mode on `/ai/word-explain` — real machinery for a first
+pass; the grey toggle says honestly that no sentence context exists to
+ask about); and **the old posture verbatim** (a toolbar missing two of
+the columns' six icons read as a broken popup, which is what the user
+reported).
+
+### 6. The missing card holds a loading line while the resolve runs
+
+Decision 4's rejection of a loading state is **superseded in part**: the
+open stays instant and the card structure unchanged (title + toolbar
+paint at once), but while the on-open resolve is in flight the missing
+card's body renders the shared `word.loading` line instead of the
+not-in-dictionary note (`MissingPopupContent`'s `resolving` prop, fed
+`lookupBusy`). The note is a **verdict** — "this word isn't in the
+dictionary yet" — and pronouncing it before the resolve answered read as
+an empty popup that later swapped itself; on a miss the note settles
+back in, on a hit the existing fetch takes over (its own loading line,
+then the dictionary view). The same fix covers the columns' ticket-07
+missing mode, which shared the premature flash.
 
 ## Consequences
 

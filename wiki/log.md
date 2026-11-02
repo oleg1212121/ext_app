@@ -6,6 +6,40 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-02 (ai-answer-words feedback pass — popup toolbar parity, loading line on the missing card, token hover underline)
+
+User feedback on the shipped branch, three corrections codified as a
+same-day amendment to ADR 0096 (none touching its map-less/adopt-less/
+instant-open core). (1) **Toolbar parity**: the AI-panel popup mount now
+threads the columns' explain config (Bilinguals → AI → WordPopup, no
+sentence id) — `PopupContent` renders the Explanation toggle **disabled**
+(`explainDisabled = explainProps.sentenceId == null`; grey via the shared
+toolbar class's `disabled:opacity-40`, non-responsive) and the robot
+(Models used) **live** with the answer + explanation models, matching the
+panel header's robot; the profile preview's `SAMPLE_EXPLAIN` gained
+`sentenceId: 1` so the preview's toggle stays interactive. (2) **Loading
+line**: while the on-open resolve is in flight, `MissingPopupContent`'s
+body renders the shared `word.loading` line instead of the
+not-in-dictionary note (the note is a verdict — pronouncing it
+mid-resolve read as an empty popup that later swapped itself); a miss
+settles the note back, a hit rides the existing fetch — the same fix
+covers the columns' ticket-07 missing mode (ADR 0096's Decision 4
+loading-placeholder rejection superseded in part; the open stays
+instant). (3) **Hover underline**: `#ai_answer_div .ai-word-token` gains
+the columns' underline hover (`simulator.css`, on top of the vellum
+fill). Tests: source pins updated in `WordPopup.lookup.test.js` /
+`WordText.missing.test.js` / `AI.tokens.test.js` (explain moved from
+structural-absence to parity presence) / `WordPopup.toolbar.test.js`
+(disabled-toggle + sample-sentenceId pins). interactive-words.md updated
+(toolbar, third-surface, missing-card, ordered-resolve first-consumer,
+consuming-surfaces passages) and bilinguals-simulator.md's AI-answer
+surface bullet + hover-affordance bullet; both `generated.at` bumped
+(bilinguals-simulator's bump also clears the review-pass checkout-mtime
+drift on its own sources); the two remaining pre-existing checkout-mtime
+drifts (frontend.md↔ADR 0066, running-tests.md↔the self-referential
+baseline) acknowledged in `validate-baseline.json` with owner+dated
+entries. Full vitest green; no PHP touched.
+
 ## 2026-11-02 (ai-answer-words review pass — wrap-pass entity/tag hardening, shared AI handler, lib-derivation move)
 
 The code-review fixes, four of them. (1) `lib/markdown.js`'s word-token

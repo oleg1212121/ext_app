@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — every 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-02T18:34:37+0300 }
+generated: { by: agent:zcode, at: 2026-11-02T16:15:00+0000 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -146,7 +146,9 @@ only toolbar elements
 the `progress_actions` visibility opt-out still hides; inapplicable
 toolbar icons disable rather than disappear, and the Explanation toggle +
 robot additionally require an explain payload and answer to the ADR 0046
-`explanation` key). There is **no tab strip**: the dictionary content always
+`explanation` key — a payload without a sentence id, the AI-answer mount's
+(ADR 0096 amendment), renders the toggle disabled for toolbar parity while
+the robot stays live). There is **no tab strip**: the dictionary content always
 renders, and a hairline closes the header block (word / familiarity /
 frequency / form-of). Unmapped tokens open the **missing-word card**
 (below) instead. A plain click does
@@ -159,9 +161,12 @@ simulator credits its words a read (+1); opening a word's popup costs a
 lookup (−2), once per word per sentence pair on both surfaces. Since
 ai-answer-words (ADR 0096) the simulator's streamed AI answer is a third
 interactive surface: its markdown-rendered tokens (a dedicated
-`ai-word-token` class) open the same popup missing-first, resolved
+`ai-word-token` class — hover- and focus-underlined like the columns'
+tokens, scoped to the panel) open the same popup missing-first, resolved
 learning→base over the ask's language snapshot — **map-less and
-adopt-less**, no ledger. All
+adopt-less**, no ledger, with the columns' explain config riding for
+toolbar parity (a disabled Explanation toggle — no sentence context
+exists — and a live robot; ADR 0096's amendment). All
 segmentation is derived at render time — **no word positions are stored
 anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
 
@@ -400,7 +405,10 @@ surface** as the title — the folded `l_word` key would show ё-folded,
 mark-stripped text — and one honest note, `word.not_in_dictionary` ("This
 word isn't in the dictionary yet."). **Almost nothing runs on open**: the
 one request is ticket 07's re-resolution lookup (below) when a column
-descriptor exists; no `GET /words/` fires until it resolves an id (the
+descriptor exists — and while it is in flight the card's body holds the
+shared "Loading…" line instead of the not-in-dictionary note (the note is
+a verdict; ADR 0096's amendment), settling back in on a miss; no
+`GET /words/` fires until it resolves an id (the
 detail-fetch effect returns before its fetch while `fetchId` — `wordId ??
 lookedUpId` — is null), no `/word-events` lookup (there is no word id to
 ledger), and no familiarity / frequency / form-of lines. The toolbar shows
@@ -530,9 +538,16 @@ re-resolves the surface server-side before the missing card settles:
   mount passes **no `language` prop**: that structural absence keeps
   Ask-AI/adopt disabled, so nothing is ever minted into the dictionary
   from AI-answer text. Nothing else of the columns' ledger reaches it
-  either: no familiarity map (opens showing untouched, tokens untinted),
-  no explain payload and no word-event recording (no sentence identity
-  exists for an AI answer).
+  either: no familiarity map (opens showing untouched, tokens untinted)
+  and no word-event recording (no sentence identity exists for an AI
+  answer). The columns' **explain config does ride along** (ADR 0096's
+  amendment, threaded Bilinguals → AI → WordPopup without a sentence id):
+  once the resolve hits, the dictionary card's toolbar shows the
+  Explanation toggle **disabled** (grey, non-responsive — no sentence
+  context to ask about) and the robot **live** (the Models used popup
+  with the answer + explanation models, matching the panel header's own
+  robot); a miss leaves the missing card, whose toolbar is the columns'
+  own Ask-AI-only card (its icon disabled — no `language`).
 * **The 409 sync.** A 409 from the ask (the fresh-pending "in progress"
   gate — the only enrich 409 left since the ADR 0082 re-ask amendment)
   no longer leaves the ask state stale: the known path refetches
@@ -1095,6 +1110,9 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   learning→base resolve over the ask's language snapshot
   (`useAiStream.answerLanguages`), and passing **no `language` prop** —
   Ask-AI/adopt stay disabled, nothing is ever minted from AI-answer
-  text; no familiarity map, no explain payload, no word-event recording.
-  The deep description lives in the re-resolution section's
-  ordered-resolve and first-consumer bullets above.
+  text; no familiarity map, no word-event recording. The columns'
+  explain config rides for toolbar parity (disabled Explanation toggle +
+  live robot, no sentence id — ADR 0096's amendment), and the tokens
+  carry the columns' hover-underline affordance scoped to the panel
+  (simulator.css). The deep description lives in the re-resolution
+  section's ordered-resolve and first-consumer bullets above.
