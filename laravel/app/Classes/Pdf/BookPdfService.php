@@ -36,14 +36,14 @@ class BookPdfService
      * the layout changes in a way that must invalidate every cached render
      * at once.
      */
-    private const DIGEST_VERSION = 'entity-book/v2';
+    private const DIGEST_VERSION = 'entity-book/v3';
 
     /**
      * Render-input version of the bilingual alignment books. Bump it when
      * the layout changes in a way that must invalidate every cached render
      * at once.
      */
-    private const MATCH_DIGEST_VERSION = 'alignment-book/v2';
+    private const MATCH_DIGEST_VERSION = 'alignment-book/v3';
 
     private array $tempIllustrations = [];
 
@@ -151,12 +151,10 @@ class BookPdfService
      * in document order (paragraph flow stays within a cell). The left
      * column shows the work's original side when one is determinable, else
      * canonical side a — the original marker rides the left side, and there
-     * is none when both are translations. Each side picks its own
-     * composition mode: a side whose entity holds no `paragraph`-typed rows
-     * falls back to per-sentence paragraphs. Public so the view can be
+     * is none when both are translations. Public so the view can be
      * exercised without a full dompdf render.
      *
-     * @return array{work: ?Work, left: array{entity: ?Entity, language: ?Language, is_original: bool, uses_paragraphs: bool}, right: array{entity: ?Entity, language: ?Language, is_original: bool, uses_paragraphs: bool}, rows: list<array{order: int, left: list<array{type: string, content: ?string, image?: ?string}>, right: list<array{type: string, content: ?string, image?: ?string}>}>}
+     * @return array{work: ?Work, left: array{entity: ?Entity, language: ?Language, is_original: bool}, right: array{entity: ?Entity, language: ?Language, is_original: bool}, rows: list<array{order: int, left: list<array{type: string, content: ?string, image?: ?string}>, right: list<array{type: string, content: ?string, image?: ?string}>}>}
      */
     public function alignmentViewData(EntityMatch $match): array
     {
@@ -170,20 +168,14 @@ class BookPdfService
             ? [$match->aEntity, $match->bEntity]
             : [$match->bEntity, $match->aEntity];
 
-        // Asked once per side entity, not once per cell.
-        $leftPerSentence = $left === null || ! $this->entityHasParagraphTyping($left);
-        $rightPerSentence = $right === null || ! $this->entityHasParagraphTyping($right);
-
         $rows = [];
 
         foreach ($this->meaningMatches($match) as $meaningMatch) {
             $leftBlocks = $this->composeBookBlocks(
                 $this->cellSentences($this->sideSentences($meaningMatch, $leftSide)),
-                $leftPerSentence,
             );
             $rightBlocks = $this->composeBookBlocks(
                 $this->cellSentences($this->sideSentences($meaningMatch, $rightSide)),
-                $rightPerSentence,
             );
 
             $rows[] = [
@@ -204,13 +196,11 @@ class BookPdfService
                 'entity' => $left,
                 'language' => $left?->language,
                 'is_original' => $originalSide !== null,
-                'uses_paragraphs' => ! $leftPerSentence,
             ],
             'right' => [
                 'entity' => $right,
                 'language' => $right?->language,
                 'is_original' => false,
-                'uses_paragraphs' => ! $rightPerSentence,
             ],
             'rows' => $rows,
         ];
@@ -239,25 +229,8 @@ class BookPdfService
             'work' => $entity->work,
             'entity' => $entity,
             'language' => $entity->language,
-            'blocks' => $this->composeBookBlocks(
-                $this->cellSentences($sentences),
-                ! $this->entityHasParagraphTyping($entity),
-            ),
+            'blocks' => $this->composeBookBlocks($this->cellSentences($sentences)),
         ];
-    }
-
-    /**
-     * Whether the entity's sentences carry at least one `paragraph`-typed
-     * row — the switch between paragraph-flow composition and the
-     * per-sentence fallback. Texts split before the type existed (anything
-     * uploaded pre ticket 01) hold none; per-entity, so each side of an
-     * alignment book picks its own mode.
-     */
-    public function entityHasParagraphTyping(Entity $entity): bool
-    {
-        return $entity->sentences()
-            ->whereHas('sentenceType', fn ($query) => $query->where('name', 'paragraph'))
-            ->exists();
     }
 
     /**
@@ -276,14 +249,14 @@ class BookPdfService
      * sentences concatenate into one flowing paragraph (each trimmed,
      * joined with single spaces); a `paragraph`-typed sentence opens a new
      * paragraph, and a paragraph also starts implicitly at the document
-     * start and after any non-body element, even on a plain `sentence`.
-     * Non-body types pass through as their own blocks. Empty body
-     * sentences disappear. Unknown types stay body text — they have always
-     * rendered as paragraphs.
-     *
-     * `$perSentenceParagraphs` is the fallback for texts with zero
-     * `paragraph`-typed rows: every body sentence becomes its own
-     * paragraph, so old books never render as one giant paragraph.
+     * start and after any non-body element, even on a plain `sentence` —
+     * so texts without any `paragraph`-typed rows still read like a book.
+     * Non-body types pass through as their own blocks, except that
+     * adjacent titles stack into a single heading (newline-separated
+     * lines; the blades split them into stacked chapter lines) — two
+     * consecutive forced page breaks would strand the first title alone
+     * on its page. Empty body sentences disappear. Unknown types stay
+     * body text — they have always rendered as paragraphs.
      *
      * Public so books can be composed — and their layout exercised —
      * without a full dompdf render.
@@ -291,7 +264,7 @@ class BookPdfService
      * @param  list<array{type: string, content: ?string, image?: ?string}>  $sentences
      * @return list<array{type: string, content: ?string, image?: ?string}>
      */
-    public function composeBookBlocks(array $sentences, bool $perSentenceParagraphs): array
+    public function composeBookBlocks(array $sentences): array
     {
         $blocks = [];
         $paragraph = [];
@@ -310,13 +283,28 @@ class BookPdfService
             if (in_array($type, self::NON_BODY_TYPES, true)) {
                 $flush();
 
-                $blocks[] = $type === 'illustration'
+                $block = $type === 'illustration'
                     ? [
                         'type' => 'illustration',
                         'content' => $sentence['content'] ?? null,
                         'image' => $sentence['image'] ?? null,
                     ]
                     : ['type' => $type, 'content' => $sentence['content'] ?? null];
+
+                // Merge into a run of adjacent titles (both ends must
+                // carry text; blank titles pass through as before).
+                $last = array_key_last($blocks);
+                $stacks = $type === 'title'
+                    && $last !== null
+                    && $blocks[$last]['type'] === 'title'
+                    && trim((string) ($blocks[$last]['content'] ?? '')) !== ''
+                    && trim((string) ($block['content'] ?? '')) !== '';
+
+                if ($stacks) {
+                    $blocks[$last]['content'] .= "\n".$block['content'];
+                } else {
+                    $blocks[] = $block;
+                }
 
                 continue;
             }
@@ -328,7 +316,7 @@ class BookPdfService
                 continue;
             }
 
-            if ($perSentenceParagraphs || $type === 'paragraph' || $paragraph === []) {
+            if ($type === 'paragraph' || $paragraph === []) {
                 $flush();
             }
 

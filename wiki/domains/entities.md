@@ -5,7 +5,7 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge, pdf]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-11-02T14:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T17:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-29T18:30:00+03:00 }
 sources:
    - id: controller
@@ -288,15 +288,19 @@ non-body element — title, subtitle, quote, footnote, caption, illustration
 — even when the sentence is typed plain `sentence`. A `title` opens a
 **chapter page** (page-break-before, centered, larger, sans-serif — the
 first block's chapter suppresses the extra break, since the title page
-already ends its page and dompdf does not collapse the two), `subtitle` is
+already ends its page and dompdf does not collapse the two), and
+**adjacent titles stack into one heading** (newline-separated lines
+rendered as stacked chapter lines — two consecutive forced breaks would
+strand the first title alone on its page), `subtitle` is
 an inline bold heading without a break, quote/footnote/caption keep their
 book styling, and an illustration ends the open paragraph as its own
 centered block (≤ ~70% text width) with its caption in small italics
 beneath, flow resuming as a new paragraph. Entities with zero
-`paragraph`-typed rows (everything uploaded before the type existed) fall
-back to per-sentence paragraphs — `entityHasParagraphTyping()` asks per
-entity, and per side in the alignment book — so old books never
-render as one giant paragraph. DejaVu fonts (Cyrillic-capable),
+`paragraph`-typed rows (everything uploaded before the type existed)
+compose with the same flow rules — sentences concatenate, paragraphs break
+at the implicit starts only — so old books read as flowing text with
+section-granular paragraph breaks (an early per-sentence fallback was
+reversed: one paragraph per sentence is a line list, not a book). DejaVu fonts (Cyrillic-capable),
 canvas-drawn page numbers, plain `content` only; `entityViewData()` exposes
 the composed blocks so the layout is testable without a dompdf render.
 `BookPdfService` renders via dompdf (`barryvdh/laravel-dompdf`, remote

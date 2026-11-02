@@ -382,7 +382,7 @@ test('a paragraph starts implicitly at the document start and after any non-body
     ]);
 });
 
-test('entities without paragraph-typed sentences fall back to per-sentence paragraphs', function () {
+test('entities without paragraph-typed sentences concatenate into flowing paragraphs', function () {
     $entity = createEntity('en');
     pdfEntitySentence($entity, 'sentence', 'One.', 1);
     pdfEntitySentence($entity, 'sentence', 'Two.', 2);
@@ -391,13 +391,35 @@ test('entities without paragraph-typed sentences fall back to per-sentence parag
 
     $blocks = app(BookPdfService::class)->entityViewData($entity->refresh())['blocks'];
 
-    // Everything uploaded before the paragraph type existed: every body
-    // sentence renders as its own paragraph with the new styling.
+    // Everything uploaded before the paragraph type existed reads like a
+    // book all the same: sentences concatenate, and paragraphs break only
+    // at the implicit starts (document start, after the title here).
     expect($blocks)->toBe([
-        ['type' => 'paragraph', 'content' => 'One.'],
-        ['type' => 'paragraph', 'content' => 'Two.'],
+        ['type' => 'paragraph', 'content' => 'One. Two.'],
         ['type' => 'title', 'content' => 'The Heading'],
         ['type' => 'paragraph', 'content' => 'Three.'],
+    ]);
+});
+
+test('consecutive titles merge into one chapter heading', function () {
+    $entity = createEntity('en');
+    pdfEntitySentence($entity, 'title', 'Part Five', 1);
+    pdfEntitySentence($entity, 'title', 'The Whistler', 2);
+    pdfEntitySentence($entity, 'sentence', 'Body under the stacked heading.', 3);
+    // A title reached through body text still opens its own chapter.
+    pdfEntitySentence($entity, 'title', 'Chapter Two', 4);
+    pdfEntitySentence($entity, 'sentence', 'More body.', 5);
+
+    $blocks = app(BookPdfService::class)->entityViewData($entity->refresh())['blocks'];
+
+    // Adjacent titles stack into a single heading (newline-separated
+    // lines) — two page breaks in a row would strand the first title on
+    // a page of its own.
+    expect($blocks)->toBe([
+        ['type' => 'title', 'content' => "Part Five\nThe Whistler"],
+        ['type' => 'paragraph', 'content' => 'Body under the stacked heading.'],
+        ['type' => 'title', 'content' => 'Chapter Two'],
+        ['type' => 'paragraph', 'content' => 'More body.'],
     ]);
 });
 
@@ -482,7 +504,7 @@ test('the book view lays out the title page and every block type in order', func
     // indented body paragraph, italic quote, smaller footnote, small
     // caption, embedded image from the private disk capped at ~70% of the
     // text width.
-    expect($html)->toContain('<h2 class="sentence-title">The Heading</h2>')
+    expect($html)->toContain('<span class="chapter-line">The Heading</span>')
         ->and($html)->toContain('<h3 class="sentence-subtitle">The Sub</h3>')
         ->and($html)->toContain('<p class="sentence-paragraph">First plain.</p>')
         ->and($html)->toContain('p.sentence-paragraph {')
@@ -532,6 +554,23 @@ test('a chapter title starts a fresh page without a blank page after the title p
 
     // Title page + chapter page, exactly: the chapter's forced break must
     // collapse into the title page's own break-after, not add a blank page.
+    expect(preg_match_all('#/Type /Page(?!s)#', $bytes))->toBe(2);
+});
+
+test('adjacent chapter titles share one page instead of stranding a lone-title page', function () {
+    $entity = createEntity('en');
+    pdfEntitySentence($entity, 'title', 'Part Five', 1);
+    pdfEntitySentence($entity, 'title', 'The Whistler', 2);
+    pdfEntitySentence($entity, 'sentence', 'One short paragraph of body text.', 3);
+
+    $this->actingAs(approvedUser())
+        ->get("/works/{$entity->work_id}/entities/{$entity->id}/pdf")
+        ->assertOk();
+
+    $bytes = Storage::disk('local')->get("pdfs/entities/{$entity->id}.pdf");
+
+    // Title page + one chapter page: the adjacent titles merge into a
+    // single heading, so the second title must not force its own page.
     expect(preg_match_all('#/Type /Page(?!s)#', $bytes))->toBe(2);
 });
 

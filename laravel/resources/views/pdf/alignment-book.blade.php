@@ -176,15 +176,19 @@
         <tbody>
             @foreach ($rows as $row)
                 @if ($row['chapter'])
-                    @php
-                        foreach (['left', 'right'] as $side) {
-                            foreach ($row[$side] as $block) {
-                                if ($block['type'] === 'title' && trim((string) $block['content']) !== '') {
-                                    $pendingTitles[] = $block['content'];
+                @php
+                    foreach (['left', 'right'] as $side) {
+                        foreach ($row[$side] as $block) {
+                            if ($block['type'] === 'title' && trim((string) $block['content']) !== '') {
+                                // Adjacent titles arrive merged into one
+                                // newline-separated block; each line stacks.
+                                foreach (explode("\n", (string) $block['content']) as $line) {
+                                    $pendingTitles[] = $line;
                                 }
                             }
                         }
-                    @endphp
+                    }
+                @endphp
                 @endif
 
                 {{-- A pure title row renders no cells: it only feeds the

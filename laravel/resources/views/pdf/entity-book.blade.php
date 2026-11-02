@@ -72,6 +72,12 @@
             page-break-before: auto;
         }
 
+        /* Adjacent titles merge into one heading at composition time,
+           newline-separated; each line stacks as its own block. */
+        h2.sentence-title .chapter-line {
+            display: block;
+        }
+
         h3.sentence-subtitle {
             font-size: 12.5pt;
             font-weight: bold;
@@ -128,7 +134,11 @@
 
     @foreach ($blocks as $block)
         @if ($block['type'] === 'title')
-            <h2 class="sentence-title{{ $loop->first ? ' chapter-open' : '' }}">{{ $block['content'] }}</h2>
+            <h2 class="sentence-title{{ $loop->first ? ' chapter-open' : '' }}">
+                @foreach (preg_split('/\n/', (string) ($block['content'] ?? '')) as $line)
+                    <span class="chapter-line">{{ $line }}</span>
+                @endforeach
+            </h2>
         @else
             @include('pdf.partials.book-block', ['block' => $block])
         @endif

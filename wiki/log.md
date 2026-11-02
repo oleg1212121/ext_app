@@ -6,6 +6,37 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-02 (book-layout fix — per-sentence fallback reversed to concatenation, adjacent titles merge into one heading)
+
+Author-reported after rendering a real pre-`paragraph` book (1,463
+sentences, 23 titles): every sentence sat on its own line, and four
+adjacent-title pairs («ЧАСТЬ ПЯТАЯ» / «СВИСТУН» …) each stranded the first
+title alone on its page. Two changes, both in
+`BookPdfService::composeBookBlocks()` + the book blades: the per-sentence
+fallback (ADR 0095 decision 7's original rule) is **reversed** — every
+entity composes with the same flow rules now, so a zero-`paragraph` book
+concatenates its sentences and breaks paragraphs at the implicit starts
+only (`entityHasParagraphTyping()` and the alignment
+`uses_paragraphs` flags deleted); and **adjacent titles stack into one
+chapter heading** (newline-separated lines, rendered as stacked
+chapter-line spans in both books — the entity blade gains the
+`h2 .chapter-line { display: block }` rule the alignment heading already
+had, and the alignment heading explodes merged blocks back into per-line
+entries). Digests bumped `entity-book/v2`→`v3`, `alignment-book/v2`→`v3`
+(every cached book re-renders on its next Get PDF). ADR 0095 decision 7
+rewritten with the dated amendment (the honest cost, accepted: a text
+with no markers and no non-body elements renders as a single paragraph —
+the stored data carries no boundary information; re-split backfill stays
+rejected), decision 6 records the merge rule, decision 10 the second
+bump. Tests: the fallback pins flipped to concatenation (entity +
+alignment), new unit pins for the title merge (entity) and the cell-level
+merged-title heading (alignment), a 2-page render pin for the
+adjacent-titles case, the order/document-order cell pin updated to the
+joined string; TIA green. `generated.at` bumped on `domains/entities.md`,
+`domains/sentence-alignment.md`, `database/entities-alignment.md` (all
+three reworded); no routes/models/commands changed — no `wiki:sync`
+needed.
+
 ## 2026-11-02 (book-layout review pass — shared pdfCssRule helper, shared book-block partial, required-explicit composeBookBlocks flag)
 
 The Standards fixes from the spec's two-axis review, output-neutral by

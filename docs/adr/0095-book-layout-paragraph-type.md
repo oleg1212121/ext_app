@@ -84,16 +84,33 @@ sans-serif); `subtitle` is an inline bold heading without a break.
 Illustrations end the open paragraph and render as their own centered block
 (≤ ~70% of text width) with the caption in small italics beneath; flow
 resumes as a new paragraph. Quotes, footnotes, and captions keep their book
-styling.
+styling. **Adjacent titles stack into one heading** (newline-separated
+lines; each renders as its own block line): two consecutive forced page
+breaks would strand the first title alone on a page of its own — a real
+book opens a part and a chapter on the same page («ЧАСТЬ ПЯТАЯ» /
+«СВИСТУН»), not two. The bilingual book already merged consecutive title
+*rows* into the shared heading (decision 9); this extends the same rule to
+adjacent titles within one block stream.
 
-### 7. Entities with zero `paragraph` rows fall back to per-sentence paragraphs
+### 7. Entities with zero `paragraph` rows compose with the same flow rules
 
-Everything uploaded before the type existed has no `paragraph` rows;
-rendering it with the new rules would concatenate the whole book into one
-giant paragraph. `entityHasParagraphTyping()` asks per entity (≥1
-`paragraph`-typed row) and the composition falls back to **per-sentence
-paragraphs** — same styling, one paragraph per sentence — when the flag is
-off. Old books render correctly with no backfill.
+Amended 2026-11-02, reversing the originally accepted rule: the first
+shipped version fell back to **per-sentence paragraphs** for entities with
+no `paragraph`-typed rows ("so old books never render as one giant
+paragraph"), with `entityHasParagraphTyping()` as the per-entity switch.
+The first real old book rendered from that fallback — 1,463 sentences, each
+on its own line — and the author rejected it: the books must read like
+books, sentences concatenated, new lines at paragraph boundaries. So the
+fallback is gone: every entity composes with decision 5's flow rules, and
+a zero-`paragraph` text breaks paragraphs only at the implicit starts
+(document start, after non-body elements) — a book with chapter titles
+gets one flowing paragraph per section, which is exactly the requested
+shape. The honest cost, accepted: a text with no `paragraph` rows and no
+non-body elements at all renders as a single paragraph — the stored data
+carries no boundary information, and the alternatives (per-sentence
+lines — rejected above; re-split backfill — rejected in decision 5 for
+destroying alignment junctions) are both worse. `entityHasParagraphTyping()`
+and the alignment `uses_paragraphs` flags are deleted.
 
 ### 8. The bilingual book keeps the 50/50 spread but drops the repeating header
 
@@ -136,8 +153,10 @@ The layout is an input to the cache: `DIGEST_VERSION` (`entity-book/vN`)
 sits in the entity digest, `MATCH_DIGEST_VERSION` (`alignment-book/vN`) in
 the match digest, and each bumps when its book's layout changes in a way
 that must invalidate every cached render at once — which is how this
-rework shipped without a migration: both constants bumped to `/v2`, and the
-first Get PDF after deploy re-rendered every cache row in place. The match
+rework shipped without a migration: both constants bumped to `/v2` at
+first, then again to `/v3` when decision 7's fallback was removed (every
+cached old book must re-render under the new flow rules), and each first
+Get PDF after deploy re-rendered every cache row in place. The match
 digest folds both sides' entity digests, so an entity-book bump re-renders
 alignment caches once too ([ADR 0093](0093-book-pdfs.md) decision 3's
 regime, unchanged). A stale cached row re-renders transparently on the next
@@ -148,10 +167,11 @@ request; nothing deletes or backfills.
 - **Paragraph boundaries are data, not presentation**: every future
   consumer (web reader layout, exports beyond PDF) reads the same
   `paragraph` type instead of re-deriving paragraphs per surface.
-- **Old entities render book-shaped immediately** (decision 7's fallback),
-  but their paragraph flow stays per-sentence until their text is
-  re-imported — accepted, because the alternative was destroying alignment
-  junctions across the whole corpus.
+- **Old entities render book-shaped immediately** (decision 7): sentences
+  concatenate and paragraphs break at implicit starts, so the paragraph
+  flow of a pre-`paragraph` text stays coarse (section-granular, from its
+  titles) until the text is re-imported — accepted, because the
+  alternative was destroying alignment junctions across the whole corpus.
 - **New uploads type paragraph starts for free**: the splitter emits the
   type during the ordinary split; no user-facing upload change, and the
   exact-copy clone copies types verbatim so clones inherit correct

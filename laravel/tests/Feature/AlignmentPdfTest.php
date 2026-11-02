@@ -375,8 +375,8 @@ test('rows follow the meaning-match order and each side stacks its sentences in 
 
     expect($rows)->toHaveCount(2)
         ->and($rows[0]['order'])->toBe(5)
-        ->and($rows[0]['left'][0]['content'])->toBe('Alpha first.')
-        ->and($rows[0]['left'][1]['content'])->toBe('Alpha second.')
+        // The cell's plain sentences concatenate, in document order.
+        ->and($rows[0]['left'][0]['content'])->toBe('Alpha first. Alpha second.')
         ->and($rows[0]['right'][0]['content'])->toBe('Бета первая.')
         // Single-sided row: the other cell is empty.
         ->and($rows[1]['order'])->toBe(10)
@@ -507,6 +507,24 @@ test('consecutive title rows merge into one chapter heading', function () {
         ->and(substr_count($html, '<table class="alignment">'))->toBe(2);
 });
 
+test('titles merged inside a cell still stack as separate chapter lines', function () {
+    $pair = alignmentPdfPair();
+    // Two adjacent titles in one cell: composition merges them into a
+    // single multi-line title block.
+    $enPart = alignmentPdfSentence($pair['en'], 'title', 'Part One', 1);
+    $enChapter = alignmentPdfSentence($pair['en'], 'title', 'Chapter One', 2);
+    $ruBody = alignmentPdfSentence($pair['ru'], 'sentence', 'Тело беты.', 1);
+    alignmentPdfRow($pair['match'], 0, [$enPart, $enChapter], [$ruBody]);
+
+    $html = view('pdf.alignment-book', app(BookPdfService::class)->alignmentViewData($pair['match']))->render();
+
+    // The merged block's lines stack as separate chapter lines in the
+    // shared heading, in the same order.
+    expect(substr_count($html, '<h2 class="chapter-heading'))->toBe(1)
+        ->and(substr_count($html, '<span class="chapter-line">'))->toBe(2)
+        ->and(mb_strpos($html, 'Part One'))->toBeLessThan(mb_strpos($html, 'Chapter One'));
+});
+
 test('a chapter heading right after the title page opens the book without a blank page', function () {
     $pair = alignmentPdfPair();
     $enTitle = alignmentPdfSentence($pair['en'], 'title', 'Chapter One', 1);
@@ -552,11 +570,8 @@ test('a chapter row with body content renders the heading first, then the paired
 
 // ─── book composition ────────────────────────────────────────────────────────
 
-test('cells compose into per-side book blocks with mid-row paragraph breaks on the typed side', function () {
+test('cells compose into per-side book blocks with mid-row paragraph breaks', function () {
     $pair = alignmentPdfPair();
-    // One paragraph-typed row anywhere gives the en side paragraph typing;
-    // the ru side stays untyped and falls back to per-sentence paragraphs.
-    alignmentPdfSentence($pair['en'], 'paragraph', 'Typed opener outside the match.', 10);
 
     $enOpens = alignmentPdfSentence($pair['en'], 'paragraph', 'Alpha opens.', 1);
     $enContinues = alignmentPdfSentence($pair['en'], 'sentence', 'Alpha continues.', 2);
@@ -567,28 +582,25 @@ test('cells compose into per-side book blocks with mid-row paragraph breaks on t
 
     $data = app(BookPdfService::class)->alignmentViewData($pair['match']);
 
-    // The typed side flows paragraphs within the cell; the untyped side
-    // falls back to one paragraph per sentence.
-    expect($data['left']['uses_paragraphs'])->toBeTrue()
-        ->and($data['right']['uses_paragraphs'])->toBeFalse()
-        ->and($data['rows'][0]['left'])->toBe([
-            ['type' => 'paragraph', 'content' => 'Alpha opens. Alpha continues.'],
-            ['type' => 'paragraph', 'content' => 'Alpha again.'],
-        ])
+    // Both sides flow paragraphs within the cell: explicit paragraph
+    // markers break where typed, plain sentences concatenate — typing or
+    // no typing, a side reads like a book.
+    expect($data['rows'][0]['left'])->toBe([
+        ['type' => 'paragraph', 'content' => 'Alpha opens. Alpha continues.'],
+        ['type' => 'paragraph', 'content' => 'Alpha again.'],
+    ])
         ->and($data['rows'][0]['right'])->toBe([
-            ['type' => 'paragraph', 'content' => 'Бета раз.'],
-            ['type' => 'paragraph', 'content' => 'Бета два.'],
+            ['type' => 'paragraph', 'content' => 'Бета раз. Бета два.'],
         ]);
 });
 
-test('an untyped pair falls back to per-sentence paragraphs on both sides', function () {
+test('an untyped pair composes the same flowing paragraphs', function () {
     $pair = alignmentPdfPopulated();
 
     $data = app(BookPdfService::class)->alignmentViewData($pair['match']);
 
-    expect($data['left']['uses_paragraphs'])->toBeFalse()
-        ->and($data['right']['uses_paragraphs'])->toBeFalse()
-        ->and($data['rows'][0]['left'])->toBe([['type' => 'paragraph', 'content' => 'Alpha text.']])
+    // No paragraph markers anywhere in the pair: sides still flow.
+    expect($data['rows'][0]['left'])->toBe([['type' => 'paragraph', 'content' => 'Alpha text.']])
         ->and($data['rows'][0]['right'])->toBe([['type' => 'paragraph', 'content' => 'Текст беты.']]);
 });
 

@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations, paragraphs]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-11-02T14:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T17:30:00+03:00 }
 sources:
   - id: align-service
     resource: laravel/app/Classes/SentenceAlignmentService.php
@@ -1143,12 +1143,16 @@ cross-Work pair the form's same-work error, a limit hit a `limit`
      meaning match in `order`, each cell composed by
      `BookPdfService::composeBookBlocks()` (per table cell — paragraph
      flow stays within a cell) into **one justified, first-line-indented
-     paragraph per side** with mid-row `paragraph`-typed breaks; each side
-     falls back to per-sentence paragraphs independently when its entity
-     holds zero `paragraph` rows (`entityHasParagraphTyping()` asked once
-     per side). A row carrying a `title` on either side opens a **chapter
+     paragraph per side** with mid-row `paragraph`-typed breaks; plain
+     sentences concatenate on both sides alike, so a side with zero
+     `paragraph` rows flows too (paragraphs break at the implicit starts
+     only — an early per-side per-sentence fallback was reversed: one
+     paragraph per sentence is a line list, not a book). A row carrying a
+     `title` on either side opens a **chapter
      page** shared by both languages — the sides' titles stack into one
-     centered heading, consecutive title rows merge into it — with the
+     centered heading, consecutive title rows merge into it (and adjacent
+     titles within one cell arrive pre-merged, newline-separated, from
+     composition) — with the
      table closed and reopened around the heading (dompdf cannot
      page-break inside table rows) and the columns resuming paired after
      the break; the first heading after the title page suppresses its
