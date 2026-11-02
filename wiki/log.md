@@ -6,6 +6,33 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-02 (ai-answer-words 03 — Ctrl+click on an AI-answer word opens the dictionary popup, resolved learning-first over the ask's languages)
+
+The tracer bullet: every `ai-word-token` in the simulator's streamed AI
+answer now opens the columns' WordPopup in place. The handling is event
+**delegation on `#ai_answer_div`** (`AI.jsx` — click + keydown props on the
+container div; tokens found via `event.target.closest('[data-word-key]')`),
+which survives the wholesale innerHTML rewrites of streaming. The gesture
+is Ctrl-only (ADR 0030, no Cmd) with Ctrl+Enter/Ctrl+Space keyboard parity
+and Ctrl+click-inside-a-link navigation suppressed; both event decisions
+and the code-order derivation live in the new pure
+`laravel/resources/js/lib/aiAnswerTokens.mjs` (`opensTokenPopup`,
+`answerLanguageCodes` — Node-tested), the DOM walk stays pinned by source
+assertions (`AI.tokens.test.js`). The popup mounts in a `document.body`
+portal, missing mode (`wordId={null}`) from the RAW token surface, and
+resolves through ticket 02's ordered resolver with
+`languageCodes=[learning, base]` snapshotted from the ask payload the
+moment the stream started (`useAiStream.answerLanguages` — a side flip
+after the ask never changes resolution; Ask again re-captures). No
+`language` prop (Ask-AI/adopt stay disabled — nothing is ever minted from
+AI-answer text), no familiarity, no explain, no word-event recording; the
+page's `popupFontSize` threads `Bilinguals` → `AI` → `WordPopup` (ADR
+0031). bilinguals-simulator.md (word-token bullet, `useAiStream` +
+popup-typography bullets) and interactive-words.md (first consumer of the
+ordered list) refreshed, `generated.at` bumped; the interim
+validate-baseline entry for bilinguals-simulator.md is now prunable. ADR
+0096 + concept cross-links stay ticket 04's closure.
+
 ## 2026-11-02 (ai-answer-words 02 — the popup lookup POST moves to lib/wordLookup.js with an ordered-language resolver)
 
 `WordPopup.jsx`'s module-scope `postLookup` (the missing-mode

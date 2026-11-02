@@ -19,10 +19,19 @@ export function useAiStream() {
     const [aiAnswer, setAiAnswer] = useState('');
     const [aiError, setAiError] = useState(null);
     const [aiPending, setAiPending] = useState(false);
+    // The displayed answer's language codes (ai-answer-words ticket 03):
+    // snapshotted from the ask payload the moment a stream starts, so the
+    // answer's tokens resolve against the ask that produced it — a side
+    // flip afterwards changes the columns, never the resolution. A retry
+    // re-captures: Ask again streams the stored payload through the same
+    // line below. Null until the first ask — with no answer, no popup can
+    // open anyway.
+    const [answerLanguages, setAnswerLanguages] = useState(null);
     const lastAskPayloadRef = useRef(null);
 
     const streamAsk = useCallback(async (payload) => {
         lastAskPayloadRef.current = payload;
+        setAnswerLanguages({learning: payload.learning ?? null, base: payload.base ?? null});
         setAiPending(true);
         setAiError(null);
         setAiAnswer('');
@@ -91,5 +100,5 @@ export function useAiStream() {
         await streamAsk({...last, ...(overrides.tasks ? {tasks: overrides.tasks} : {})});
     }, [aiPending, streamAsk]);
 
-    return {aiAnswer, aiError, aiPending, streamAsk, retryAsk};
+    return {aiAnswer, aiError, aiPending, answerLanguages, streamAsk, retryAsk};
 }

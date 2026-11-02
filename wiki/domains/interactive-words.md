@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — every 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-02T17:24:02+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T17:41:15+03:00 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -495,6 +495,30 @@ re-resolves the surface server-side before the missing card settles:
   reader and simulator text columns pass no list. The ask-AI/adopt gating
   stays keyed on the single `language` prop regardless: an ordered list
   never enables adoption.
+* **First consumer of the ordered list: the AI answer panel
+  (ai-answer-words ticket 03).** Every word token of the simulator's
+  streamed AI answer (rendered through `renderMarkdown`'s off-by-default
+  `wordTokens` option as dedicated `ai-word-token` spans — never the
+  columns' `word-token` classes, so the columns' tint/hover styles do not
+  leak into the panel) opens this same popup. The handling is **event
+  delegation on the `#ai_answer_div` container** (click + keydown; tokens
+  found via `event.target.closest('[data-word-key]')`) because the answer
+  HTML is rewritten wholesale while streaming — a per-token handler could
+  never survive mid-stream. The gesture is ADR 0030's, Ctrl-only through
+  the shared `lib/aiAnswerTokens.mjs` gate (Cmd never triggers;
+  Ctrl+Enter/Ctrl+Space keyboard parity; Ctrl+click inside a link is
+  prevented from navigating), and the popup mounts in a `document.body`
+  portal in **missing mode (`wordId={null}`)** from the RAW token surface.
+  Resolution runs on the **displayed answer's ask codes** —
+  `languageCodes=[learning, base]` snapshotted from the ask payload the
+  moment the stream started (`useAiStream.answerLanguages`; a side flip
+  after the ask never changes resolution, Ask again re-captures) — and the
+  mount passes **no `language` prop**: that structural absence keeps
+  Ask-AI/adopt disabled, so nothing is ever minted into the dictionary
+  from AI-answer text. Nothing else of the columns' ledger reaches it
+  either: no familiarity map (opens showing untouched, tokens untinted),
+  no explain payload and no word-event recording (no sentence identity
+  exists for an AI answer).
 * **The 409 sync.** A 409 from the ask (the fresh-pending "in progress"
   gate — the only enrich 409 left since the ADR 0082 re-ask amendment)
   no longer leaves the ask state stale: the known path refetches

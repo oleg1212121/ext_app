@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-10-29T10:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T17:41:15+03:00 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
@@ -206,6 +206,25 @@ variants.
   `.ai-correction` spans, quotes in four styles — `"…"`, `«…»`, `“…”`, `‘…’`
   — → `<mark class="ai-quote">`, and `\d{1,3}%` scores →
   `<mark class="ai-score">` → DOMPurify sanitize.
+* The answer renders **word tokens** (ai-answer-words tickets 01+03): the
+  engine calls `renderMarkdown(markdown, {wordTokens: true})` — the only
+  consumer that opts in — wrapping every tokenizer word in a focusable
+  `ai-word-token` span (the shared `wordTokenizer.mjs` keys in
+  `data-word-key`; code, tags and entities never wrap; the columns'
+  `word-token` classes are deliberately not reused so their tint/hover
+  styles stay out of the panel). **Ctrl+click** — Ctrl-only, never Cmd
+  (ADR 0030), gated through `lib/aiAnswerTokens.mjs` — or
+  **Ctrl+Enter/Ctrl+Space** on a focused token opens the columns'
+  WordPopup right from the panel: event **delegation on `#ai_answer_div`**
+  (click + keydown on the container; the answer HTML is rewritten
+  wholesale while streaming, so per-token handlers could not survive),
+  missing-mode mount (`wordId={null}`) from the RAW token surface,
+  resolved learning-first against the **ask's** language snapshot — see
+  [interactive words](/domains/interactive-words.md). None of the
+  columns' sentence-bound ledger reaches it: no `language` prop (that
+  absence disables Ask-AI/adopt — nothing is ever minted from AI-answer
+  text), no familiarity map (opens untouched), no explain payload, no
+  word-event recording.
 * Styling in `public/css/simulator.css` (day + night, `--wbench-*` tokens;
   loaded page-scoped via a `<Head>` link in `Bilinguals.jsx`, not globally —
   the global `app.blade.php` link was removed in the 2026-09-23 reader-freeze
@@ -233,7 +252,9 @@ variants.
 * The same `+`/`−` buttons also drive the **word-popup typography** (ADR
   0031): `popupFontSizeFor(font_size)` — 65% of the page font, floored at
   14px, capped at 32px — flows `Bilinguals` → `TextContent` → `WordText` →
-  `WordPopup`, whose width scales with it (560px at the default 17px). The
+  `WordPopup` for the columns and `Bilinguals` → `AI` → `WordPopup` for the
+  AI answer panel's popup, whose width scales with it (560px at the default
+  17px). The
   dictionary words themselves are selectable `role="button"` spans, so a
   plain double-click natively selects a word for browser extensions; the
   popup stays Ctrl+click (ADR 0030).
@@ -255,7 +276,13 @@ wiring over three page-local engine hooks (ADR 0066's layering;
   alone.
 * **`useAiStream`** — the AI answer engine: `POST /ai/question/stream`
   fetch-loop over the pinned SSE parser (`lib/sseStream.mjs`), throttled
-  markdown re-render, last-payload retry, and `aiPending`. Asking gates on
+  markdown re-render, last-payload retry, and `aiPending`. Each stream
+  start also snapshots the ask payload's language codes into
+  **`answerLanguages`** (`{learning, base}|null`): the displayed answer's
+  tokens resolve against the ask that produced it, so a side flip after
+  the ask never changes resolution — Ask again re-captures by streaming
+  the stored payload through the same snapshot line. Null until the first
+  ask (no answer, no popup). Asking gates on
   `aiPending` alone — asking during a page fetch is allowed and streaming
   no longer disables page turns (the page's Spinner shows on either flag).
 * **`useAssessmentQuestion`** — the question template / task-list split
