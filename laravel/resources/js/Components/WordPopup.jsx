@@ -8,6 +8,7 @@ import {renderMarkdown} from '../lib/markdown';
 import {canAskExplanation} from '../lib/wordExplain';
 import {dimsDefinition, dimsEntry, entryUsageChips, usageLabelChips} from '../lib/usageLabelDisplay';
 import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
+import {resolveWordId} from '../lib/wordLookup';
 import {Icon} from './icons.jsx';
 import {AnkiConnectError, ankiConnectEndpoint, markAnkiReachable, probeReachable, unmarkAnkiReachable} from '../lib/ankiConnect';
 import {buildNoteFields, uiLabels} from '../lib/ankiTemplate';
@@ -1145,32 +1146,12 @@ export function PopupContent({
  * Popups tab reuses for its live preview.
  */
 
-// The missing-mode re-resolution POST (popup-ai-enrich ticket 07), shared
-// by the popup's on-open resolve and its 409 sync: the RAW clicked surface
-// plus the clicked column's language code — the server derives the lookup
-// key (never trusting the title) — CSRF-signed like every mutating call.
-// Resolves the found word's id (null = genuinely missing); a transport
-// failure collapses to the same null, so every caller degrades to the
-// plain missing card instead of growing an error state of its own.
-const postLookup = (surface, languageCode) => fetch('/words/lookup', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        ...(getCsrfToken() ? {'X-CSRF-TOKEN': getCsrfToken()} : {}),
-    },
-    body: JSON.stringify({surface, language_code: languageCode}),
-})
-    .then(async (res) => {
-        if (!res.ok) {
-            throw new Error(String(res.status));
-        }
-        return res.json();
-    })
-    .then((json) => json?.data?.word_id ?? null)
-    .catch(() => null);
+// The missing-mode re-resolution POST (popup-ai-enrich ticket 07) lives in
+// lib/wordLookup.js since ai-answer-words ticket 02: the single-code
+// `lookupWordId` (the exact old postLookup contract) plus the sequential
+// `resolveWordId` over an ordered language list, unit-tested in Node.
 
-export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain, sections, language = null}) {
+export default function WordPopup({wordId, surface, familiarity, rect, onClose, onProgress, fontSize = DEFAULT_POPUP_FONT_SIZE, explain, sections, language = null, languageCodes = null}) {
     const {t} = useI18n();
     const {props} = usePage();
     const effectiveSections = sections ?? props.popupVisibility ?? {};
@@ -1329,23 +1310,41 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         };
     }, [wordId, lookedUpId, surface, t]);
 
+    // The resolve list (ai-answer-words ticket 02), keyed as a primitive
+    // string: the caller's ordered codes when a list is passed (ticket 03's
+    // AI-answer mount — learning first), otherwise the clicked column's
+    // single language, the exact pre-list behavior. Codes are locale tags
+    // and never contain '|', so the join/split round-trip is lossless — and
+    // keying on the string, not the array reference, keeps an inline
+    // `languageCodes={[a, b]}` prop (a fresh array every parent render)
+    // from re-triggering the effect below.
+    const lookupCodesKey = languageCodes != null
+        ? (languageCodes.join('|') || null)
+        : (language?.code ?? null);
+
     // The on-open re-resolution (popup-ai-enrich ticket 07): in missing
-    // mode with a column language descriptor the popup POSTs /words/lookup
-    // once per open — the minted word a previous adopt-on-ask left behind
-    // re-links to the page (`entities:enrich`, the scheduler dev never
-    // runs, is the only other linker). A hit flips the popup into known
-    // mode through the fetch effect above; a null word_id (or a failed
-    // lookup) leaves the missing card. The cancelled guard mirrors the
-    // fetch effect's: a popup closed or moved to another surface drops the
-    // late answer instead of resolving the wrong token.
+    // mode the popup resolves its RAW surface server-side once per open —
+    // the minted word a previous adopt-on-ask left behind re-links to the
+    // page (`entities:enrich`, the scheduler dev never runs, is the only
+    // other linker). Since ai-answer-words ticket 02 the resolve runs
+    // through lib/wordLookup.js's sequential resolver: codes in list order,
+    // the first hit wins (later codes never fire), a miss falls through,
+    // and any transport failure collapses the whole sequence to null — the
+    // single-code contract the popup always had. A hit flips the popup into
+    // known mode through the fetch effect above; a null (all codes missed,
+    // or the resolve failed) leaves the missing card. The cancelled guard
+    // mirrors the fetch effect's and spans the whole sequence: a popup
+    // closed or moved to another surface drops the late answer instead of
+    // resolving the wrong token. `lookupBusy` holds the card's ask icon
+    // until the sequence settles either way.
     useEffect(() => {
         setLookedUpId(null);
-        if (wordId != null || language?.code == null) {
+        if (wordId != null || lookupCodesKey == null) {
             return;
         }
         let cancelled = false;
         setLookupBusy(true);
-        postLookup(surface, language.code).then((found) => {
+        resolveWordId(surface, lookupCodesKey.split('|')).then((found) => {
             if (!cancelled) {
                 setLookupBusy(false);
                 setLookedUpId(found);
@@ -1354,7 +1353,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         return () => {
             cancelled = true;
         };
-    }, [wordId, surface, language?.code]);
+    }, [wordId, surface, lookupCodesKey]);
 
     // On-open duplicate detection (anki-popup-refresh): the popup silently
     // asks Anki whether this word is already saved — scoped to the word's
@@ -1689,7 +1688,10 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                             })
                             .catch(() => {});
                     } else if (language?.code != null) {
-                        postLookup(surface, language.code).then((found) => {
+                        // The single code the ask itself carried — the ask
+                        // flow stays keyed on the column language; the
+                        // ordered list never widens it.
+                        resolveWordId(surface, [language.code]).then((found) => {
                             if (found != null && !staleAsk(origin)) {
                                 setLookedUpId(found);
                             }

@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — every 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-01T19:56:23+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T17:24:02+03:00 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -451,9 +451,11 @@ runs no scheduler), so after any reload the token re-opened the missing
 card with a live Ask-AI icon over an already-asked word. The popup now
 re-resolves the surface server-side before the missing card settles:
 
-* **The read path.** On open in missing mode with a column language
-  descriptor (the same condition the ask uses), `WordPopup.jsx` POSTs
-  `POST /words/lookup` `{surface, language_code}` once (`WordLookupRequest`
+* **The read path.** On open in missing mode with a language to resolve
+  against, the popup POSTs `POST /words/lookup` `{surface, language_code}`
+  once — through `lib/wordLookup.js` since ai-answer-words ticket 02
+  (the single-code `lookupWordId` is the exact old component helper; the
+  module is pure w.r.t. fetch and unit-tested in Node) (`WordLookupRequest`
   mirrors the adoption-mode validation rules; throttle 60/min,
   auth+approved). The endpoint answers `{data: {word_id: int|null}}` — the
   id ALONE: the popup then fetches the full payload through the existing
@@ -479,6 +481,20 @@ re-resolves the surface server-side before the missing card settles:
   effect guards late answers with the fetch effect's `cancelled` pattern
   (popup closed / surface moved drop the response). No descriptor → no
   lookup, the card as ticket 03 rendered it.
+* **Ordered resolve (ai-answer-words ticket 02).** The popup accepts an
+  ordered `languageCodes` list alongside the single column `language`
+  descriptor: `resolveWordId` runs the codes in list order, the first
+  non-null word id wins (short-circuit — later codes never fire), a miss
+  falls through to the next code, and ANY transport failure collapses the
+  whole sequence to null immediately — the same plain-missing-card
+  degradation, never an error state, and a broken transport never hammers
+  the remaining codes. `lookupBusy` and the cancelled stale-guard span the
+  whole sequence (the resolve list keys as a joined string, so an
+  inline-array prop cannot re-trigger the effect). Without the prop the
+  resolve runs against the single column language exactly as before — the
+  reader and simulator text columns pass no list. The ask-AI/adopt gating
+  stays keyed on the single `language` prop regardless: an ordered list
+  never enables adoption.
 * **The 409 sync.** A 409 from the ask (the fresh-pending "in progress"
   gate — the only enrich 409 left since the ADR 0082 re-ask amendment)
   no longer leaves the ask state stale: the known path refetches

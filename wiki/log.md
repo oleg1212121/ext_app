@@ -6,6 +6,27 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-02 (ai-answer-words 02 — the popup lookup POST moves to lib/wordLookup.js with an ordered-language resolver)
+
+`WordPopup.jsx`'s module-scope `postLookup` (the missing-mode
+`POST /words/lookup` helper, popup-ai-enrich ticket 07) moved to
+`laravel/resources/js/lib/wordLookup.js`: the single-code `lookupWordId`
+keeps the exact old contract (RAW surface + `language_code`, CSRF-signed,
+miss and transport failure both collapse to null), and a new sequential
+`resolveWordId(surface, codes)` runs an ordered list — first non-null word
+id wins (short-circuit), a miss falls through, any transport failure
+collapses the whole sequence to null immediately. `WordPopup` gains an
+optional ordered `languageCodes` prop (keyed as a joined string so an
+inline-array prop can't re-trigger the effect); without it the resolve runs
+against the single column language exactly as before — reader and
+simulator text columns unchanged, and the ask-AI/adopt gating stays keyed
+on the single `language` prop (an ordered list never enables adoption).
+Covered by `wordLookup.test.js` (9 Node/fetch-mock tests) and updated
+`WordPopup.lookup.test.js` source pins. interactive-words.md: the
+re-resolution section gained the ordered-resolve bullet, `generated.at`
+bumped. Prepares the AI-answer popup mount (ai-answer-words ticket 03:
+`languageCodes=[learning, base]`, no `language`).
+
 ## 2026-11-02 (book-layout fix — per-sentence fallback reversed to concatenation, adjacent titles merge into one heading)
 
 Author-reported after rendering a real pre-`paragraph` book (1,463
