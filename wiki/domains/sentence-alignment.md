@@ -5,7 +5,7 @@ description: Embedding-based pipeline that aligns two same-work entities (any la
 tags: [alignment, embeddings, pipeline, jobs, filament, hash, illustrations, paragraphs]
 status: stable
 stale_after: 2026-12-31
-generated: { by: agent:zcode, at: 2026-11-02T12:43:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T18:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-11-02T12:22:00+03:00 }
 sources:
   - id: align-service
@@ -1134,14 +1134,30 @@ cross-Work pair the form's same-work error, a limit hit a `limit`
      button (only while `status = completed`): `GET
      /works/{work}/alignments/{entityMatch}/pdf`
      (`AlignmentPdfController`, `works.alignments.pdf`, ADR 0093) streams
-     the **bilingual book PDF** as an attachment — A4, a borderless 50/50
-     table with a repeating two-language header, one row per meaning match
-     in `order`, the original side left (`originalSide()` with side-a
-     fallback), each cell stacking its side's junctioned sentences in
-     document order. `BookPdfService::matchDigest` caches it under the
-     same `pdf_renders` regime as the entity book (both sides' text
-     digests + title-page inputs + the ordered pairing — `updated_at`
-     churn is deliberately not an input); see
+     the **bilingual book PDF** as an attachment — A4, laid out like a
+     book, not a web-page mirror: the original side left (`originalSide()`
+     with side-a fallback) in a borderless fixed 50/50 spread, one row per
+     meaning match in `order`, each cell composed by
+     `BookPdfService::composeBookBlocks()` (per table cell — paragraph
+     flow stays within a cell) into **one justified, first-line-indented
+     paragraph per side** with mid-row `paragraph`-typed breaks; each side
+     falls back to per-sentence paragraphs independently when its entity
+     holds zero `paragraph` rows (`entityHasParagraphTyping()` asked once
+     per side). A row carrying a `title` on either side opens a **chapter
+     page** shared by both languages — the sides' titles stack into one
+     centered heading, consecutive title rows merge into it — with the
+     table closed and reopened around the heading (dompdf cannot
+     page-break inside table rows) and the columns resuming paired after
+     the break; the first heading after the title page suppresses its
+     forced break (`chapter-open`, same blank-page rule as the entity
+     book). There is no repeating two-language table header — the language
+     names appear on the title page only — and illustrations render as
+     separated centered blocks inside their column (caption below), row
+     pairing preserved. `BookPdfService::matchDigest` caches it under the
+     same `pdf_renders` regime as the entity book (its own
+     `alignment-book/vN` digest version + both sides' entity digests +
+     title-page inputs + the ordered pairing — `updated_at` churn is
+     deliberately not an input); see
      [Library & entities](/domains/entities.md#book-pdfs-adr-0093) and the
      [Book PDF term](../../CONTEXT.md#library-context). The editor itself
 (route `works.alignments.edit`, `AlignmentController@edit`) is a

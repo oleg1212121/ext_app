@@ -43,7 +43,7 @@ class BookPdfService
      * the layout changes in a way that must invalidate every cached render
      * at once.
      */
-    private const MATCH_DIGEST_VERSION = 'alignment-book/v1';
+    private const MATCH_DIGEST_VERSION = 'alignment-book/v2';
 
     private array $tempIllustrations = [];
 
@@ -147,13 +147,16 @@ class BookPdfService
 
     /**
      * The rendered bilingual layout for one match: the title-page inputs
-     * plus the ordered rows, each carrying both sides' sentence cells in
-     * document order. The left column shows the work's original side when
-     * one is determinable, else canonical side a — the original marker
-     * rides the left side, and there is none when both are translations.
-     * Public so the view can be exercised without a full dompdf render.
+     * plus the ordered rows, each carrying both sides' composed book blocks
+     * in document order (paragraph flow stays within a cell). The left
+     * column shows the work's original side when one is determinable, else
+     * canonical side a — the original marker rides the left side, and there
+     * is none when both are translations. Each side picks its own
+     * composition mode: a side whose entity holds no `paragraph`-typed rows
+     * falls back to per-sentence paragraphs. Public so the view can be
+     * exercised without a full dompdf render.
      *
-     * @return array{work: ?Work, left: array{entity: ?Entity, language: ?Language, is_original: bool}, right: array{entity: ?Entity, language: ?Language, is_original: bool}, rows: list<array{order: int, left: list<array{type: string, content: ?string, image: ?string}>, right: list<array{type: string, content: ?string, image: ?string}>}>}
+     * @return array{work: ?Work, left: array{entity: ?Entity, language: ?Language, is_original: bool, uses_paragraphs: bool}, right: array{entity: ?Entity, language: ?Language, is_original: bool, uses_paragraphs: bool}, rows: list<array{order: int, left: list<array{type: string, content: ?string, image?: ?string}>, right: list<array{type: string, content: ?string, image?: ?string}>}>}
      */
     public function alignmentViewData(EntityMatch $match): array
     {
@@ -167,13 +170,31 @@ class BookPdfService
             ? [$match->aEntity, $match->bEntity]
             : [$match->bEntity, $match->aEntity];
 
+        // Asked once per side entity, not once per cell.
+        $leftPerSentence = $left === null || ! $this->entityHasParagraphTyping($left);
+        $rightPerSentence = $right === null || ! $this->entityHasParagraphTyping($right);
+
         $rows = [];
 
         foreach ($this->meaningMatches($match) as $meaningMatch) {
+            $leftBlocks = $this->composeBookBlocks(
+                $this->cellSentences($this->sideSentences($meaningMatch, $leftSide)),
+                $leftPerSentence,
+            );
+            $rightBlocks = $this->composeBookBlocks(
+                $this->cellSentences($this->sideSentences($meaningMatch, $rightSide)),
+                $rightPerSentence,
+            );
+
             $rows[] = [
                 'order' => (int) $meaningMatch->order,
-                'left' => $this->cellSentences($this->sideSentences($meaningMatch, $leftSide)),
-                'right' => $this->cellSentences($this->sideSentences($meaningMatch, $rightSide)),
+                // A title on either side lifts the row out of the columns
+                // into the shared chapter heading (the blade closes the
+                // table around it — dompdf cannot page-break inside table
+                // rows).
+                'chapter' => $this->carriesTitle($leftBlocks) || $this->carriesTitle($rightBlocks),
+                'left' => $leftBlocks,
+                'right' => $rightBlocks,
             ];
         }
 
@@ -183,11 +204,13 @@ class BookPdfService
                 'entity' => $left,
                 'language' => $left?->language,
                 'is_original' => $originalSide !== null,
+                'uses_paragraphs' => ! $leftPerSentence,
             ],
             'right' => [
                 'entity' => $right,
                 'language' => $right?->language,
                 'is_original' => false,
+                'uses_paragraphs' => ! $rightPerSentence,
             ],
             'rows' => $rows,
         ];
@@ -235,6 +258,17 @@ class BookPdfService
         return $entity->sentences()
             ->whereHas('sentenceType', fn ($query) => $query->where('name', 'paragraph'))
             ->exists();
+    }
+
+    /**
+     * Whether the composed blocks hold a `title` — the marker that lifts a
+     * row out of the two-column spread into a chapter page.
+     *
+     * @param  list<array{type: string, content: ?string, image?: ?string}>  $blocks
+     */
+    private function carriesTitle(array $blocks): bool
+    {
+        return in_array('title', array_column($blocks, 'type'), true);
     }
 
     /**

@@ -5,7 +5,7 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge, pdf]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-11-02T12:43:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-02T18:30:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-29T18:30:00+03:00 }
 sources:
    - id: controller
@@ -293,7 +293,7 @@ centered block (≤ ~70% text width) with its caption in small italics
 beneath, flow resuming as a new paragraph. Entities with zero
 `paragraph`-typed rows (everything uploaded before the type existed) fall
 back to per-sentence paragraphs — `entityHasParagraphTyping()` asks per
-entity (the alignment book will ask it per side) — so old books never
+entity, and per side in the alignment book — so old books never
 render as one giant paragraph. DejaVu fonts (Cyrillic-capable),
 canvas-drawn page numbers, plain `content` only; `entityViewData()` exposes
 the composed blocks so the layout is testable without a dompdf render.
@@ -302,9 +302,11 @@ loading off — illustrations embed by local path, WebP GD-converted to a
 temp PNG with caption-only degradation) and caches: one `pdf_renders` row
 per subject (partial unique on the FK) + one fixed path
 `pdfs/entities/{id}.pdf` on the `local` disk, keyed by a sha256 **digest**
-over the digest version (`entity-book/vN` — bumped with the layout so every
-cached render invalidates at once; match digests fold entity digests, so an
-entity-book bump re-renders alignment caches once too) + the fresh
+over the digest version (each book kind carries its own constant —
+`entity-book/vN` for the monolingual book, `alignment-book/vN` for the
+bilingual alignment book — bumped with the layout so every cached render
+invalidates at once; match digests also fold both sides' entity digests, so
+an entity-book bump re-renders alignment caches once too) + the fresh
 `text_hash` (refreshed via `EntityTextHasher`) + the title-page inputs — a
 matching digest with the file present streams the cache; anything else
 re-renders and overwrites in place (see [Book PDF in the Library

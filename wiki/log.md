@@ -6,6 +6,36 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-02 (alignment book renders like a book — per-side block composition, shared chapter pages, header-free spread)
+
+The completed alignment's **Get PDF** now produces a proper bilingual book
+while keeping the side-by-side 50/50 spread (original side left): each
+meaning-match row renders as **one paragraph per side** — that side's
+sentences composed per table cell by
+`BookPdfService::composeBookBlocks()` (ticket 02's API — paragraph flow
+stays within a cell), justified, first-line indented, small gap — so
+paired paragraphs stay visually level, with a `paragraph`-typed sentence
+mid-row starting a new paragraph within its cell. Each side falls back to
+per-sentence paragraphs independently when its entity holds zero
+`paragraph` rows (`entityHasParagraphTyping()` asked once per side
+entity). A row carrying a `title` on either side opens a **chapter page**
+shared by both languages: the sides' titles stack into one centered
+17pt heading, consecutive title rows merge into one heading, and — because
+dompdf cannot page-break inside table rows — the table closes and reopens
+around the heading, the columns resuming paired after the break; the
+first heading after the title page suppresses its forced break
+(`chapter-open`, the same blank-page rule the entity book pinned). The
+repeating two-language table header is gone: language names live on the
+title page only. Illustrations render as separated centered blocks inside
+their column (≤ ~70% width, caption below), row pairing preserved.
+`alignmentViewData()` now returns per-side composed `blocks` plus a
+per-side `uses_paragraphs` flag and a per-row `chapter` marker, keeping
+the layout testable without a dompdf render. Digest version
+`alignment-book/v1` → `v2` invalidates every cached alignment render.
+Docs updated: [Sentence alignment](domains/sentence-alignment.md) (Get PDF
+paragraph), [Library & entities](domains/entities.md) (Book PDFs digest
+constants).
+
 ## 2026-11-02 (entity book renders like a book — typed block composition, chapter pages, per-sentence fallback)
 
 The entity page's **Get PDF** now produces a real monolingual book instead
