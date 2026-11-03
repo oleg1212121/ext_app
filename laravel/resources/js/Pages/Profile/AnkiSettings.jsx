@@ -276,94 +276,113 @@ export default function AnkiSettings({ankiSettings = null, languages = [], learn
                 description={t('profile.anki_description')}
             />
 
-            {/* Connection: global regardless of the selected language — one
-                AnkiConnect endpoint serves every per-language deck. */}
-            <div className="mt-8 max-w-xl space-y-4">
-                <div>
-                    <InputLabel htmlFor="anki-url">{t('profile.anki_url')}</InputLabel>
-                    <TextInput
-                        id="anki-url"
-                        type="text"
-                        value={settings.url ?? ''}
-                        onChange={(event) => setUrl(event.target.value)}
-                        placeholder={ANKI_DEFAULT_URL}
-                        autoComplete="off"
-                        spellCheck={false}
-                    />
-                </div>
+            {/* Top row: connection | card content — side by side from lg up
+                (equal halves whose serif headings share one baseline),
+                stacked below it at each block's original reading-width cap.
+                The connection stays global regardless of the selected
+                language — one AnkiConnect endpoint serves every per-language
+                deck. */}
+            <div className="mt-8 lg:grid lg:grid-cols-2 lg:gap-10">
+                <div className="max-w-xl">
+                    <h2 className="font-serif text-lg sm:text-xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+                        {t('profile.anki_connection_title')}
+                    </h2>
+                    <p className="mt-2 max-w-md font-serif italic text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
+                        {t('profile.anki_connection_description')}
+                    </p>
 
-                <div>
-                    <InputLabel htmlFor="anki-port">{t('profile.anki_port')}</InputLabel>
-                    <TextInput
-                        id="anki-port"
-                        type="number"
-                        min="1"
-                        max="65535"
-                        value={settings.port ?? ''}
-                        onChange={(event) => setPort(event.target.value)}
-                        placeholder={String(ANKI_DEFAULT_PORT)}
-                        autoComplete="off"
-                    />
-                </div>
+                    <div className="mt-6 space-y-4">
+                        <div>
+                            <InputLabel htmlFor="anki-url">{t('profile.anki_url')}</InputLabel>
+                            <TextInput
+                                id="anki-url"
+                                type="text"
+                                value={settings.url ?? ''}
+                                onChange={(event) => setUrl(event.target.value)}
+                                placeholder={ANKI_DEFAULT_URL}
+                                autoComplete="off"
+                                spellCheck={false}
+                            />
+                        </div>
 
-                <div className="flex items-center gap-4 pt-2">
-                    <SecondaryButton onClick={runTest} type="button">
-                        {test.status === 'testing' ? t('profile.anki_testing') : t('profile.anki_test_connection')}
-                    </SecondaryButton>
-                    {test.status === 'ok' && (
-                        <p
-                            data-testid="anki-test-ok"
-                            className="font-serif italic text-sm text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
-                        >
-                            {t('profile.anki_test_ok', {version: test.version})}
-                        </p>
-                    )}
-                </div>
+                        <div>
+                            <InputLabel htmlFor="anki-port">{t('profile.anki_port')}</InputLabel>
+                            <TextInput
+                                id="anki-port"
+                                type="number"
+                                min="1"
+                                max="65535"
+                                value={settings.port ?? ''}
+                                onChange={(event) => setPort(event.target.value)}
+                                placeholder={String(ANKI_DEFAULT_PORT)}
+                                autoComplete="off"
+                            />
+                        </div>
 
-                {test.status === 'failed' && (
-                    <ConnectionHint settings={settings} testId="anki-test-failed" onPermission={runPermission}/>
-                )}
-            </div>
+                        {/* flex-wrap: the ok message wraps under the button in
+                            the narrower half instead of overflowing it. */}
+                        <div className="flex flex-wrap items-center gap-4 pt-2">
+                            <SecondaryButton onClick={runTest} type="button">
+                                {test.status === 'testing' ? t('profile.anki_testing') : t('profile.anki_test_connection')}
+                            </SecondaryButton>
+                            {test.status === 'ok' && (
+                                <p
+                                    data-testid="anki-test-ok"
+                                    className="font-serif italic text-sm text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
+                                >
+                                    {t('profile.anki_test_ok', {version: test.version})}
+                                </p>
+                            )}
+                        </div>
 
-            {/* Card content: the selector picks the language every control
-                below acts on — its deck, its field toggles, its note type.
-                The selector + deck pair leads the section full-width so the
-                scope is stated above both the toggles and the preview. */}
-            <div className="mt-12 max-w-xl">
-                <h2 className="font-serif text-lg sm:text-xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
-                    {t('profile.anki_card_title')}
-                </h2>
-                <p className="mt-2 max-w-md font-serif italic text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
-                    {t('profile.anki_card_description')}
-                </p>
-
-                <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                    <div>
-                        <InputLabel htmlFor="anki-language">{t('profile.anki_language')}</InputLabel>
-                        <SelectInput
-                            id="anki-language"
-                            value={selected ?? ''}
-                            onChange={(event) => setSelected(event.target.value === '' ? null : event.target.value)}
-                        >
-                            {languages.map((language) => (
-                                <option key={language.code} value={language.code}>
-                                    {language.native_name ?? language.name}
-                                </option>
-                            ))}
-                        </SelectInput>
+                        {test.status === 'failed' && (
+                            <ConnectionHint settings={settings} testId="anki-test-failed" onPermission={runPermission}/>
+                        )}
                     </div>
-                    <div>
-                        <InputLabel htmlFor="anki-deck">{t('profile.anki_deck')}</InputLabel>
-                        <TextInput
-                            id="anki-deck"
-                            type="text"
-                            value={active.deck ?? ''}
-                            onChange={(event) => setDeck(event.target.value)}
-                            placeholder={ANKI_DEFAULT_DECK}
-                            autoComplete="off"
-                            spellCheck={false}
-                            disabled={selected == null}
-                        />
+                </div>
+
+                {/* Card content: the selector picks the language every control
+                    below acts on — its deck, its field toggles, its note type.
+                    Inside the narrower column the language + deck pair stacks
+                    vertically (the two-across grid does not survive half the
+                    width), still stating the scope above the toggles and the
+                    preview below. */}
+                <div className="mt-12 max-w-xl lg:mt-0">
+                    <h2 className="font-serif text-lg sm:text-xl tracking-tight text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]">
+                        {t('profile.anki_card_title')}
+                    </h2>
+                    <p className="mt-2 max-w-md font-serif italic text-sm text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/70">
+                        {t('profile.anki_card_description')}
+                    </p>
+
+                    <div className="mt-6 space-y-4">
+                        <div>
+                            <InputLabel htmlFor="anki-language">{t('profile.anki_language')}</InputLabel>
+                            <SelectInput
+                                id="anki-language"
+                                value={selected ?? ''}
+                                onChange={(event) => setSelected(event.target.value === '' ? null : event.target.value)}
+                            >
+                                {languages.map((language) => (
+                                    <option key={language.code} value={language.code}>
+                                        {language.native_name ?? language.name}
+                                    </option>
+                                ))}
+                            </SelectInput>
+                        </div>
+                        <div>
+                            <InputLabel htmlFor="anki-deck">{t('profile.anki_deck')}</InputLabel>
+                            <TextInput
+                                id="anki-deck"
+                                type="text"
+                                value={active.deck ?? ''}
+                                onChange={(event) => setDeck(event.target.value)}
+                                placeholder={ANKI_DEFAULT_DECK}
+                                autoComplete="off"
+                                spellCheck={false}
+                                disabled={selected == null}
+                            />
+                        </div>
                     </div>
                 </div>
             </div>
