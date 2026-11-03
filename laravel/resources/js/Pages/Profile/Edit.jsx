@@ -67,6 +67,7 @@ export default function Edit({
     auth = null,
     apiKeyProviders = [],
     nativeLanguageId = null,
+    learningLanguageId = null,
     interfaceLanguageId = null,
     languages = [],
     aiModelChoices = {},
@@ -132,7 +133,7 @@ export default function Edit({
 
                     <TabPanel active={activeTab === 'preferences'}>
                         <Card>
-                            <PreferencesForm nativeLanguageId={nativeLanguageId} interfaceLanguageId={interfaceLanguageId} languages={languages}/>
+                            <PreferencesForm nativeLanguageId={nativeLanguageId} learningLanguageId={learningLanguageId} interfaceLanguageId={interfaceLanguageId} languages={languages}/>
                         </Card>
                     </TabPanel>
 

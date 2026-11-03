@@ -54,6 +54,11 @@ class HandleInertiaRequests extends Middleware
                         // Method call on purpose: property access would route
                         // through Eloquent magic and trip the relation check.
                         'native_language' => $request->user()->nativeLanguage()?->code,
+                        // code of the user's learning language (User::
+                        // learningLanguage() — stored value, else English when
+                        // enabled, else the first enabled language); the Anki
+                        // tab's default targets it.
+                        'learning_language' => $request->user()->learningLanguage()?->code,
                     ]
                     : null,
                 'can' => [

@@ -42,6 +42,19 @@ it('seeds the Anki tab language-selector string in all three interface languages
     ]);
 });
 
+it('seeds the learning-language select string in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // anki-tab-polish ticket 02: the Preferences tab's required
+    // learning-language select, beside the native language.
+    expect(seededUiStringTexts('profile.learning_language'))->toBe([
+        'en' => 'Learning Language',
+        'ru' => 'Изучаемый язык',
+        'be' => 'Вывучаемая мова',
+    ]);
+});
+
 it('seeds the word popup update-affordance strings in all three interface languages', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();

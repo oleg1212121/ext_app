@@ -61,6 +61,10 @@ class ProfileController extends Controller
             'user' => $request->user(),
             'apiKeyProviders' => $apiKeyProviders,
             'nativeLanguageId' => $request->user()->settings?->native_language_id,
+            // Resolved, not raw: a settings row that predates the learning
+            // preference (stored null) opens the select on English, matching
+            // what the account actually resolves to.
+            'learningLanguageId' => $request->user()->learningLanguage()?->id,
             'interfaceLanguageId' => $request->user()->settings?->interface_language_id,
             'languages' => $languages,
             'aiModelChoices' => $this->modelResolver->getGroupedModelChoices(),
@@ -86,7 +90,7 @@ class ProfileController extends Controller
     }
 
     /**
-     * Update the user's settings (native + interface language).
+     * Update the user's settings (native + learning + interface language).
      */
     public function updateSettings(UpdateUserSettingsRequest $request): RedirectResponse
     {
@@ -96,6 +100,7 @@ class ProfileController extends Controller
             ['user_id' => $user->id],
             [
                 'native_language_id' => $request->validated('native_language_id'),
+                'learning_language_id' => $request->validated('learning_language_id'),
                 'interface_language_id' => $request->validated('interface_language_id'),
             ],
         );
