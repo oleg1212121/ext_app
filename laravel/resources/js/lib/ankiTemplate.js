@@ -100,7 +100,11 @@ const META_LINES = {
 }
 
 // The footer's " · " join renders only when BOTH footer fields carry values
-// — nested conditionals, exactly Anki's own semantics.
+// — nested conditionals, exactly Anki's own semantics. It is also GENERATED
+// only when BOTH footer toggles are on: a toggled-off field keeps its value
+// in a hidden wrapper (hide-class semantics), so its conditional never fires
+// and the separator would render a lone dot — it is omitted from the
+// generated template instead.
 const FOOTER_SEPARATOR = '{{#Tags}}{{#Language}}<span class="ef-footer-sep"> · </span>{{/Language}}{{/Tags}}'
 
 // The Body slot: Anki's conditional drops it whole when the value is empty
@@ -308,7 +312,8 @@ export function generateCardTemplate(fields = {}) {
     // The Back mirrors the popup's shape: header meta, the Body slot (the
     // whole dictionary, rendered from the send-time Body value), the muted
     // footer. Wrapper order here is the card's visual order; the note type's
-    // field order (ANKI_FIELDS) is untouched.
+    // field order (ANKI_FIELDS) is untouched. The footer separator is
+    // generated only when both footer toggles are on (see FOOTER_SEPARATOR).
     const back = [
         '<div class="ef-header">',
         wrapper('word', 'back'),
@@ -320,7 +325,7 @@ export function generateCardTemplate(fields = {}) {
         BODY_SLOT,
         '<div class="ef-footer">',
         wrapper('tags', 'back'),
-        FOOTER_SEPARATOR,
+        ...(fields.tags !== false && fields.language !== false ? [FOOTER_SEPARATOR] : []),
         wrapper('language', 'back'),
         '</div>',
     ].join('\n')
