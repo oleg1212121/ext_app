@@ -121,11 +121,14 @@ const grantPermission = async (config) => {
 // `ankiSettings` is the resolved prop (App\Support\AnkiSettings::for): the
 // connection, the legacy global base, and one resolved deck+fields entry per
 // enabled language. `languages` is the profile page's enabled-language list
-// (code + names) — the selector's options. `nativeLanguage` is the user's
-// native language CODE (the shared auth prop, not the settings id): it
-// seeds the selector, and buildNoteFields compares it against the payload
-// translations' language_code to narrow the Translations field, falling
-// back to all when none match. The state shape mirrors the PERSISTED anki
+// (code + names) — the selector's options. `learningLanguage` and
+// `nativeLanguage` are the user's learning and native language CODEs (the
+// shared auth props, not the settings ids): the learning one seeds the
+// selector — the tab opens on the language being studied, falling back to
+// native/first-enabled when it is not among the enabled codes — and
+// buildNoteFields compares the native one against the payload translations'
+// language_code to narrow the Translations field, falling back to all when
+// none match. The state shape mirrors the PERSISTED anki
 // section exactly — connection + the complete per-language map
 // (lib/ankiTabState.js) — because every autosave PATCH carries the WHOLE
 // section: the endpoint replaces it wholesale, so a partial save would wipe
@@ -135,11 +138,11 @@ const grantPermission = async (config) => {
 // tab falls back to the resolved `default` entry as a read-only view
 // (preview + sync/sample targets) and disables the deck input and toggles.
 // Selection itself is not persisted; a reload re-derives it.
-export default function AnkiSettings({ankiSettings = null, languages = [], nativeLanguage = null}) {
+export default function AnkiSettings({ankiSettings = null, languages = [], learningLanguage = null, nativeLanguage = null}) {
     const {t} = useI18n()
     const codes = languages.map((language) => language.code)
     const [settings, setSettings] = useState(() => ankiTabState(ankiSettings, codes))
-    const [selected, setSelected] = useState(() => ankiTabDefaultCode(codes, nativeLanguage))
+    const [selected, setSelected] = useState(() => ankiTabDefaultCode(codes, learningLanguage, nativeLanguage))
     const [test, setTest] = useState({status: 'idle'})
     const [sync, setSync] = useState({status: 'idle'})
     const [face, setFace] = useState('front')
