@@ -1,18 +1,30 @@
 ---
 type: Feature
 title: Profile
-description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language and AI-model preferences, popup block visibility with a live preview, per-language Anki settings (a language selector over deck + card content) with template sync + sample card, provider API key management, account deletion.
+description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language (native + learning + interface) and AI-model preferences, popup block visibility with a live preview, per-language Anki settings (a learning-language-defaulted language selector over deck + card content, the connection beside it) with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-27T21:50:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-03T13:10:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/ProfileController.php
     title: ProfileController (edit/update/settings/ai-models/api-keys/destroy)
+  - id: auth-props
+    resource: laravel/app/Http/Middleware/HandleInertiaRequests.php
+    title: HandleInertiaRequests (shared auth props — native + learning language codes beside the user)
+  - id: user-model
+    resource: laravel/app/Models/User.php
+    title: User (learningLanguage() — stored value → English when enabled → first enabled language → null)
+  - id: learning-language-migration
+    resource: laravel/database/migrations/2026_11_03_000001_add_learning_language_to_user_settings_table.php
+    title: Migration — nullable learning_language_id FK + backfill of existing rows to English
   - id: page
     resource: laravel/resources/js/Pages/Profile/Edit.jsx
     title: Tabbed page shell (Edit.jsx)
+  - id: preferences-form
+    resource: laravel/resources/js/Pages/Profile/PreferencesForm.jsx
+    title: PreferencesForm (required learning-language select beside native + interface)
   - id: popups-tab
     resource: laravel/resources/js/Pages/Profile/PopupsSettings.jsx
     title: PopupsSettings tab section (checkboxes + live preview)
@@ -24,7 +36,7 @@ sources:
     title: AnkiSettings tab section (language selector + per-language card content, global connection)
   - id: anki-tab-state
     resource: laravel/resources/js/lib/ankiTabState.js
-    title: ankiTabState.js (the tab's per-language editing state — whole-section shape, entry accessors, sync config, sample payload)
+    title: ankiTabState.js (the tab's per-language editing state — whole-section shape, entry accessors, the selector's default-code resolution, sync config, sample payload)
   - id: anki-settings
     resource: laravel/app/Support/AnkiSettings.php
     title: AnkiSettings (saved connection, per-language deck/fields over the legacy global base, resolved per enabled language + default)
@@ -83,7 +95,7 @@ one width variant, `profileWidthClass(width, cappedClass)` in `ui.jsx`.
 | Tab | Sections | Endpoint |
 |-----|----------|----------|
 | Account | Profile Information (name/email) · Update Password | `PATCH /profile` (`profile.update`), `PUT /password` (`password.update`, auth routes) |
-| Preferences | Native + interface language | `PATCH /profile/settings` (`profile.settings.update`) |
+| Preferences | Native + learning + interface language | `PATCH /profile/settings` (`profile.settings.update`) |
 | Popups | Word popup block visibility (checkbox groups) + live preview | autosaved `PATCH /ui-settings` (`ui-settings.update`, auth-only — section `popup`) |
 | Anki | Anki connection: AnkiConnect URL · port · Test connection (global); per-language card content: language selector + deck name · 13 field toggles in two semantics-labeled groups + generated-template preview (Copy HTML/CSS); Send to Anki: template sync + sample card for the selected language | autosaved `PATCH /ui-settings` (auth-only — section `anki`); AnkiConnect itself is called from the browser only |
 | AI Models | Answer + explanation model selects · AI Provider API Keys | `PATCH /profile/ai-models` (`profile.ai-models.update`), `POST /profile/api-keys` + `DELETE /profile/api-keys/{providerKey}` |
@@ -95,6 +107,30 @@ AI-model saves redirect back to their tab
 API-key forms redirect to plain `profile.edit`, which resolves the active tab
 solely from `?tab=` — so saving or removing an API key lands on the Account
 tab.
+
+# Preferences tab
+
+Native, **learning**, and interface language in one form
+(`PATCH /profile/settings`, `UpdateUserSettingsRequest`): the **learning
+language** — the account-level language the user studies, distinct from the
+native language and from the per-text reading side (ADR 0037; the term is
+CONTEXT.md's) — is a **required** select beside the native one
+(`profile.learning_language`): enabled languages only, no empty option,
+because the account always studies something. It persists as
+`user_settings.learning_language_id` and resolves app-side in
+`User::learningLanguage()` — the stored value, else English when it is
+enabled, else the first enabled language (the profile page's
+`sort_order`/`name` order), else null. The DB column is nullable by design;
+the always-set guarantee lives in that resolution. Two consequences the form
+bakes in: the page's `learningLanguageId` prop carries the **resolved**
+value (a settings row predating the preference opens the select on English,
+matching what the account actually resolves to), and the request rule is
+`required` + enabled-language `Rule::exists` — the endpoint is
+whole-form-replace, so an empty submit is a field error, never a silent
+clear. The resolved **code** rides beside the native-language code on every
+page as `auth.user.learning_language` (the shared `HandleInertiaRequests`
+auth props) — the Anki tab's selector default is its first consumer
+(below).
 
 # Popups tab
 
@@ -152,6 +188,27 @@ server resolves saved values over the defaults in
 `8765`, deck `ExtApp`, all thirteen fields on) and shares them to every page as
 the `ankiSettings` Inertia prop.
 
+**Layout — connection beside card content.** The tab's top half is a
+two-column row at `lg` and up (`lg:grid-cols-2 lg:gap-10`, equal halves —
+the same stack-below-`lg` pattern the template row's second column uses):
+the **Anki connection block** (AnkiConnect URL, port, Test connection —
+still global for every language) on the left, the **Card content block**
+(language selector, deck name) on the right, both capped at `max-w-xl` so
+the stacked small-screen shape is geometry-identical to the pre-row tab.
+The connection block carries its own serif heading + italic description
+(`profile.anki_connection_title` — "Anki" — and
+`profile.anki_connection_description`, endpoint-is-global copy; localized
+en/ru/be) styled byte-identically to Card content's, so the two columns
+read as equal sections — it sat bare under the section header before.
+Inside the now-narrower card-content column the language and deck inputs
+stack vertically (`space-y-4`; the two-across grid does not survive half
+the width). The **Template fields | Template preview** row sits directly
+below both columns on one shared level, unchanged, and the sync/sample
+section stays below that, full width. One concession to the ~420px columns
+of the `lg` band: the test-connection button + ok-message row gained
+`flex-wrap`, so the version message wraps under the button instead of
+overflowing.
+
 **Per-language deck + fields** (anki-popup-refresh): the `anki` section may
 additionally carry a sparse `languages` map keyed by **enabled language
 code** — `{deck?, fields?}` per entry, absent keys meaning "fall through".
@@ -170,15 +227,24 @@ carries that map under `ankiSettings.languages` (enabled codes in
 a prop without a `languages` map (the popup resolves
 `languages[code] ?? languages.default` first).
 
-**The tab's language selector** (anki-popup-refresh ticket 04) edits those
-per-language entries: it lists the enabled languages — the page's shared
-`languages` prop, which carries `code` beside the names since this ticket —
-and opens on the user's native language when it is enabled, else the first
-enabled one. Switching swaps the deck input, the thirteen toggles, the
-template preview, and the sync/sample targets to that language's entry; the
-connection block above (URL/port/test) stays global. The deck input lives in
-the card-content header beside the selector (it left the connection block,
-where the global deck used to sit next to the port). The selection itself is
+**The tab's language selector** (anki-popup-refresh ticket 04; the default
+is anki-tab-polish ticket 03) edits those per-language entries: it lists the
+enabled languages — the page's shared `languages` prop, which carries `code`
+beside the names since that ticket — and opens on the user's **learning
+language** (the account-level language being studied, ticket 02's shared
+`auth.user.learning_language` code) when it is among the enabled codes, else
+the native language when it is enabled, else the first enabled code, else no
+selection — `ankiTabDefaultCode(codes, learningLanguage, nativeLanguage)` in
+`resources/js/lib/ankiTabState.js`. The membership tests in that chain are
+the only enabledness check: the shared code is the stored value trusted
+server-side (the resolution does not re-check enabledness, ticket 02's
+judgment call), so a learning language disabled after it was chosen falls
+through to the native/first branches here. Switching swaps the deck input,
+the thirteen toggles, the template preview, and the sync/sample targets to
+that language's entry; the connection block beside it (URL/port/test — left
+column of the top row) stays global. The deck input stacks vertically below
+the selector in the card-content column (it left the connection block, where
+the global deck used to sit next to the port). The selection itself is
 not persisted — a reload re-derives it — and the resolved `default` entry is
 never selectable. The tab's editable state mirrors the persisted `anki`
 section exactly (connection + the complete per-language map) through
@@ -238,7 +304,17 @@ values always carry every field, so re-syncing the template restyles all
 existing cards' scalar fields instead of dropping data); the body toggles
 are not template concerns. Meta lines whose value carries
 literal decoration sit inside Anki-native `{{#Field}}…{{/Field}}`
-conditionals, so an empty field drops the whole line; the card surface is
+conditionals, so an empty field drops the whole line; the footer's
+" · " separator — itself a `{{#Tags}}{{#Language}}…` conditional pair — is
+additionally **generated only when both the Tags and Language toggles are
+on** (anki-tab-polish ticket 01): a toggled-off footer field keeps its
+value in a hidden wrapper whose conditional never fires, so an un-gated
+separator would render a lone dot whenever either toggle is off. Omitting
+it from the generated template drops it at once from all three surfaces
+that derive from one generation — the preview iframe, the Copy HTML
+artifact, and the template synced into Anki; with both toggles on,
+Anki's value-conditionals still drop it for a note whose Tags or Language
+value is empty. The card surface is
 the popup's palette (vellum/ink/hairline/verdigris, light + Anki night
 mode), 560px study width centered, serif headword, local font stacks only.
 `buildNoteFields()` builds the full 13-field note from a word payload —
@@ -370,7 +446,11 @@ kept all translations).
 
 All preferences live on the one-row-per-user `user_settings`
 (`App\Models\UserSettings`): `native_language_id` /
-`interface_language_id` (typed FKs to `languages`), `ai_model_id` /
+`learning_language_id` / `interface_language_id` (typed FKs to
+`languages`; the learning column is nullable by design — the always-set
+guarantee lives in `User::learningLanguage()`'s resolution, and the
+migration backfilled every existing settings row to English),
+`ai_model_id` /
 `explanation_model_id` (typed FKs to `ai_models`, `nullOnDelete` — the model
 sync hard-deletes catalog rows, ADR 0035), and the `ui_settings` JSONB blob
 for per-surface UI state (simulator/reader sections via `PATCH /ui-settings`
@@ -384,7 +464,9 @@ The model preferences were backfilled from the legacy
 # Language & validation
 
 Validation is FormRequest-based: `UpdateUserSettingsRequest`
-(enabled/interface-enabled `Rule::exists` on languages),
+(required + enabled-language `Rule::exists` on the learning id — the only
+required one of the three; native / interface-enabled exists rules on the
+other two),
 `UpdateAiModelPreferencesRequest` (nullable `Rule::exists('ai_models')->where('is_enabled')`),
 `StoreApiKeyRequest`, `ProfileUpdateRequest`. Locale resolution from the
 language settings is described in

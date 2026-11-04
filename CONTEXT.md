@@ -274,7 +274,7 @@ A Language whose `is_enabled` flag is true. The flag is a stored value only; the
 _Avoid_: active language, available language
 
 **User settings**:
-The per-user configuration row (one per user) holding the user's durable choices — the **Native language**, the **Interface language**, and **UI settings**. Stored in `user_settings`. _Avoid_: preferences, profile (the page, not the row).
+The per-user configuration row (one per user) holding the user's durable choices — the **Native language**, the **Learning language**, the **Interface language**, and **UI settings**. Stored in `user_settings`. _Avoid_: preferences, profile (the page, not the row).
 
 **UI settings**:
 The stable, user-chosen interface configuration inside User settings — simulator layout and panel visibility, font sizes, the selected AI model, the customized assessment task list, and panel sizes. A sub-kind of User settings; changes follow the user across devices. See ADR 0024. _Avoid_: simulator cache, UI state (that includes Working state, which is not stored server-side).
@@ -285,6 +285,10 @@ The per-device last position on a reading surface — in the simulator, the curr
 **Native language**:
 The language a user is a native speaker of, chosen at registration and changeable from the profile page. References a **Language** in the catalog; defaults to English.
 _Avoid_: mother tongue, first language
+
+**Learning language**:
+The account-level language a user studies — the one language study surfaces target; the Anki tab's language selector opens on it. A required **User settings** field beside the **Native language** (what the user speaks — a user whose native language is English may study Russian) and distinct from the per-text **Reading side** of ADR 0037, which each text's two languages derive. References a **Language** in the catalog; required and defaults to English (existing rows backfilled by migration; users with no settings row resolve English, else the first enabled language); edited on the profile's Preferences tab, its resolved code shared to every page beside `native_language`.
+_Avoid_: study language, target language, learning side (the per-text reading-side notion)
 
 **Interface-enabled language**:
 A Language flagged `is_interface_enabled` — usable as the language the web UI renders in. Only interface-enabled languages appear in interface-language pickers.
