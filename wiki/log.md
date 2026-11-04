@@ -56,6 +56,10 @@ round-trip, invalid-value rejection, resolution fallbacks),
 UiStringSeederTest pins the new keys, `ankiTabState.test.js` pins every
 default-code branch, `ankiTemplate.test.js` pins all four toggle
 combinations on the generated-HTML and rendered paths; full vitest green.
+Review pass: `User::learningLanguage()` aligned with the `nativeLanguage()`
+idiom beside it (reads the cached settings relation — one query fewer per
+authenticated request); profile.md's `generated.at` re-bumped for the
+touched listed source.
 
 ## 2026-11-02 (ai-answer-words feedback pass — popup toolbar parity, loading line on the missing card, token hover underline)
 
