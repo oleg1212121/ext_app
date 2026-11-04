@@ -112,7 +112,7 @@ class User extends Authenticatable implements FilamentUser
      */
     public function learningLanguage(): ?Language
     {
-        $stored = $this->settings()->with('learningLanguage')->first()?->learningLanguage;
+        $stored = $this->settings?->learningLanguage;
 
         if ($stored !== null) {
             return $stored;
