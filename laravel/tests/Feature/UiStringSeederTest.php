@@ -42,6 +42,38 @@ it('seeds the Anki tab language-selector string in all three interface languages
     ]);
 });
 
+it('seeds the learning-language select string in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // anki-tab-polish ticket 02: the Preferences tab's required
+    // learning-language select, beside the native language.
+    expect(seededUiStringTexts('profile.learning_language'))->toBe([
+        'en' => 'Learning Language',
+        'ru' => 'Изучаемый язык',
+        'be' => 'Вывучаемая мова',
+    ]);
+});
+
+it('seeds the Anki tab connection-block heading and description in all three interface languages', function () {
+    app(LanguageSeeder::class)->run();
+    app(UiStringSeeder::class)->run();
+
+    // anki-tab-polish ticket 04: the connection column's own serif heading
+    // and description in the tab's two-column top row — styled to match the
+    // Card content column beside it (the block carried neither before).
+    expect(seededUiStringTexts('profile.anki_connection_title'))->toBe([
+        'en' => 'Anki',
+        'ru' => 'Anki',
+        'be' => 'Anki',
+    ]);
+    expect(seededUiStringTexts('profile.anki_connection_description'))->toBe([
+        'en' => 'The AnkiConnect address of your desktop Anki — one connection serves every language. Test it with the button; changes save automatically.',
+        'ru' => 'Адрес AnkiConnect на вашем настольном Anki — одно подключение обслуживает все языки. Проверьте его кнопкой; изменения сохраняются автоматически.',
+        'be' => 'Адрас AnkiConnect на вашым настольным Anki — адно злучэнне абслугоўвае ўсе мовы. Праверце яго кнопкай; змены захоўваюцца аўтаматычна.',
+    ]);
+});
+
 it('seeds the word popup update-affordance strings in all three interface languages', function () {
     app(LanguageSeeder::class)->run();
     app(UiStringSeeder::class)->run();

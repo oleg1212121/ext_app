@@ -3,10 +3,14 @@ import {useForm} from '@inertiajs/react'
 import {useI18n} from '../../i18n'
 import {InputError, InputLabel, PrimaryButton, SavedMessage, SectionHeader, SelectInput} from './ui.jsx'
 
-export default function PreferencesForm({nativeLanguageId, interfaceLanguageId, languages = []}) {
+export default function PreferencesForm({nativeLanguageId, learningLanguageId, interfaceLanguageId, languages = []}) {
     const { t } = useI18n()
     const {data, setData, patch, processing, recentlySuccessful, errors} = useForm({
         native_language_id: nativeLanguageId ?? '',
+        // Required server-side: opens on the resolved learning language (the
+        // controller resolves stored value → English when enabled → first
+        // enabled), and the select offers no empty option to clear it with.
+        learning_language_id: learningLanguageId ?? '',
         interface_language_id: interfaceLanguageId ?? '',
     })
 
@@ -43,6 +47,25 @@ export default function PreferencesForm({nativeLanguageId, interfaceLanguageId, 
                         ))}
                     </SelectInput>
                     <InputError messages={errors.native_language_id ? [errors.native_language_id] : []}/>
+                </div>
+
+                <div>
+                    <InputLabel htmlFor="learning_language_id">{t('profile.learning_language')}</InputLabel>
+                    <SelectInput
+                        id="learning_language_id"
+                        value={data.learning_language_id}
+                        onChange={(e) => setData('learning_language_id', Number(e.target.value))}
+                        error={errors.learning_language_id}
+                    >
+                        {/* Enabled languages only, no empty option — the
+                            learning language is required. */}
+                        {languages.map((language) => (
+                            <option key={language.id} value={language.id}>
+                                {languageLabel(language)}
+                            </option>
+                        ))}
+                    </SelectInput>
+                    <InputError messages={errors.learning_language_id ? [errors.learning_language_id] : []}/>
                 </div>
 
                 <div>

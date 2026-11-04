@@ -245,10 +245,14 @@ test('user settings can update the native language', function () {
     $user = User::factory()->create();
     $russian = Language::create(['code' => 'ru', 'name' => 'Russian', 'is_enabled' => true, 'sort_order' => 1]);
 
+    // The endpoint replaces the whole settings form, so the payload carries
+    // every field the PreferencesForm submits — including the required
+    // learning language.
     $response = $this
         ->actingAs($user)
         ->patch('/profile/settings', [
             'native_language_id' => $russian->id,
+            'learning_language_id' => $russian->id,
         ]);
 
     $response
@@ -283,17 +287,24 @@ test('user settings can set and clear the interface language', function () {
         'is_interface_enabled' => true,
         'sort_order' => 2,
     ]);
+    $english = Language::query()->where('code', 'en')->first();
 
     $this
         ->actingAs($user)
-        ->patch('/profile/settings', ['interface_language_id' => $interface->id])
+        ->patch('/profile/settings', [
+            'interface_language_id' => $interface->id,
+            'learning_language_id' => $english->id,
+        ])
         ->assertSessionHasNoErrors();
 
     expect($user->settings->refresh()->interface_language_id)->toBe($interface->id);
 
     $this
         ->actingAs($user)
-        ->patch('/profile/settings', ['interface_language_id' => null])
+        ->patch('/profile/settings', [
+            'interface_language_id' => null,
+            'learning_language_id' => $english->id,
+        ])
         ->assertSessionHasNoErrors();
 
     expect($user->settings->refresh()->interface_language_id)->toBeNull();
@@ -304,11 +315,15 @@ test('user settings accepts belarusian as the interface language', function () {
     // reads the registry, so the same PATCH must succeed for the be row.
     app(LanguageSeeder::class)->run();
     $be = Language::query()->where('code', 'be')->first();
+    $english = Language::query()->where('code', 'en')->first();
     $user = User::factory()->create();
 
     $this
         ->actingAs($user)
-        ->patch('/profile/settings', ['interface_language_id' => $be->id])
+        ->patch('/profile/settings', [
+            'interface_language_id' => $be->id,
+            'learning_language_id' => $english->id,
+        ])
         ->assertSessionHasNoErrors();
 
     expect($user->settings->refresh()->interface_language_id)->toBe($be->id);
@@ -330,6 +345,153 @@ test('user settings rejects a language that is not interface-enabled', function 
         ->assertSessionHasErrors('interface_language_id');
 
     expect($user->settings->refresh()->interface_language_id)->toBeNull();
+});
+
+test('user settings can update the learning language', function () {
+    $user = User::factory()->create();
+    $russian = Language::create(['code' => 'ru', 'name' => 'Russian', 'is_enabled' => true, 'sort_order' => 1]);
+    $english = Language::query()->where('code', 'en')->first();
+
+    // The form the Preferences tab submits carries the whole settings state.
+    $this
+        ->actingAs($user)
+        ->patch('/profile/settings', [
+            'native_language_id' => $english->id,
+            'learning_language_id' => $russian->id,
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect('/profile?tab=preferences');
+
+    expect($user->settings->refresh()->learning_language_id)->toBe($russian->id);
+
+    // The preferences form opens on the stored choice on the next visit.
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('learningLanguageId', $russian->id)
+            ->where('nativeLanguageId', $english->id));
+});
+
+test('every page shares the resolved learning-language code beside the native one', function () {
+    // The Anki tab's default (anki-tab-polish ticket 03) is the first
+    // consumer, but the code is shared from the middleware — on every page,
+    // like the native-language code it sits beside.
+    createLanguages(['en', 'ru']);
+    $user = User::factory()->create();
+    $languages = collect(['en', 'ru'])->mapWithKeys(
+        fn (string $code): array => [$code => Language::query()->where('code', $code)->first()],
+    );
+    $user->settings()->updateOrCreate([], [
+        'native_language_id' => $languages['en']->id,
+        'learning_language_id' => $languages['ru']->id,
+    ]);
+
+    foreach (['/profile', '/'] as $url) {
+        $this
+            ->actingAs($user)
+            ->get($url)
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('auth.user.native_language', 'en')
+                ->where('auth.user.learning_language', 'ru'));
+    }
+});
+
+test('the learning language resolves to English for a user with no settings row', function () {
+    // The factory gives every user a settings row; deleting it reproduces the
+    // real no-settings case the column's nullability exists for. The stored
+    // value is absent, so the app-side resolution serves English (enabled).
+    createLanguages(['en', 'ru']);
+    $user = User::factory()->create();
+    $user->settings()->delete();
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('auth.user.learning_language', 'en'));
+});
+
+test('the learning language falls back to the first enabled language when English is disabled', function () {
+    createLanguages(['en', 'ru']);
+    Language::query()->where('code', 'en')->update(['is_enabled' => false]);
+    $user = User::factory()->create();
+    $user->settings()->delete();
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('auth.user.learning_language', 'ru'));
+});
+
+test('the learning-language code is null when no language is enabled', function () {
+    // The fresh-install terminal case: migrate before any language exists.
+    createLanguages(['en']);
+    $user = User::factory()->create();
+    $user->settings()->delete();
+    Language::query()->delete();
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('auth.user.learning_language', null));
+});
+
+test('the preferences form opens on the resolved learning language before any save', function () {
+    // A user whose settings row predates the preference (stored value null —
+    // the factory mirrors that shape) gets the resolved English id, so the
+    // select opens on a real language instead of an empty option.
+    createLanguages(['en', 'ru']);
+    $user = User::factory()->create();
+    $english = Language::query()->where('code', 'en')->first();
+
+    $this
+        ->actingAs($user)
+        ->get('/profile')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('learningLanguageId', $english->id));
+});
+
+test('user settings require a learning language', function () {
+    // The learning language is required, unlike the nullable native/interface
+    // settings: an empty value is a field error, never a silent clear.
+    $user = User::factory()->create();
+
+    $response = $this
+        ->actingAs($user)
+        ->patch('/profile/settings', [
+            'learning_language_id' => '',
+        ]);
+
+    $response->assertSessionHasErrors('learning_language_id');
+    expect($user->settings->refresh()->learning_language_id)->toBeNull();
+});
+
+test('user settings reject a disabled learning language', function () {
+    $user = User::factory()->create();
+    $disabled = Language::create(['code' => 'fr', 'name' => 'French', 'is_enabled' => false, 'sort_order' => 2]);
+
+    $this
+        ->actingAs($user)
+        ->patch('/profile/settings', ['learning_language_id' => $disabled->id])
+        ->assertSessionHasErrors('learning_language_id');
+
+    expect($user->settings->refresh()->learning_language_id)->toBeNull();
+});
+
+test('user settings reject a learning language id that does not exist', function () {
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->patch('/profile/settings', ['learning_language_id' => 999999])
+        ->assertSessionHasErrors('learning_language_id');
+
+    expect($user->settings->refresh()->learning_language_id)->toBeNull();
 });
 
 test('user can delete their account', function () {

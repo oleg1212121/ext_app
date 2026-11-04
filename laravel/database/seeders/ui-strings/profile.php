@@ -14,6 +14,9 @@ return [
     'profile.settings_title' => ['en' => 'Settings', 'ru' => 'Настройки', 'be' => 'Настройкі'],
     'profile.settings_description' => ['en' => 'Choose your native language. It is used to tailor your learning experience.', 'ru' => 'Выберите родной язык. Он используется для персонализации вашего обучения.', 'be' => 'Выберыце родную мову. Яна выкарыстоўваецца для персаналізацыі вашага навучання.'],
     'profile.native_language' => ['en' => 'Native Language', 'ru' => 'Родной язык', 'be' => 'Родная мова'],
+    // anki-tab-polish ticket 02: the required learning-language select beside
+    // the native language — the account-level language the user studies.
+    'profile.learning_language' => ['en' => 'Learning Language', 'ru' => 'Изучаемый язык', 'be' => 'Вывучаемая мова'],
     'profile.interface_language' => ['en' => 'Interface Language', 'ru' => 'Язык интерфейса', 'be' => 'Мова інтэрфейсу'],
     'profile.follows_native_language' => ['en' => '— Follows native language —', 'ru' => '— Как родной язык —', 'be' => '— Як родная мова —'],
     'profile.password_title' => ['en' => 'Password', 'ru' => 'Пароль', 'be' => 'Пароль'],
@@ -61,6 +64,11 @@ return [
     'profile.popup_section_explanation' => ['en' => 'Explanation tab', 'ru' => 'Вкладка разбора', 'be' => 'Укладка разбору'],
     'profile.anki_title' => ['en' => 'Anki', 'ru' => 'Anki', 'be' => 'Anki'],
     'profile.anki_description' => ['en' => 'Connect this app to your desktop Anki through AnkiConnect and choose what your cards contain. Changes save automatically; cards are sent from your browser, never from the server.', 'ru' => 'Подключите приложение к настольному Anki через AnkiConnect и выберите содержимое карточек. Изменения сохраняются автоматически; карточки отправляются из браузера, а не с сервера.', 'be' => 'Падключыце праграму да настольнага Anki праз AnkiConnect і выберыце змесціва картак. Змены захоўваюцца аўтаматычна; карткі адпраўляюцца з браўзера, а не з сервера.'],
+    // anki-tab-polish ticket 04: the connection column's own serif heading
+    // and description in the tab's two-column top row — styled to match the
+    // Card content column beside it (the block carried neither before).
+    'profile.anki_connection_title' => ['en' => 'Anki', 'ru' => 'Anki', 'be' => 'Anki'],
+    'profile.anki_connection_description' => ['en' => 'The AnkiConnect address of your desktop Anki — one connection serves every language. Test it with the button; changes save automatically.', 'ru' => 'Адрес AnkiConnect на вашем настольном Anki — одно подключение обслуживает все языки. Проверьте его кнопкой; изменения сохраняются автоматически.', 'be' => 'Адрас AnkiConnect на вашым настольным Anki — адно злучэнне абслугоўвае ўсе мовы. Праверце яго кнопкай; змены захоўваюцца аўтаматычна.'],
     'profile.anki_url' => ['en' => 'AnkiConnect URL', 'ru' => 'URL AnkiConnect', 'be' => 'URL AnkiConnect'],
     'profile.anki_port' => ['en' => 'Port', 'ru' => 'Порт', 'be' => 'Порт'],
     'profile.anki_deck' => ['en' => 'Deck name', 'ru' => 'Название колоды', 'be' => 'Назва калоды'],

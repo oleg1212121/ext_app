@@ -85,11 +85,21 @@ export function ankiTabToggleField(state, code, key) {
     return {...state, languages: {...state.languages, [code]: {...entry, fields}}}
 }
 
-// The selector's initial language: the user's native language when it is
-// among the enabled ones, else the first enabled one; no selection without
-// enabled languages.
-export function ankiTabDefaultCode(codes, nativeLanguage) {
-    return codes.includes(nativeLanguage) ? nativeLanguage : codes[0] ?? null
+// The selector's initial language: the user's learning language when it is
+// among the enabled ones (the tab opens on the language being studied), else
+// the native language when enabled, else the first enabled one; no selection
+// without enabled languages. The membership tests here are the only
+// enabledness check: the shared learning-language code is the stored value
+// trusted server-side, so a learning language disabled after it was chosen
+// falls through to the native/first branches.
+export function ankiTabDefaultCode(codes, learningLanguage, nativeLanguage) {
+    if (codes.includes(learningLanguage)) {
+        return learningLanguage
+    }
+    if (codes.includes(nativeLanguage)) {
+        return nativeLanguage
+    }
+    return codes[0] ?? null
 }
 
 // The sync-layer config for the selected language: its deck and resolved

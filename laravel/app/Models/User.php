@@ -103,6 +103,31 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
+     * The one language the user studies, account-level — distinct from the
+     * native language and from the per-text learning side (ADR 0037). The DB
+     * column is nullable by design; the always-set guarantee lives here:
+     * the stored value, else English when it is enabled, else the first
+     * enabled language (the profile page's sort_order/name order), else null
+     * (a fresh install, which migrates before any language exists).
+     */
+    public function learningLanguage(): ?Language
+    {
+        $stored = $this->settings?->learningLanguage;
+
+        if ($stored !== null) {
+            return $stored;
+        }
+
+        $enabled = Language::query()
+            ->enabled()
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get();
+
+        return $enabled->firstWhere('code', 'en') ?? $enabled->first();
+    }
+
+    /**
      * The language the web UI renders in for this user: their interface
      * language, falling back to their native language, then to English.
      * Only interface-enabled languages qualify.

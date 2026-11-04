@@ -10,6 +10,7 @@ class UserSettings extends Model
     protected $fillable = [
         'user_id',
         'native_language_id',
+        'learning_language_id',
         'interface_language_id',
         'ai_model_id',
         'explanation_model_id',
@@ -31,6 +32,11 @@ class UserSettings extends Model
     public function nativeLanguage(): BelongsTo
     {
         return $this->belongsTo(Language::class, 'native_language_id');
+    }
+
+    public function learningLanguage(): BelongsTo
+    {
+        return $this->belongsTo(Language::class, 'learning_language_id');
     }
 
     public function interfaceLanguage(): BelongsTo

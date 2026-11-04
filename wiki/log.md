@@ -6,6 +6,61 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-04 (anki-tab-polish — learning-language preference, Anki tab opens on it + connection-beside-card-content layout, toggle-gated footer separator)
+
+Four tickets on the profile/Anki surfaces (spec `.scratch/anki-tab-polish/`).
+(1) **Learning language preference** (ticket 02): `user_settings` gains
+`learning_language_id` — a nullable typed FK to `languages` (existing rows
+backfilled to English by the migration), the always-set guarantee living
+app-side in `User::learningLanguage()` (stored → English when enabled →
+first enabled by `sort_order`/`name` → null; distinct from the per-text
+Reading side of ADR 0037). The Preferences tab gains a required
+learning-language select beside the native one (`profile.learning_language`
+ui-string, en/ru/be; enabled languages only, no empty option — the endpoint
+is whole-form-replace, so `UpdateUserSettingsRequest` validates it
+`required` + enabled-language `exists`: an empty or foreign id is a field
+error, never a silent clear), and `HandleInertiaRequests` shares the
+resolved `auth.user.learning_language` **code** beside `native_language` on
+every page. CONTEXT.md gains the **Learning language** term and the User
+settings entry lists it. (2) **Anki tab default** (ticket 03):
+`ankiTabDefaultCode(codes, learningLanguage, nativeLanguage)` in
+`ankiTabState.js` opens the selector on the learning language when it is
+among the enabled codes, else the native language when enabled, else the
+first enabled code, else no selection — selection stays per-visit; the
+stored learning code is trusted server-side (no enabledness re-check), so
+the chain's membership tests are the only enabledness check and a learning
+language disabled after it was chosen falls through. (3) **Anki tab
+layout** (ticket 04): the tab's top half is a `lg:grid-cols-2` row — the
+Anki connection block (URL/port/Test connection, still global; now with its
+own serif heading + italic description, `profile.anki_connection_title`/
+`anki_connection_description`, en/ru/be, styled byte-identically to Card
+content's) beside the Card content block (language selector, deck name);
+the language and deck inputs stack vertically in the narrower column; the
+Template fields | Template preview row and the sync/sample section are
+unchanged below. (4) **Footer separator** (ticket 01): `ankiTemplate.js`
+generates the Back's Tags · Language separator only when both the `tags`
+and `language` toggles are on (sparse settings: absent key = on) — a
+toggled-off footer field keeps its value in a hidden wrapper whose
+conditional never fires, so the previously un-gated separator rendered a
+lone dot; omitting it from the one generated template drops it at once
+from the preview iframe, the Copy HTML artifact, and the synced template;
+with both toggles on, the nested `{{#Tags}}{{#Language}}` value-conditionals
+still drop it for a note whose values are empty. profile.md gains a
+Preferences tab section + the layout paragraph, replaces the selector's
+native-first default rule with the learning-first chain, and documents the
+separator gate; anki-export.md's template passage records the gate; both
+`generated.at` bumped, sources extended (HandleInertiaRequests, User, the
+migration, PreferencesForm). Machine references regenerated (`wiki:sync` —
+the user-settings model changed). Tests: ProfileTest +8 (shared prop,
+round-trip, invalid-value rejection, resolution fallbacks),
+UiStringSeederTest pins the new keys, `ankiTabState.test.js` pins every
+default-code branch, `ankiTemplate.test.js` pins all four toggle
+combinations on the generated-HTML and rendered paths; full vitest green.
+Review pass: `User::learningLanguage()` aligned with the `nativeLanguage()`
+idiom beside it (reads the cached settings relation — one query fewer per
+authenticated request); profile.md's `generated.at` re-bumped for the
+touched listed source.
+
 ## 2026-11-02 (ai-answer-words feedback pass — popup toolbar parity, loading line on the missing card, token hover underline)
 
 User feedback on the shipped branch, three corrections codified as a

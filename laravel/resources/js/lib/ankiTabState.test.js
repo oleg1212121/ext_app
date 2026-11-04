@@ -133,17 +133,28 @@ describe('ankiTabDefaultEntry', () => {
 });
 
 describe('ankiTabDefaultCode', () => {
-    it('prefers the user native language when it is enabled', () => {
-        expect(ankiTabDefaultCode(CODES, 'ru')).toBe('ru');
+    it('prefers the learning language when it is among the enabled codes', () => {
+        // Learning wins even over an enabled native language — the tab opens
+        // on the language being studied.
+        expect(ankiTabDefaultCode(CODES, 'ru', 'en')).toBe('ru');
     });
 
-    it('falls back to the first enabled language otherwise', () => {
-        expect(ankiTabDefaultCode(CODES, 'de')).toBe('en');
-        expect(ankiTabDefaultCode(CODES, null)).toBe('en');
+    it('falls back to the native language when the learning one is not enabled', () => {
+        // The stored learning code is trusted server-side with no
+        // enabledness re-check (learning-language preference ticket), so a
+        // learning language disabled after it was chosen lands here — as
+        // does a missing one.
+        expect(ankiTabDefaultCode(CODES, 'de', 'ru')).toBe('ru');
+        expect(ankiTabDefaultCode(CODES, null, 'ru')).toBe('ru');
+    });
+
+    it('falls back to the first enabled language when neither is enabled', () => {
+        expect(ankiTabDefaultCode(CODES, 'de', 'fr')).toBe('en');
+        expect(ankiTabDefaultCode(CODES, null, null)).toBe('en');
     });
 
     it('has no selection without enabled languages', () => {
-        expect(ankiTabDefaultCode([], 'en')).toBeNull();
+        expect(ankiTabDefaultCode([], 'ru', 'en')).toBeNull();
     });
 });
 

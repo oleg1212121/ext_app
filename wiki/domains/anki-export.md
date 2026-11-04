@@ -4,7 +4,7 @@ title: Anki Export
 description: The path from saved words to the user's desktop Anki — per-user per-language connection/card settings (deck + field toggles per enabled language over a legacy global base) on the profile's Anki tab, a deterministic popup-styled card template (the Front is the word; the Back is header + the 13th Body field's popup-interleaved dictionary + footer) with split toggle semantics — scalar toggles hide-class template-side, body toggles shape the Body value at send time — one-click template sync into Anki, and per-word sends from the word popup that detect on open and refresh an already-saved own note in place, all driven browser-side through AnkiConnect (ADR 0077 + addenda; v3 records the updates-in-place reversal).
 tags: [anki, anki-connect, srs, export, profile, words, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-25T12:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-03T13:10:00+03:00 }
 verified: { by: agent:zcode, at: 2026-10-15T17:00:00+00:00 }
 sources:
   - id: adr
@@ -112,8 +112,13 @@ sources below).
    gone in schema v2; transcriptions live per-entry in the body), the
    `{{#Body}}` slot (dropped whole when the 13th field's value is empty —
    the `body` master toggle off, or a word with no dictionary content), and
-   an `ef-footer` (a muted Tags · Language line, its separator rendered
-   only when both fields carry values). **The scalar toggles are
+   an `ef-footer` (a muted Tags · Language line, whose separator is
+   GENERATED only when both the Tags and Language toggles are on — a
+   toggled-off footer field keeps its value in a hidden wrapper whose
+   conditional never fires, so an un-gated separator would render a lone
+   dot — and, when generated, still dropped by its nested
+   `{{#Tags}}{{#Language}}` value-conditionals whenever either field's
+   value is empty). **The scalar toggles are
    template-side**: every scalar field keeps its own classed wrapper, a
    toggled-off scalar additionally carrying the `ef-hidden` hide class, and
    **values always carry every field** — the hide class, not omission, is

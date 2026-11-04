@@ -163,6 +163,48 @@ describe('generateCardTemplate', () => {
         expect(back).toContain('{{#Tags}}{{#Language}}<span class="ef-footer-sep"> · </span>{{/Language}}{{/Tags}}');
     });
 
+    it('generates the footer separator only when BOTH the tags and language toggles are on', () => {
+        // Every toggle combination, pinned on the exact footer block: the
+        // separator is generated only when both footer toggles are on. A
+        // toggled-off field keeps its (hidden) value wrapper, so its nested
+        // value-conditional never fires and the separator would render a
+        // lone " · " — it must be omitted from the template instead, not
+        // even a blank line left behind.
+        const footer = (fields) => {
+            const {back} = generateCardTemplate(fields);
+            return back.slice(back.indexOf('<div class="ef-footer">'));
+        };
+
+        // Both on: the conditional separator sits between the two wrappers.
+        expect(footer({})).toBe([
+            '<div class="ef-footer">',
+            '<div class="ef-field ef-tags">{{Tags}}</div>',
+            '{{#Tags}}{{#Language}}<span class="ef-footer-sep"> · </span>{{/Language}}{{/Tags}}',
+            '<div class="ef-field ef-language">{{Language}}</div>',
+            '</div>',
+        ].join('\n'));
+
+        // Either toggle off — or both: no separator markup, hidden wrappers stay.
+        expect(footer({tags: false})).toBe([
+            '<div class="ef-footer">',
+            '<div class="ef-field ef-tags ef-hidden">{{Tags}}</div>',
+            '<div class="ef-field ef-language">{{Language}}</div>',
+            '</div>',
+        ].join('\n'));
+        expect(footer({language: false})).toBe([
+            '<div class="ef-footer">',
+            '<div class="ef-field ef-tags">{{Tags}}</div>',
+            '<div class="ef-field ef-language ef-hidden">{{Language}}</div>',
+            '</div>',
+        ].join('\n'));
+        expect(footer({tags: false, language: false})).toBe([
+            '<div class="ef-footer">',
+            '<div class="ef-field ef-tags ef-hidden">{{Tags}}</div>',
+            '<div class="ef-field ef-language ef-hidden">{{Language}}</div>',
+            '</div>',
+        ].join('\n'));
+    });
+
     it('bakes ef-hidden into toggled-off scalar wrappers while the note still carries all thirteen values', () => {
         const {back} = generateCardTemplate({familiarity: false, tags: false});
         expect(back).toContain('class="ef-field ef-familiarity ef-hidden"');
@@ -694,6 +736,50 @@ describe('renderCardHtml', () => {
         const noLanguage = renderCardHtml(back, {...buildNoteFields(DATA, {tags: ['A2']}), Language: ''});
         expect(noLanguage).not.toContain('ef-footer-sep');
         expect(noLanguage).toContain('<div class="ef-field ef-tags">A2</div>');
+    });
+
+    it('renders no lone dot under any off footer toggle — every note carries values (ADR 0077)', () => {
+        // The preview's exact path (generateCardTemplate + renderCardHtml,
+        // AnkiSettings.jsx) over every toggle combination, pinned on the
+        // exact rendered footer block. The note ALWAYS carries both values
+        // — card fields ride on notes — so a template that still contained
+        // the separator under a toggle-off would render a lone " · "
+        // between a hidden wrapper and a visible one.
+        const footerOf = (fields) => {
+            const {back} = generateCardTemplate(fields);
+            const html = renderCardHtml(back, buildNoteFields(DATA, {tags: ['A2']}));
+            return html.slice(html.indexOf('<div class="ef-footer">'));
+        };
+
+        // Both on + values: the separator renders between the two values.
+        expect(footerOf({})).toBe([
+            '<div class="ef-footer">',
+            '<div class="ef-field ef-tags">A2</div>',
+            '<span class="ef-footer-sep"> · </span>',
+            '<div class="ef-field ef-language">en</div>',
+            '</div>',
+        ].join('\n'));
+
+        // Either toggle off — or both: no dot anywhere in the footer, and
+        // the hidden wrappers still carry their values (hide-class contract).
+        expect(footerOf({tags: false})).toBe([
+            '<div class="ef-footer">',
+            '<div class="ef-field ef-tags ef-hidden">A2</div>',
+            '<div class="ef-field ef-language">en</div>',
+            '</div>',
+        ].join('\n'));
+        expect(footerOf({language: false})).toBe([
+            '<div class="ef-footer">',
+            '<div class="ef-field ef-tags">A2</div>',
+            '<div class="ef-field ef-language ef-hidden">en</div>',
+            '</div>',
+        ].join('\n'));
+        expect(footerOf({tags: false, language: false})).toBe([
+            '<div class="ef-footer">',
+            '<div class="ef-field ef-tags ef-hidden">A2</div>',
+            '<div class="ef-field ef-language ef-hidden">en</div>',
+            '</div>',
+        ].join('\n'));
     });
 
     it('leaves unknown placeholders and unknown conditional blocks untouched', () => {
