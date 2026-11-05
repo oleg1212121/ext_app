@@ -176,6 +176,16 @@ describe('WordPopup: the popup-open penalty (word-popup-overhaul ticket 01)', ()
         popupBody.indexOf('// On-open duplicate detection'),
     );
 
+    // The header derivation, lifted verbatim out of the component source
+    // and evaluated against the payload states (the sourceBadge pattern,
+    // ADR 0066): the fallback ORDER is the contract — the penalty response
+    // wins over the caller's open-time value — and a verbatim-contains pin
+    // cannot tell that from a flipped one.
+    const derivation = penaltyEffectSource.match(/const effectiveFamiliarity = (.+);/)?.[1];
+    if (!derivation) throw new Error('the effectiveFamiliarity derivation was not found in WordPopup.jsx');
+    const effectiveFor = (resolvedFamiliarity, familiarity) =>
+        new Function('resolvedFamiliarity', 'familiarity', `'use strict'; return ${derivation}`)(resolvedFamiliarity, familiarity);
+
     it('POSTs the resolved id through the shared lib helper — CSRF-signed, ledger-free', () => {
         // The lib POST (never a fetch literal in the component — the
         // /words/lookup pin's one-POST-literal contract, extended to the
@@ -202,11 +212,20 @@ describe('WordPopup: the popup-open penalty (word-popup-overhaul ticket 01)', ()
         expect(penaltyEffectSource).toMatch(/if \(!cancelled && familiarity\[lookedUpId\] !== undefined\) \{\s*setResolvedFamiliarity\(familiarity\[lookedUpId\]\);\s*\}/);
     });
 
-    it('the header shows the new score — effectiveFamiliarity feeds PopupContent', () => {
+    it('the header shows the new score — the penalty response wins over the payload familiarity', () => {
         // The AI panel's mount passes no familiarity prop, so the resolved
         // score becomes the header's value — the same slot the columns'
-        // WordText patches through their own response handling.
-        expect(popupBody).toContain('const effectiveFamiliarity = resolvedFamiliarity ?? familiarity ?? null;');
+        // WordText patches through their own response handling. Evaluated,
+        // not quoted: a flipped fallback order (payload value first) would
+        // pass a verbatim pin while breaking "the penalty response wins",
+        // and a falsy fold would swallow a legitimate zero score.
+        expect(effectiveFor(35, 40)).toBe(35);
+        expect(effectiveFor(0, 40)).toBe(0);
+        expect(effectiveFor(null, 40)).toBe(40);
+        expect(effectiveFor(null, undefined)).toBeNull();
+    });
+
+    it('effectiveFamiliarity feeds PopupContent — the shared header slot', () => {
         expect(popupRenderSource).toContain('familiarity={effectiveFamiliarity}');
     });
 });

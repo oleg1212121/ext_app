@@ -423,7 +423,7 @@ it('surfaces a missing provider key inside the job as a failed ledger row, and a
 
     $this->actingAs($fixture['user'])
         ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
-        ->assertStatus(400)
+        ->assertBadRequest()
         ->assertJsonPath('error', 'Choose an AI model in your profile settings.');
     Queue::assertNothingPushed();
     expect(WordAiFetch::query()->where('word_id', $fixture['word']->id)->exists())->toBeFalse();
@@ -770,7 +770,7 @@ it('rate-limits the word enrich endpoint after 20 requests per minute — the qu
     for ($i = 2; $i <= 20; $i++) {
         $this->actingAs($fixture['user'])
             ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
-            ->assertStatus(409);
+            ->assertConflict();
     }
 
     // Exactly one ask ever dispatched for the word — the 409s dispatched

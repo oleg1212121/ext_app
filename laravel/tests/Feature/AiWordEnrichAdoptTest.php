@@ -356,7 +356,7 @@ it('answers 400 guidance and mints nothing when no AI model is usable', function
 
     $this->actingAs($fixture['user'])
         ->postJson('/ai/word-enrich', ['surface' => 'bomb-hit', 'language_code' => 'en'])
-        ->assertStatus(400)
+        ->assertBadRequest()
         ->assertJsonPath('error', 'Choose an AI model in your profile settings.');
 
     // The mint happens only when an ask can really be dispatched.

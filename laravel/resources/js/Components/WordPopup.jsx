@@ -3,6 +3,7 @@ import {createPortal} from 'react-dom';
 import {Link, usePage} from '@inertiajs/react';
 import ModelsUsedPopup, {RobotHelpIcon} from './ModelsUsedPopup.jsx';
 import {useI18n} from '../i18n';
+import {isApprovedAdmin} from '../lib/authUser';
 import {getCsrfToken} from '../lib/http';
 import {renderMarkdown} from '../lib/markdown';
 import {canAskExplanation} from '../lib/wordExplain';
@@ -1524,12 +1525,12 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     const ankiSettings = props.ankiSettings ?? null;
     const nativeLanguage = props.auth?.user?.native_language ?? null;
     // Ask-AI is an approved-admin capability (word-popup-overhaul ticket
-    // 06): the ask spends the asker's own API-key tokens, so the sparkles
-    // icon — plain and re-ask variants, dictionary and missing cards alike
-    // — renders ONLY for approved admins (hidden, not disabled, for
-    // everyone else; the endpoint answers the same gate with a 403). The
-    // shared auth user already carries `role` and `is_approved`.
-    const canAskAi = props.auth?.user?.role === 'admin' && props.auth?.user?.is_approved === true;
+    // 06): the sparkles icon — plain and re-ask variants, dictionary and
+    // missing cards alike — renders ONLY for approved admins (hidden, not
+    // disabled, for everyone else; the endpoint answers the same gate with
+    // a 403). The gate itself lives in the shared lib helper — the
+    // profile's Popups-tab preview reads the same one.
+    const canAskAi = isApprovedAdmin(props.auth?.user);
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);

@@ -245,9 +245,14 @@ describe('WordPopup action toolbar', () => {
         // sparkles + re-ask) live inside it, so one gate covers both.
         expect(toolbar).toMatch(/\{canAskAi && \(\s*<button[^>]*word-popup-ask-ai/s);
         expect(buttonIn('word-popup-ask-ai')).toContain("data.ai_asked ? 'sparklesRefresh' : 'sparkles'");
-        // The gate reads the shared auth user (role + is_approved),
-        // computed once in the outer WordPopup and threaded to both cards.
-        expect(popupBodySource).toMatch(/props\.auth\?\.user\?\.role === 'admin' && props\.auth\?\.user\?\.is_approved === true/);
+        // The gate is the shared lib helper (role + is_approved, evaluated
+        // behaviorally in lib/authUser.test.js) off the shared auth user,
+        // computed once in the outer WordPopup and threaded to both cards —
+        // the profile preview reads the same helper, so the two surfaces
+        // cannot drift.
+        expect(popupSource).toContain("from '../lib/authUser'");
+        expect(popupBodySource).toContain('canAskAi = isApprovedAdmin(props.auth?.user)');
+        expect(previewSource).toContain('canAskAi = isApprovedAdmin(props.auth?.user)');
         expect(popupBodySource.match(/canAskAi=\{canAskAi\}/g)).toHaveLength(2);
     });
 

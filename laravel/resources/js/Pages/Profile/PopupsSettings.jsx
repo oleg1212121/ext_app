@@ -2,6 +2,7 @@ import React, {useState} from 'react'
 import {useI18n} from '../../i18n'
 import {usePage} from '@inertiajs/react'
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave'
+import {isApprovedAdmin} from '../../lib/authUser'
 import {PopupContent, DEFAULT_POPUP_FONT_SIZE} from '../../Components/WordPopup.jsx'
 import {CheckboxRow, SectionHeader} from './ui.jsx'
 import {SAMPLE_DATA, SAMPLE_EXPLAIN, SAMPLE_FAMILIARITY} from './sampleWordData'
@@ -36,8 +37,9 @@ export default function PopupsSettings({popupVisibility = null}) {
     const {props} = usePage()
     // Ask-AI renders for approved admins only (word-popup-overhaul ticket
     // 06) — the preview mirrors exactly what the viewer would see live:
-    // the inert sparkles icon for an admin, none for anyone else.
-    const canAskAi = props.auth?.user?.role === 'admin' && props.auth?.user?.is_approved === true
+    // the inert sparkles icon for an admin, none for anyone else. The gate
+    // is the popup's own shared lib helper.
+    const canAskAi = isApprovedAdmin(props.auth?.user)
     const [sections, setSections] = useState(() => {
         const resolved = {}
         for (const key of POPUP_SECTIONS) {

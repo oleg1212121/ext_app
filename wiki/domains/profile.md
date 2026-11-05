@@ -4,7 +4,7 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language (native + learning + interface) and AI-model preferences, popup block visibility with a live preview, per-language Anki settings (a learning-language-defaulted language selector over deck + card content, the connection beside it) with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-11-05T15:15:00+0000 }
+generated: { by: agent:zcode, at: 2026-11-05T15:23:00+0000 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller

@@ -6,6 +6,19 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-05 (word-popup-overhaul review pass — the ask gate extracted to lib/authUser.js, the profile.md drift re-stamped)
+
+Review-fix pass: the approved-admin ask gate (`role === 'admin' &&
+is_approved === true`) that WordPopup.jsx and the profile's
+PopupsSettings.jsx each derived inline now lives in one shared helper,
+`lib/authUser.js::isApprovedAdmin` (behavioral vitest tests beside it;
+the toolbar pin over the verbatim expression became a wiring-level pin),
+and the popup-open header's fallback derivation is pinned lift-and-
+evaluate style. `wiki/domains/profile.md` re-stamped
+(`generated.at`) after its listed PopupsSettings.jsx source changed —
+its claims were checked and remain accurate (the preview still mirrors
+the live gate).
+
 ## 2026-11-05 (word-popup-overhaul ticket 07 — knowledge base closure: the three ADR amendments, the accuracy sweep, the full green pass)
 
 The feature's decision record closed out. **ADR 0028** gained its
