@@ -187,3 +187,58 @@ missing mode, which shared the premature flash.
   (chat, per-sentence explanations) can adopt the same map-less,
   adopt-less stance through the same seams — the `renderMarkdown`
   `wordTokens` option, `aiAnswerTokens.mjs`, and `wordLookup.js`.
+
+## Amendment (2026-11-05, word-popup-overhaul tickets 02 + 05)
+
+Two corrections recorded by the word-popup-overhaul spec; the core
+posture (map-less, instant open, in-place resolve) stands.
+
+### 7. The adopt-less rule is reversed for this surface — the ask's learning-first language un-suppresses Ask-AI
+
+Decision 2's blanket refusal is **superseded**: the AI panel's popup
+mount now passes ONE `language` descriptor —
+`answerAskLanguage(answerLanguages)` in `lib/aiAnswerTokens.mjs`, the
+**first code of the snapshotted resolution order** (the ask's learning
+language, base fallback — the same learning-first priority decision 3
+resolves with), `{code}`-shaped, null when the ask carried no usable
+code. The missing-card's Ask-AI gating keys on exactly that descriptor
+(`language?.code`), so the icon goes live for approved admins (the flow
+is admin-only and queued since word-popup-overhaul ticket 06 — ADR 0082's
+amendment): asking about an unknown answer word mints (or adopts onto an
+existing row — adoption still wins, never duplicates) into that language
+through the existing adopt-on-ask path (`resolveOrAdopt`, ADR 0081's
+lookup key), and the card populates on the popup's next open — the
+`{queued: true}` dispatch swaps nothing live. Decision 2's ambiguity
+hazard is met not by refusing adoption but by **pinning the language to
+the ask's own learning-first code** — the one definite language an AI
+answer's words can claim, and the one the ordered resolve already looks
+under first, so a mint lands where the resolve looks.
+
+The rest of decision 2 stands unchanged: the mount is still **map-less**
+(no familiarity map, tokens never tint) and carries no sentence-bound
+ledger — no read events (no sentence identity exists). Its one
+familiarity interaction is ADR 0028's popup-open penalty as amended,
+posted once per popup instance when the resolve lands a hit; a token
+that stays missing costs nothing.
+
+Rejected: **keeping adopt-less** (a user who wants an answer word in
+their dictionary was told to re-find it in a column — on the panel
+where admins actually read unknown words this read as a broken popup,
+and the ask is the panel's only route from missing to dictionary);
+**guessed or user-picked languages per ask** (the wrong-language mints
+decision 2 rejected still lurk there — the snapshot's learning-first
+code needs no new UI and cannot contradict the resolve); and **a
+side-aware two-column mint** (a word filed under both codes doubles the
+dictionary on one ask).
+
+### 8. The hover affordance is underline-only — the panel paints no background
+
+The Consequences' "hover fill" bullet and the original commit's
+background-on-hover rules are stale since word-popup-overhaul ticket 02:
+the vellum `:hover` background block (light + `.dark`, every
+text-bearing element under `#ai_answer_div`) is deleted from
+`public/css/simulator.css`. The hovered word token's underline (the
+columns' `.word-token:hover` affordance scoped to the panel) is the
+panel's **whole** hover affordance; plain (non-token) answer text gives
+only the pointer cursor; the focused token's 2px accent ring is
+untouched.

@@ -81,3 +81,53 @@ no write path on reveal or lookup.
   so the client can recolor without a refetch.
 - `complete` still trusts the client's word list (same trust level as
   before); it only ever adds, never creates rows.
+
+## Amended 2026-11-05 (word-popup-overhaul ticket 01: the flat popup-open penalty replaces the lookup penalty)
+
+Decision 2's Lookup (−2, first popup open per sentence row) is **retired
+end to end** and replaced by a flat **popup-open penalty: every popup
+open of a dictionary-mapped word costs −5, every time** — the ledger's
+once-per-row dedupe no longer applies to popup opens, because an open is
+a deliberate act of *not knowing*, not an exposure that saturates: the
+reader who re-opens a word is still re-consulting it, and a per-row
+first-open rule priced the second consultation of the same sentence at
+zero.
+
+- **The ledger narrows to read credits.** The `user_word_event` table and
+  its unique (user, word, row_key, kind) rule survive for the
+  sentence-reveal **read** credits alone (+1, unchanged): `POST
+  /word-events` accepts `kind: read` only, the `lookup` kind (and its
+  `LOOKUP_PENALTY`) are deleted from validation, service and browser
+  helper alike, and historical `lookup` ledger rows stay untouched (no
+  migration).
+- **The open penalty is ledger-free and ungated.** `POST /words/opens`
+  (`WordController::recordOpens`, auth + approved, throttled 60/min like
+  the lookup resolve it sits beside, validated through
+  `RecordWordOpensRequest` — a bounded `word_ids` list) applies −5 per
+  word through `WordFamiliarityService::applyOpens` → `applyDeltas` with
+  no ledger write and no dedupe: repeat opens apply independently. First
+  touch creates the `user_word` row at 0, where the penalty clamps —
+  decision 2's 0–100 band holds, scores never go negative.
+- **The native-language exemption is server-side.** Words whose
+  `language_id` equals the caller's Native setting cost nothing — the
+  filter lives in `applyOpens`, not the client, so it is the single
+  source of truth for every popup surface: reader columns, simulator
+  columns, and the AI answer panel. An unset Native setting excludes
+  nothing (nothing is provably native).
+- **The response recolors, as before.** It mirrors `POST /word-events`'s
+  shape — `{familiarity: {wordId: value}}` covering every referenced
+  word, native words echoing their unchanged reading (null while they
+  have no row) — so the client recolors the token and the popup header
+  from the response alone, exactly as the old lookup event's response
+  did.
+- **The AI answer panel pays per popup instance.** Its mount has no word
+  map (ADR 0096), so the penalty lands when its on-open resolve hits —
+  once per popup instance, keyed on the resolved id; a token that stays
+  missing has no row to charge and costs nothing. An adoption swap alone
+  never charges: the hook is the resolve.
+
+Rejected: **keeping the ledger for opens with a per-day or per-row
+window** (a cap on a penalty for not knowing is a rule the reader can
+feel but never reason about — the flat price is honest precisely because
+it never varies); and **charging client-side** (farms the score the same
+way the 0028 ledger exists to prevent).

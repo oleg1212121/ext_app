@@ -5,8 +5,8 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-11-05T13:15:00+0000 }
-verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-05T16:00:00+0000 }
+verified: { by: agent:zcode, at: 2026-11-05T16:00:00+0000 }
 sources:
   - id: controller
     resource: laravel/app/Http/Controllers/Bilinguals/SimulatorController.php
@@ -43,7 +43,7 @@ sources:
     title: AI (the answer panel — delegated token handling, popup portal)
   - id: adr-ai-answer-words
     resource: docs/adr/0096-ai-answer-word-lookup.md
-    title: ADR 0096 — AI-answer words are map-less and adopt-less; the popup opens instantly and resolves in place
+    title: ADR 0096 — AI-answer words are map-less; the popup opens instantly and resolves in place (amended 2026-11-05 — the adopt-less rule reversed for this surface, hover underline-only)
   - id: question-hook
     resource: laravel/resources/js/Pages/Bilinguals/useAssessmentQuestion.js
     title: useAssessmentQuestion (question template / task-list split)
@@ -243,8 +243,8 @@ variants.
   (tokens render untinted), and none of the columns' sentence-bound
   ledger reaches the popup — no familiarity map, no word-event
   recording. It is no longer adopt-less (word-popup-overhaul ticket 05,
-  reversing ADR 0096's adopt-less rule for this surface; the ADR
-  amendment itself is pending in the closure ticket): the mount passes
+  reversing ADR 0096's adopt-less rule for this surface, the ADR's
+  2026-11-05 amendment recorded): the mount passes
   ONE `language` descriptor — the ask's learning-first language, the
   resolution order's first code, `{code}`-shaped (`answerAskLanguage` in
   `lib/aiAnswerTokens.mjs`; null when the ask carried no usable code,
@@ -282,15 +282,16 @@ variants.
   toolbar `+`/`−` buttons): `.ai-prose h1–h4` are mono-caps labels sized at
   `1.15em` so they stay visibly larger than body text at any size. The
   **gloss-run hover** affordance on `#ai_answer_div` text elements is a
-  pointer cursor everywhere plus a vellum background fill on hover (day +
-  night; the earlier text-shadow variant sits commented out in
-  `simulator.css`) — committed before the panel was interactive and
-  functional since the word tokens landed (ADR 0096); a word token
-  (`ai-word-token`) adds the columns' hover underline on top of the fill
+  pointer cursor everywhere — the panel paints NO hover background:
+  the vellum fill it committed with was removed (word-popup-overhaul
+  ticket 02), so the word token's
+  (`ai-word-token`) columns-style hover underline
   (`text-decoration: underline`, `text-underline-offset: 2px` — the
-  columns' `.word-token:hover` affordance scoped to the panel), and a
+  columns' `.word-token:hover` affordance scoped to the panel) is the
+  panel's whole hover affordance, and a
   focused token adds the columns' 2px accent focus ring
-  (`ai-word-token:focus-visible`).
+  (`ai-word-token:focus-visible`). The dead commented-out text-shadow
+  variant sits above the token rules in `simulator.css`.
 * The same `+`/`−` buttons also drive the **word-popup typography** (ADR
   0031): `popupFontSizeFor(font_size)` — 65% of the page font, floored at
   14px, capped at 32px — flows `Bilinguals` → `TextContent` → `WordText` →

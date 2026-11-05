@@ -6,6 +6,86 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-05 (word-popup-overhaul ticket 07 — knowledge base closure: the three ADR amendments, the accuracy sweep, the full green pass)
+
+The feature's decision record closed out. **ADR 0028** gained its
+amendment: the popup-open penalty — every open of a dictionary-mapped
+word costs −5, ungated and ledger-free (`POST /words/opens` →
+`WordFamiliarityService::applyOpens`; first touch creates the row at 0
+where the penalty clamps), the native-language exemption server-side
+(unset native excludes nothing) as the single source of truth for every
+surface, the `user_word_event` ledger + once-per-row rule narrowed to
+the sentence-reveal **read** credits (the `lookup` kind retired end to
+end, historical rows untouched), the response recoloring token + header,
+and the AI answer panel paying once per popup instance on a resolve hit.
+
+**ADR 0096** gained its amendment: the adopt-less rule (decision 2) is
+reversed for the AI-answer surface — the mount passes ONE `language`
+descriptor, `answerAskLanguage`'s learning-first code from the ask's
+snapshotted resolution order, un-suppressing Ask-AI (admin-only +
+queued per ADR 0082's amendment); a mint/adopt lands in the one
+definite language an answer's words can claim, the one the ordered
+resolve already looks under first, while the mount stays map-less with
+the open penalty as its only familiarity interaction. The same
+amendment notes the hover-affordance prose gone stale since
+word-popup-overhaul ticket 02: the vellum fill is deleted, the token
+underline is the panel's whole hover affordance.
+
+**ADR 0082** gained its amendment: ask-AI enrichment is **admin-only
+and queued** — the sparkles icon hidden for everyone but approved
+admins (403 to a direct non-admin POST before any gate, mint or ledger
+row; a lapsed admin bounces at the `approved` middleware first), the
+dispatch half validating + cheaply resolving model/key + running both
+ledger gates + adopting/minting + recording the pending row + answering
+the minimal `{queued: true}`, the queued `FetchWordAiEnrichment` (carrying
+scalar word + asking-user ids, resolving model AND BYO key inside the
+worker via `AIModelResolver`'s explicit-user seam) running ask → lenient
+parse → transactional merge → succeeded finalize → touch, known failures
+finalizing the ledger failed silently, `$tries = 1` / `$timeout = 300` /
+deliberately NOT `ShouldBeUnique`, decision 4's word-show-payload
+response superseded (the enriched content appears on the next open;
+provider failures no longer answer HTTP statuses at all, and the
+keyless 403 exists only inside the job — at dispatch a keyless user
+resolves no model and gets the 400 guidance).
+
+The accuracy sweep over the concepts: `interactive-words.md` verified
+end to end against the shipped behavior and corrected where the
+per-ticket bumps had left cross-ticket staleness — the Routes table's
+`POST /ai/word-enrich` row now carries the admin gate + the
+endpoint/job split + the `{queued: true}` contract (the word-show-payload
+swap is gone), the consuming-surfaces AI-panel bullet and the "What it
+does" sentence no longer call the mount adopt-less, the adopt-on-ask and
+first-consumer passages drop their "amendment pending" flags and the
+ticket-05-era "populates live via setData" claim (the dispatch swaps
+nothing since ticket 06), the ask-AI contract bullet states the
+no-key-at-dispatch reality (the same 400, the resolver filtering
+unkeyed providers) and the middleware/controller 403 split, the Anki
+note-values passage carries ticket 03's full-list shapes and the
+seventh-label count, and the three ADR source titles name their
+amendments. `anki-export.md` verified accurate end to end (no content
+change needed — ticket 03's rewrite already carried the full-list
+values, the legacy-expander CSS note and the disabled missing-card
+icon). The sweep also caught a genuinely stale passage ticket 02 had
+missed outside its own concept: `bilinguals-simulator.md` still
+described the deleted vellum background fill as the panel's hover
+affordance — rewritten to the shipped underline-only state, its
+"amendment pending" flag dropped, its ADR 0096 source title updated.
+GLOSSARY: the **Info popup** entry gained the transient ask-AI started
+notice; the **AI word enrichment** entry gained the admin-only +
+queued/silent-failure posture and now points at the popup's per-section
+provenance chips (the header badge moved 2026-10-24); the **Missing
+word** entry names the mirrored full toolbar. `generated.at` + the
+accuracy-pass `verified` stamps bumped on interactive-words,
+anki-export and bilinguals-simulator. Machine references: `wiki:sync`
+kept all three unchanged (no routes/models/commands in this ticket);
+`wiki:validate` green — 80 warning(s), all acknowledged;
+`wiki:validate --prune` found nothing to drop.
+
+**The spec's pre-review gate, both green:** full `composer run test` —
+1676 passed, 1 skipped (the pre-existing skip), 0 failed (9227
+assertions, 6 parallel workers, ~18 min); full vitest `npm run test` —
+29 files, 409 tests, all passed.
+
 ## 2026-11-05 (word-popup-overhaul ticket 06 — Ask-AI is admin-only, queued, fire-and-forget)
 
 The word popup's Ask-AI enrichment no longer runs its provider call inside
