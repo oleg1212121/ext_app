@@ -6,6 +6,55 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-05 (word-popup-overhaul ticket 04 — the info popup: notices, errors and the explanation float above the card)
+
+Every transient word-popup message moved out of the card into one
+**info popup**: an absolutely positioned, card-surface-styled layer
+anchored above the card (`bottom: 100%` + an 8px gap, spanning the card's
+width, viewport-clamped — it measures the space between the viewport's
+top edge and the card's top edge via its positioned wrapper's
+`getBoundingClientRect().top`, floored at 96px, re-measured on resize —
+and internally scrollable when tall). The portal wrapper split in two:
+`WordPopup.jsx`'s wrapper is now positioning-only (`word-popup absolute
+z-50 flex flex-col` + the dialog semantics + the close handlers' ref),
+and the overflow-hidden card surface (`word-popup-card`, still
+`popupContainerClass`) renders inside `PopupContent`/`MissingPopupContent`
+— the split is what lets the layer hang above the card unclipped while
+contributing no layout, so the toolbar/header/dictionary are byte-stable
+while messages come and go. What lives there, stacked with hairline
+separators: the Anki added/updated/duplicate notices (now AUTO-DISMISSING
+~4s via a timer effect beside the send state whose cleanup tears the
+timer down on any ankiSend change — the file's first setTimeout), the
+sticky Anki error (taxonomy and `/profile?tab=anki` link unchanged), the
+sticky ask-AI error (Retry + 400/403 link unchanged), and the AI Context
+explanation behind its toolbar toggle gate (`explainSlot` prop; the
+page-lifetime `explainCache`, auto-fire and "Ask again" behavior are
+byte-identical — only the mount point moved, out of the dictionary view's
+first row). Each sticky item carries the new shared
+`InfoDismissButton` (`word-popup-info-dismiss`, new `xMark` line-art
+icon, new `word.info_dismiss` ui-string en/ru/be — seeded via
+UiStringSeeder); successes take no control. Everything still clears on
+popup close/word change through the existing reset. The profile's
+Popups-tab preview renders the same layer above its preview card (its
+wrapper gained `relative` as the layer's positioning context; still
+message-free and network-inert — the canned `word.explain_preview`
+answer flows through the same pane). Toolbar strips (both cards) keep
+only their icon rows. Source pins re-pointed: `WordPopup.toolbar.test.js`
+(status lines + ask-error mounts now pinned on the layer, new describe
+for the layer's structure/clamp/stacking/auto-dismiss/dismiss/card
+byte-stability, preview positioning pin) and `WordText.missing.test.js`
+(missing card mounts the layer; new `word.info_dismiss` seeder pin);
+`icons.jsx` gained `xMark`. Docs: GLOSSARY gained the **Info popup**
+term; this concept's toolbar passage (icons-only strip), class-hook list
+(`-card`, `-info`, `-info-items`, `-info-dismiss`, relocated
+`-explain-row`/`-anki-*`/`-ask-ai-*`), viewport-fit paragraph, missing-card
+ask-error, Context-explanation mount point, ask-AI error and Anki
+status-line passages updated, `generated.at` bumped. Verification:
+touched vitest files 64 green, full vitest suite 29 files / 396 green,
+`npm run build` green (vitest reads component source as text only, so
+the build is the JSX parse gate); no routes/models/commands changed, so
+no `wiki:sync` was needed; Pest endpoint contracts untouched.
+
 ## 2026-11-05 (word-popup-overhaul ticket 03 — Anki notes bake full lists, transcriptions on their own line)
 
 Anki note values stop truncating: `ankiTemplate.js`'s `buildNoteFields`

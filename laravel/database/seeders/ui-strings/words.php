@@ -36,6 +36,11 @@ return [
     // has one — the four-state contract words the error treatment
     // strictly): re-sends the ask through the same guarded callback.
     'word.ask_ai_retry' => ['en' => 'Retry', 'ru' => 'Повторить', 'be' => 'Паўтарыць'],
+    // The info popup's per-item dismiss control (word-popup-overhaul
+    // ticket 04): the sticky items — the Anki error and the ask-AI error —
+    // each carry one small button; the success notices auto-dismiss
+    // instead.
+    'word.info_dismiss' => ['en' => 'Dismiss', 'ru' => 'Скрыть', 'be' => 'Схаваць'],
     'word.explain_loading' => ['en' => 'Explaining…', 'ru' => 'Объясняю…', 'be' => 'Тлумачу…'],
     'word.explain_failed' => ['en' => 'Explanation failed (:status)', 'ru' => 'Не удалось объяснить (:status)', 'be' => 'Не ўдалося патлумачыць (:status)'],
     'word.explain_retry' => ['en' => 'Retry', 'ru' => 'Повторить', 'be' => 'Паўтарыць'],

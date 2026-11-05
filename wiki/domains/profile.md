@@ -4,7 +4,7 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language (native + learning + interface) and AI-model preferences, popup block visibility with a live preview, per-language Anki settings (a learning-language-defaulted language selector over deck + card content, the connection beside it) with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-11-05T11:50:00+0000 }
+generated: { by: agent:zcode, at: 2026-11-05T12:40:00+0000 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
@@ -159,13 +159,17 @@ screens), a **live preview** renders the popup's real body — the exported
 "melted → melt" sample family — bound to the current checkbox state, so the
 preview cannot drift from the real popup; in preview mode the action
 toolbar's icons render disabled (no handlers) and the Explanation
-toggle's pane shows a canned answer when toggled on (the activation
-auto-request is suppressed — no tokens spent).
+toggle's pane floats a canned answer in the info popup above the preview
+card when toggled on (the activation
+auto-request is suppressed — no tokens spent; word-popup-overhaul
+ticket 04).
 The preview wrapper keeps a realistic inline `width: min(560px, 100%)` at
-the default popup font size and carries the same `word-popup` structural
-class as the real portal wrapper (`WordPopup.jsx`) — minus the portal's
-`absolute z-50` positioning, which stays portal-only — so user styles and
-tests can target both identically. The server resolves saved state over
+the default popup font size and carries the real portal wrapper's
+positioning class (`word-popup relative` — `relative` is what anchors the
+info popup layer's absolute positioning above the card; the portal keeps
+`absolute z-50`) while the card surface itself (`popupContainerClass`)
+renders from the shared `PopupContent` — so user styles and tests can
+target both identically. The server resolves saved state over
 defaults in `App\Support\PopupVisibility::for()` and shares it to every
 page as the `popupVisibility` Inertia prop. The tab's module-local
 `POPUP_SECTIONS` constant (display-only grouping in `POPUP_GROUPS`

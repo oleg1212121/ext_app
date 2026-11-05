@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — every 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-05T11:45:00+0000 }
+generated: { by: agent:zcode, at: 2026-11-05T12:35:00+0000 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -140,8 +140,10 @@ first row** — "I know this word" and "Remove mark" icons on the left;
 pushed right, in order: the always-visible Anki send icon, the on-demand
 Explanation toggle, the Ask-AI icon (a ledger-tracked, re-askable BYO-key
 enrichment per word, merged inline — below), and the robot (Models-used)
-icon rightmost —
-with the Anki status lines directly beneath (the two progress icons are the
+icon rightmost — and the strip is ICONS ONLY: everything the icons trigger
+(the Anki status lines, the ask-AI error, the AI Context explanation)
+floats in the **info popup** above the card instead (word-popup-overhaul
+ticket 04; the two progress icons are the
 only toolbar elements
 the `progress_actions` visibility opt-out still hides; inapplicable
 toolbar icons disable rather than disappear, and the Explanation toggle +
@@ -342,12 +344,14 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    (`list-style-position: inside`) so wide ("100.") numbers can never spill
    past the card edge.
    **Every element inside the card carries a stable `word-popup-*` class**
-   (the portal/preview wrapper keeps `word-popup`): `word-popup-loading`,
-   `-error`, `-actions` (the first-row toolbar strip), `-header`, `-title`,
+   (the positioned wrapper — portal and preview alike — keeps `word-popup`;
+   since word-popup-overhaul ticket 04 the wrapper is positioning-only and
+   the overflow-hidden card surface underneath is `-card`):
+   `word-popup-loading`,
+   `-error`, `-actions` (the first-row toolbar strip — icons only), `-header`, `-title`,
    `-familiarity`, `-frequency`, `-form-of`, `-models-button`,
    `-explain-toggle` (with `aria-pressed` while shown), `-ask-ai`,
-   `-dictionary`, `-explain-row` (the mounted pane's first-row wrapper),
-   `-section`,
+   `-dictionary`, `-section`,
    `-section-label` / `-section-label-chip` (a header's word-level chip) /
    `-section-source` (the provenance chip trailing a section label's end) /
    `-section-dimmed` (the header a word-level mark dims), `-translations`, `-translations-more`,
@@ -362,14 +366,20 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    `-progress-reset`, `-anki-send` (the Anki icon button — add or update
    glyph, amber token while the reachability probe says Anki
    answers, neutral grey otherwise but always enabled — grey is color
-   only, hover/click is how a cold session re-discovers Anki) with its `-anki-added` / `-anki-updated` /
-   `-anki-duplicate` / `-anki-error` status lines,
+   only, hover/click is how a cold session re-discovers Anki) —
    `-missing` (the missing-word card's not-in-dictionary note),
    `-explain` (the Explanation pane) with
    `-explain-guidance`, `-explain-loading`, `-explain-error` (its retry
    button `-explain-retry`), `-explain-answer` (empty-answer note
-   `-explain-empty`, "Ask again" `-explain-again`) — CSS hooks keeping the
-   card's structure addressable from outside styles without coupling them
+   `-explain-empty`, "Ask again" `-explain-again`). The info popup layer
+   carries its own hooks — `-info` (the absolutely positioned box above the
+   card), `-info-items` (the internally scrolling item stack),
+   `-info-dismiss` (the sticky items' small dismiss x) — with the relocated
+   renders inside it: `-anki-added` / `-anki-updated` / `-anki-duplicate` /
+   `-anki-error` (the send outcomes), `-ask-ai-error` / `-ask-ai-retry`
+   (the ask failure) and `-explain-row` (the mounted pane's wrapper) — CSS
+   hooks keeping the card's structure addressable from outside styles
+   without coupling them
    to utility-class churn (no test pins them; the profile preview reuses
    the component itself).
    **Every block below the headword is individually hideable per user**
@@ -385,7 +395,13 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    `PopupContent`, which the profile tab reuses for a live preview.
    It always fits the viewport: it opens below the word, flips above it when
    there is more room above, its height is capped to the larger side, the
-   body scrolls internally. **Its typography follows the host page's
+   body scrolls internally. The **info popup** above the card
+   (word-popup-overhaul ticket 04) clamps the same way — a popup opened near
+   the viewport's top edge keeps its messages visible: the layer measures
+   the space between the viewport's top edge and the card's top edge,
+   caps itself to it (floored), scrolls internally when tall, and — being
+   absolutely positioned — never shifts the card's content when messages
+   appear or disappear. **Its typography follows the host page's
    font-size setting** (ADR 0031): the page derives
    `popupFontSizeFor(pageFont)` — 65% of the page font, floored at 14px,
    capped at 32px — and the popup scales with it (width 560px at the default
@@ -463,9 +479,10 @@ the popup swaps the response payload in — the same setData move as ticket 04
 Anki / Explanation icons act on the adopted `data.id` (through the popup's
 `resolvedWordId`), while the page's word map learns the new word only on its
 next refresh (until then the token re-opens as missing, and re-asking
-resolves the same row and re-enriches it in place). A failed ask shows the server's
-guidance verbatim beneath the toolbar through the shared `AskAiError`
-render: the no-model (400) and no-key (403)
+resolves the same row and re-enriches it in place). A failed ask floats the server's
+guidance verbatim in the info popup above the card through the shared `AskAiError`
+render (word-popup-overhaul ticket 04; sticky until its dismiss control —
+`word.info_dismiss`): the no-model (400) and no-key (403)
 answers carry the explain pane's go-to-settings link, and the Retry
 control re-sends the ask (word.ask_ai_retry).
 
@@ -636,8 +653,10 @@ eligibility per column, carried enabled or not), the toolbar grows the
 **Explanation toggle** (chat-bubble icon, first right-hand slot after the
 Anki send): nothing loads until its first click — then the **Context
 explanation** (an AI answer to "what does this word mean in this
-sentence?") mounts as the FIRST row of the dictionary view, above all POS
-sections, behind the same hairline, and requests immediately; a second
+sentence?") mounts in the **info popup** above the card (word-popup-overhaul
+ticket 04 — the layer stacks it beneath any concurrent Anki notices /
+errors; before that ticket it was the dictionary view's first row), and
+requests immediately; a second
 click hides the pane (the cache below survives, so re-showing never
 refetches), and the icon carries its pressed state (`aria-pressed` +
 verdigris tint) while shown. No tab strip exists — the dictionary content
@@ -777,10 +796,12 @@ and **replaces** the word's previous AI rows.
   `ai_asked` reads **`succeeded_at` (not the current status)**: a FAILED
   re-ask keeps the first success's timestamp, so the toolbar keeps the
   re-ask variant after a failed retry. Errors land verbatim
-  beneath the toolbar (`word-popup-ask-ai-error`; both popup bodies mount
+  in the info popup above the card (`word-popup-ask-ai-error`; both popup bodies mount
   the shared render — the missing card and the dictionary card alike —
   with the go-to-settings link for 400/403 and the four-state contract's
-  Retry control re-sending the ask); the ui-strings are `word.ask_ai` /
+  Retry control re-sending the ask; sticky until dismissed — each sticky
+  info-popup item carries the shared `word-popup-info-dismiss` control,
+  word.info_dismiss — word-popup-overhaul ticket 04); the ui-strings are `word.ask_ai` /
   `word.ask_ai_again` / `word.ask_ai_sending` / `word.ask_ai_failed` /
   `word.ask_ai_retry` (en/ru/be).
 * **The prompt.** `PromptTemplates::enrichment` — admin-editable
@@ -1012,8 +1033,15 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   delete the named note type (its notes are deleted with it), then
   sync again from the Anki tab and re-send the words; a pre-v2
   twelve-field install hits this by design, since AnkiConnect cannot add
-  a field to an existing note type. The status lines live directly
-  beneath the toolbar (`word-popup-anki-*` classes), and the icon's
+  a field to an existing note type. The status lines live in the info
+  popup above the card (`word-popup-anki-*` classes; word-popup-overhaul
+  ticket 04 — they used to sit directly beneath the toolbar): the
+  added / updated / duplicate notices are the info popup's only TRANSIENT
+  items, auto-dismissing ~4s after the send lands (the timer lives beside
+  the send state in the outer `WordPopup`, and its cleanup is the timing
+  guard — a new send, a dismiss, the word-change reset or an unmount tears
+  the pending timer down), while the error lines are sticky until their
+  per-item dismiss control. The icon's
   tooltip/aria swaps to "Saving…" (`word.anki_sending`) while the send is
   in flight, the button disabled.
 * The profile's Popups-tab preview renders the toolbar's icons disabled
@@ -1022,7 +1050,11 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   probe lives in the outer `WordPopup` (which owns `ankiSettings` and the
   loaded payload), `PopupContent` only reads the outcome through a
   false-defaulting `ankiReachable` prop, so the preview's Anki icon is
-  always grey and disabled and the preview never touches the network.
+  always grey and disabled and the preview never touches the network. The
+  preview renders the same info popup above its card (its wrapper carries
+  the portal's positioning minus absolute/z-50 — `relative` is the
+  layer's anchor), showing only the canned `word.explain_preview`
+  explanation through it.
 
 # Familiarity events (ADR 0028)
 

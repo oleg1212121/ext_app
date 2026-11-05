@@ -141,6 +141,18 @@ a plain-text prefix; a word whose every definition is labelled
 obsolete/archaic will rank as a demoted entry in the popup.
 _Avoid_: POS tags, grammar tags, sense tags
 
+**Info popup**:
+The layer of transient word-popup communication — Anki send notices
+(auto-dismissed after ~4 seconds), the sticky Anki errors, the sticky
+ask-AI error, and the AI Context explanation while its toolbar toggle
+is on — stacked in one absolutely positioned, card-surface-styled box
+floating above the word popup's card, so the card's content never
+shifts when messages come or go. Sticky items carry their own small
+dismiss control; everything clears when the popup closes or moves to
+another word, and the profile's Popups-tab preview renders its canned
+explanation through the same layer.
+_Avoid_: status line, toast, notification drawer
+
 **Missing word**:
 A word clicked in a text that the dictionary holds no entry for. It
 opens a placeholder card — the clicked spelling plus a plain

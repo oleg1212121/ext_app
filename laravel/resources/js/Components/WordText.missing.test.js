@@ -238,21 +238,24 @@ describe('MissingPopupContent', () => {
         expect(missingContentSource).not.toContain('fetch(');
     });
 
-    it('shows a failed ask beneath the toolbar — Retry, and no-model/no-key get the explain pane’s guidance', () => {
-        // The shared AskAiError render (PopupContent's toolbar mounts it
-        // too): the missing card passes the message, the status and the ask
-        // handler.
-        expect(missingContentSource).toContain('<AskAiError');
-        expect(missingContentSource).toContain('message={aiError}');
-        expect(missingContentSource).toContain('status={aiErrorStatus}');
-        expect(missingContentSource).toContain('onRetry={onAskAi}');
+    it('floats a failed ask in the info popup above the card — Retry, dismiss, no-model/no-key guidance', () => {
+        // The shared info popup layer (word-popup-overhaul ticket 04): the
+        // missing card mounts it with the ask handler and the dismiss
+        // callback — the failed ask's guidance floats above the card, the
+        // toolbar strip keeps only its icon.
+        expect(missingContentSource).toContain('<InfoPopup');
+        expect(missingContentSource).toContain('aiError={aiError}');
+        expect(missingContentSource).toContain('aiErrorStatus={aiErrorStatus}');
+        expect(missingContentSource).toContain('onRetryAskAi={onAskAi}');
+        expect(missingContentSource).toContain('onDismissAskAi={onDismissAskAi}');
+        expect(missingContentSource).not.toContain('<AskAiError');
         // The shared render carries the stable hook, the Retry control
         // (the four-state contract's error state) and the go-to-settings
         // link for the no-model (400) / no-key (403) answers — the
         // ExplainGuidance treatment.
         const errorComponent = popupSource.slice(
             popupSource.indexOf('function AskAiError'),
-            popupSource.indexOf('export function MissingPopupContent'),
+            popupSource.indexOf('function InfoDismissButton'),
         );
         expect(errorComponent).toContain('word-popup-ask-ai-error');
         expect(errorComponent).toContain('word-popup-ask-ai-retry');
@@ -272,6 +275,22 @@ describe('word.ask_ai_retry ui-string', () => {
         expect(retryStringMatch).toBeTruthy();
         for (const lang of ['en', 'ru', 'be']) {
             const match = retryStringMatch?.[1].match(new RegExp(`'${lang}' => '((?:[^'\\\\]|\\\\.)*)'`));
+            expect(match?.[1] ?? null, lang).toBeTruthy();
+        }
+    });
+});
+
+describe('word.info_dismiss ui-string', () => {
+    // The info popup's per-item dismiss control (word-popup-overhaul
+    // ticket 04): the sticky items — the Anki error and the ask-AI error —
+    // each carry one small button; the success notices auto-dismiss
+    // instead.
+    const dismissStringMatch = seederSource.match(/'word\.info_dismiss' => \[([\s\S]*?)\],/);
+
+    it('exists for all three interface languages', () => {
+        expect(dismissStringMatch).toBeTruthy();
+        for (const lang of ['en', 'ru', 'be']) {
+            const match = dismissStringMatch?.[1].match(new RegExp(`'${lang}' => '((?:[^'\\\\]|\\\\.)*)'`));
             expect(match?.[1] ?? null, lang).toBeTruthy();
         }
     });
