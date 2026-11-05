@@ -6,6 +6,38 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-05 (word-popup-overhaul ticket 03 — Anki notes bake full lists, transcriptions on their own line)
+
+Anki note values stop truncating: `ankiTemplate.js`'s `buildNoteFields`
+drops the popup-preview caps and the "+N more…" `<details>` expanders
+from the value side entirely — the flat Translations field and the
+Body's per-entry translations line list everything comma-joined; every
+transcription is bracketed and " · "-joined in both the flat
+Transcription field (previously unbracketed) and the Body (previously
+first-reading + expander), both composed by one `transcriptionsLine`
+helper so the shapes cannot drift. The Body's transcriptions render as
+their own block line below the translations line via a
+`<div class="ef-transcriptions">` baked into the VALUE — the class name
+stays so already-sent notes keep their font/opacity styling, and the
+CSS `.ef-transcriptions` rule is untouched so re-syncing the template
+cannot restyle old notes' run-on inline spans (the frozen-values
+semantics; the block div affects newly sent notes only). The unused
+expander wording plumbing left the builder (`more` gone from
+`DEFAULT_LABELS` and `uiLabels` — seven labels now); the `word.more`
+ui-string and WordPopup's own "+N more" preview expander stay. The
+template CSS keeps the legacy `ef-more`/`ef-more-summary` rules so
+already-sent notes keep rendering after a template re-sync (the
+CSS↔markup pairing test is one-way and unaffected). Both senders (the
+popup's per-word send, the Anki tab's sample card/preview) go through
+the same `buildNoteFields`, so the tab's preview/sample card show the
+full-list shapes identically. Send-time section toggles still drop
+their lines whole (pinned). Docs: `anki-export.md` sends/values passage
+rewritten (full lists, value-side transcription block, legacy CSS note,
+seven labels), `generated.at` bumped. Verification: `ankiTemplate.test.js`
+rewritten to the full-list pins (52 green), full vitest suite 385 green,
+`AnkiSettingsMirrorTest` 9 green; no routes/models/commands changed, so
+no `wiki:sync` was needed.
+
 ## 2026-11-05 (word-popup-overhaul ticket 02 — AI answer hover: underline only, no background fill)
 
 Hovering anything in the streamed AI answer panel no longer paints the
