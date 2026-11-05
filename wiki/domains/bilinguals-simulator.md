@@ -5,7 +5,7 @@ description: Side-by-side bilingual reading trainer where users translate and ge
 tags: [bilinguals, simulator, ai, inertia, illustrations]
 status: stable
 stale_after: 2027-01-19
-generated: { by: agent:zcode, at: 2026-11-05T11:50:00+0000 }
+generated: { by: agent:zcode, at: 2026-11-05T13:15:00+0000 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
@@ -37,7 +37,7 @@ sources:
     title: renderMarkdown (the shared markdown→HTML pipeline — the wordTokens option)
   - id: ai-answer-tokens
     resource: laravel/resources/js/lib/aiAnswerTokens.mjs
-    title: aiAnswerTokens (the token gate, the ask-time snapshot + ask-codes derivations, Node-tested)
+    title: aiAnswerTokens (the token gate, the ask-time snapshot + ask-codes/ask-language derivations, Node-tested)
   - id: ai-panel
     resource: laravel/resources/js/Pages/Bilinguals/Components/AI.jsx
     title: AI (the answer panel — delegated token handling, popup portal)
@@ -239,11 +239,18 @@ variants.
   stream start — a side flip afterwards never changes it), a miss or
   transport failure leaving the plain missing card — see
   [interactive words](/domains/interactive-words.md). The surface is
-  map-less and adopt-less (ADR 0096): no word map ships for the answer
+  map-less (ADR 0096): no word map ships for the answer
   (tokens render untinted), and none of the columns' sentence-bound
-  ledger reaches the popup — no `language` prop (that absence disables
-  Ask-AI/adopt — nothing is ever minted from AI-answer text), no
-  familiarity map (tokens never tint). The one familiarity interaction is
+  ledger reaches the popup — no familiarity map, no word-event
+  recording. It is no longer adopt-less (word-popup-overhaul ticket 05,
+  reversing ADR 0096's adopt-less rule for this surface; the ADR
+  amendment itself is pending in the closure ticket): the mount passes
+  ONE `language` descriptor — the ask's learning-first language, the
+  resolution order's first code, `{code}`-shaped (`answerAskLanguage` in
+  `lib/aiAnswerTokens.mjs`; null when the ask carried no usable code,
+  keeping Ask-AI disabled) — so asking about an unknown answer word mints
+  it into that language through the existing adopt-on-ask path and the
+  card populates live, icons included. The one familiarity interaction is
   the popup-open penalty: a resolve hit posts `/words/opens` once per
   popup instance and the new score surfaces in the popup header
   (word-popup-overhaul ticket 01; a token that stays missing costs

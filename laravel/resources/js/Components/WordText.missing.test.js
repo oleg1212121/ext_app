@@ -57,6 +57,20 @@ const missingContentSource = popupSource.slice(
     popupSource.indexOf('export function PopupContent'),
 );
 
+// The missing card's toolbar block: from the strip's own class hook to the
+// word header that follows it — everything between is the first-row JSX
+// (word-popup-overhaul ticket 05's full toolbar).
+const missingToolbarStart = missingContentSource.indexOf('className="word-popup-actions');
+const missingToolbar = missingContentSource.slice(missingToolbarStart, missingContentSource.indexOf('className="word-popup-header'));
+
+// The full JSX of one missing-card toolbar button, located by its stable class hook.
+const missingButtonIn = (hook) => {
+    const at = missingToolbar.indexOf(hook);
+    expect(at, `${hook} renders in the missing card's toolbar`).toBeGreaterThan(-1);
+    const start = missingToolbar.lastIndexOf('<button', at);
+    return missingToolbar.slice(start, missingToolbar.indexOf('</button>', at));
+};
+
 // The default portal's render branch.
 const popupRenderSource = popupSource.slice(popupSource.indexOf('return createPortal('));
 
@@ -182,6 +196,19 @@ describe('WordPopup: missing mode', () => {
         expect(missingBranch).toContain('<MissingPopupContent');
         expect(missingBranch).toContain('askAiMissing');
         expect(missingBranch).not.toContain('<PopupContent');
+        // The full toolbar's wiring (word-popup-overhaul ticket 05): the
+        // section-visibility map, the explain payload the disabled toggle +
+        // live robot read, and the Models used popup state all thread down
+        // (no explainKey — the pane never mounts on the missing card, its
+        // toggle can never enable); the progress and Anki handlers do NOT —
+        // their structural absence is what disables those icons until the
+        // ask swaps the real card in.
+        expect(missingBranch).toContain('sections={effectiveSections}');
+        expect(missingBranch).toContain('explainProps={explainProps}');
+        expect(missingBranch).toContain('modelsOpen={modelsOpen}');
+        expect(missingBranch).toContain('onModelsOpenChange={setModelsOpen}');
+        expect(missingBranch).not.toContain('onProgressAction=');
+        expect(missingBranch).not.toContain('onAnkiSend=');
         // …and PopupContent (toolbar, header, dictionary, Anki, explain)
         // renders the adopted payload — the transition to the full
         // dictionary view is the same setData swap the known-word ask uses.
@@ -207,35 +234,101 @@ describe('MissingPopupContent', () => {
         // shared word.loading line instead (the same string the detail
         // fetch's word-popup-loading uses); the note keeps its own hook and
         // settles back in on a miss.
-        expect(missingContentSource).toMatch(/export function MissingPopupContent\(\{[^}]*resolving = false/);
+        expect(missingContentSource).toMatch(/export function MissingPopupContent\(\{[\s\S]*?resolving = false/);
         expect(missingContentSource).toContain('{resolving ? (');
         expect(missingContentSource).toContain("t('word.loading')");
         expect(missingContentSource).toContain('word-popup-loading');
     });
 
-    it('carries only the Ask-AI icon — live, but no progress, Anki, explain, robot', () => {
-        expect(missingContentSource).toContain('word-popup-ask-ai');
-        expect(missingContentSource).toContain("t('word.ask_ai')");
-        // The ticket 05 icon disables (never hides) while inapplicable: no
-        // handler (the profile preview, or a column without a language
-        // descriptor) or an ask in flight.
-        expect(missingContentSource).toMatch(/disabled=\{onAskAi == null \|\| aiBusy\}/);
-        expect(missingContentSource).toContain('onClick={onAskAi}');
-        for (const absent of [
+    it('shows the real card’s six toolbar hooks, in the same order (word-popup-overhaul ticket 05)', () => {
+        // The ask-AI-only strip is gone: the missing card mirrors the
+        // dictionary card's row — know, remove mark, then pushed right:
+        // Anki, Explanation toggle, Ask-AI, robot — every icon disabled,
+        // never hidden, while no word exists behind the card (except the
+        // two live ones pinned below).
+        const order = [
             'word-popup-progress-known',
             'word-popup-progress-reset',
             'word-popup-anki-send',
             'word-popup-explain-toggle',
+            'word-popup-ask-ai',
             'word-popup-models-button',
-            'word-popup-familiarity',
-            'word-popup-frequency',
-            'word-popup-form-of',
-        ]) {
+        ];
+        const at = order.map((hook) => missingToolbar.indexOf(hook));
+        at.forEach((position, index) => expect(position, order[index]).toBeGreaterThan(-1));
+        expect([...at].sort((a, b) => a - b)).toEqual(at);
+        // Anki — the first right-hand icon — carries the same ml-auto push,
+        // and it is the row's only one.
+        expect(missingButtonIn('word-popup-anki-send')).toContain('ml-auto');
+        expect(missingToolbar.match(/ml-auto/g)).toHaveLength(1);
+    });
+
+    it('disables know / remove-mark / Anki through the null-handler gates — no word to act on', () => {
+        // The progress and Anki handlers are structurally absent in missing
+        // mode (the outer WordPopup passes none — there is no word behind
+        // the card to act on): the same gates the real card reads disable
+        // through them, and go live only when the ask swaps the real card
+        // in. The Anki icon keeps the add form — no in-deck state exists to
+        // flip it.
+        expect(missingButtonIn('word-popup-progress-known')).toMatch(/disabled=\{onProgressAction == null\}/);
+        expect(missingButtonIn('word-popup-progress-reset')).toMatch(/disabled=\{onProgressAction == null\}/);
+        expect(missingButtonIn('word-popup-anki-send')).toMatch(/disabled=\{onAnkiSend == null\}/);
+        expect(missingButtonIn('word-popup-anki-send')).toContain('name="ankiAdd"');
+        expect(missingButtonIn('word-popup-progress-known')).toContain("t('word.i_know_this')");
+        expect(missingButtonIn('word-popup-progress-reset')).toContain("t('word.remove_mark')");
+        expect(missingButtonIn('word-popup-anki-send')).toContain("t('word.anki_send')");
+    });
+
+    it('gates the Explanation toggle + robot on the explain payload; the toggle stays disabled', () => {
+        // The same shared gate as the real card…
+        expect(missingContentSource).toMatch(/const showExplain = explainProps != null && sections\.explanation !== false;/);
+        expect(missingToolbar.match(/showExplain &&/g)).toHaveLength(2);
+        // …but the missing card's toggle can never enable: there is no word
+        // behind the card to attach the explanation to (and the pane it
+        // would mount lives on the real card the ask swaps in — a plain
+        // `disabled`, never pressed, never wired).
+        const toggle = missingButtonIn('word-popup-explain-toggle');
+        expect(toggle).toMatch(/\n\s+disabled\n/);
+        expect(toggle).toContain('aria-pressed={false}');
+        expect(toggle).not.toContain('onClick=');
+        expect(toggle).toContain("t('word.explain_toggle')");
+    });
+
+    it('the robot is live — the Models used popup needs no word', () => {
+        const robot = missingButtonIn('word-popup-models-button');
+        expect(robot).toContain('onClick={() => onModelsOpenChange?.(true)}');
+        expect(robot).toContain('aria-haspopup="dialog"');
+        expect(robot).not.toContain('disabled=');
+        expect(robot).toContain("t('ai.models_icon')");
+        // Its modal mounts behind the same gate, fed from the explain
+        // payload like the real card's.
+        expect(missingContentSource).toMatch(/\{showExplain && \(\s*<ModelsUsedPopup/s);
+        expect(missingContentSource).toContain('open={modelsOpen}');
+        expect(missingContentSource).toContain('onClose={() => onModelsOpenChange?.(false)}');
+    });
+
+    it('keeps Ask-AI live on its existing gating', () => {
+        const askAi = missingButtonIn('word-popup-ask-ai');
+        expect(askAi).toContain('onClick={onAskAi}');
+        expect(askAi).toMatch(/disabled=\{onAskAi == null \|\| aiBusy\}/);
+        // One hoisted label const drives tooltip + aria (the real card's
+        // pattern): a send in flight reads "sending", the default Ask AI.
+        expect(askAi).toContain('title={askAiLabel}');
+        expect(askAi).toContain('aria-label={askAiLabel}');
+        expect(missingContentSource).toMatch(/const askAiLabel = aiBusy \? t\('word\.ask_ai_sending'\) : t\('word\.ask_ai'\);/);
+        // Plain sparkles — the re-ask variant needs a payload's ai_asked,
+        // which the missing card never has.
+        expect(askAi).toContain('<Icon name="sparkles"');
+    });
+
+    it('still carries no header lines and fetches nothing', () => {
+        for (const absent of ['word-popup-familiarity', 'word-popup-frequency', 'word-popup-form-of']) {
             expect(missingContentSource).not.toContain(absent);
         }
         // The card itself fetches nothing — the ask POST lives in the outer
         // WordPopup.
         expect(missingContentSource).not.toContain('fetch(');
+        expect(missingContentSource).not.toContain('<AskAiError');
     });
 
     it('floats a failed ask in the info popup above the card — Retry, dismiss, no-model/no-key guidance', () => {

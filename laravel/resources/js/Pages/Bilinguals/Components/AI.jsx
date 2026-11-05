@@ -3,7 +3,7 @@ import {createPortal} from 'react-dom';
 import {Link} from '@inertiajs/react';
 import ModelsUsedPopup, {RobotHelpIcon} from '../../../Components/ModelsUsedPopup.jsx';
 import WordPopup from '../../../Components/WordPopup.jsx';
-import {answerLanguageCodes, opensTokenPopup} from '../../../lib/aiAnswerTokens.mjs';
+import {answerAskLanguage, answerLanguageCodes, opensTokenPopup} from '../../../lib/aiAnswerTokens.mjs';
 import {useI18n} from '../../../i18n';
 
 export default function AI(props) {
@@ -158,13 +158,21 @@ export default function AI(props) {
             />
             {/* The same WordPopup the text columns portal (WordText's mount
                 pattern), with everything the columns' ledger needs
-                structurally absent: no `language` prop — that absence is
-                what disables Ask-AI/adopt, so nothing is ever minted from
-                AI-answer text whose language is ambiguous; no familiarity
-                map (its tokens never tint — the popup-open penalty still
-                applies server-side once per popup instance when the resolve
-                lands, its score surfacing in the popup header); no progress
-                recording (no sentence identity reaches this panel).
+                structurally absent: no familiarity map (its tokens never
+                tint — the popup-open penalty still applies server-side once
+                per popup instance when the resolve lands, its score
+                surfacing in the popup header); no progress recording (no
+                sentence identity reaches this panel). ONE language
+                descriptor DOES travel down since word-popup-overhaul ticket
+                05 (ADR 0096's adopt-less rule reversed for this surface):
+                the ask's learning-first language — the first code of the
+                snapshotted resolution order, `{code}`-shaped, null when the
+                ask carried no usable code — un-suppresses the missing
+                card's Ask-AI, and asking about an unknown answer word mints
+                it into that language through the existing adopt-on-ask path
+                (existing-row adoption still wins); the card populates live,
+                toolbar included. The ordered `languageCodes` resolve above
+                is unchanged — the descriptor decides only the ask.
                 The columns' explain config rides along for toolbar parity
                 (ADR 0096 amendment): the toggle renders disabled (no
                 sentence context exists to ask about) and the robot opens
@@ -178,6 +186,7 @@ export default function AI(props) {
                     rect={popup.rect}
                     fontSize={props.popupFontSize}
                     explain={props.explain ?? undefined}
+                    language={answerAskLanguage(props.answerLanguages)}
                     languageCodes={answerLanguageCodes(props.answerLanguages)}
                     onClose={() => setPopup(null)}
                 />,

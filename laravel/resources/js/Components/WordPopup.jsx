@@ -574,36 +574,65 @@ function InfoPopup({ankiSend = null, onDismissAnki = null, aiError = null, aiErr
 }
 
 /**
- * The missing-word card (popup-ai-enrich tickets 03 + 05): what an unmapped
- * token opens — the raw clicked surface as the title and an honest
- * "not in the dictionary yet" note. There is no word id behind it: nothing
- * is fetched, no open penalty fires (a word that stays missing costs
- * nothing), and no familiarity / frequency /
- * form-of lines exist. The toolbar shows only what applies — the LIVE Ask-AI
- * icon (ticket 05's adopt-on-ask): the ask resolves the raw surface
- * server-side (a lookup-key hit adopts onto the existing row, a miss mints
- * one word), enriches it, and the response payload swaps this card for the
- * full dictionary view — ask-AI is the only path from missing to populated.
- * Inapplicable states disable, never hide: no handler (the profile preview)
- * or no column language to ask with, a request in flight. A failed ask
- * floats the server's guidance verbatim in the info popup above the card
- * (the shared InfoPopup layer, word-popup-overhaul ticket 04) — the
- * no-model and no-key cases carry the explain pane's go-to-settings link,
- * the Retry control re-sends the ask, and the sticky line takes the shared
- * per-item dismiss control. The structure mirrors the real card
- * (info popup / toolbar / header / dictionary, same hairlines and stable
- * `word-popup-*` hooks) so the card stays addressable from outside styles
- * the same way.
+ * The missing-word card (popup-ai-enrich tickets 03 + 05; word-popup-overhaul
+ * ticket 05): what an unmapped token opens — the raw clicked surface as the
+ * title and an honest "not in the dictionary yet" note. There is no word id
+ * behind it: nothing is fetched, no open penalty fires (a word that stays
+ * missing costs nothing), and no familiarity / frequency / form-of lines
+ * exist. The toolbar mirrors the real card's row in full — know / remove
+ * mark, then pushed right: Anki, the Explanation toggle, Ask-AI, the robot —
+ * with every inapplicable icon DISABLED, never hidden: there is no word
+ * behind the card yet, so the progress and Anki handlers are structurally
+ * absent (the outer WordPopup passes none — the same null-handler gates the
+ * real card reads disable through them) and the Explanation toggle can
+ * never enable (no word to attach an explanation to; the working pane lives
+ * on the real card the ask swaps in). Two icons stay live: the robot (the
+ * Models used popup needs no word) and Ask-AI wherever its existing gating
+ * decides a valid language makes asking possible. The moment a word exists
+ * — resolved on open, or adopted by an ask — this card is replaced by the
+ * real `PopupContent` through the existing swap, and the icons go live
+ * there; this component never gains the handlers itself. The Ask-AI ask
+ * resolves the raw surface server-side (a lookup-key hit adopts onto the
+ * existing row, a miss mints one word), enriches it, and the response
+ * payload performs the swap — ask-AI is the only path from missing to
+ * populated. A failed ask floats the server's guidance verbatim in the info
+ * popup above the card (the shared InfoPopup layer, word-popup-overhaul
+ * ticket 04) — the no-model and no-key cases carry the explain pane's
+ * go-to-settings link, the Retry control re-sends the ask, and the sticky
+ * line takes the shared per-item dismiss control. The structure mirrors the
+ * real card (info popup / toolbar / header / dictionary, same hairlines and
+ * stable `word-popup-*` hooks) so the card stays addressable from outside
+ * styles the same way.
  */
-export function MissingPopupContent({surface, onAskAi = null, aiBusy = false, aiError = null, aiErrorStatus = null, onDismissAskAi = null, resolving = false}) {
+export function MissingPopupContent({
+    surface,
+    sections = {},
+    explainProps = null,
+    modelsOpen = false,
+    onModelsOpenChange = null,
+    onProgressAction = null,
+    onAnkiSend = null,
+    onAskAi = null,
+    aiBusy = false,
+    aiError = null,
+    aiErrorStatus = null,
+    onDismissAskAi = null,
+    resolving = false,
+}) {
     const {t} = useI18n();
+
+    // The same shared gate as the real card: the Explanation toggle and the
+    // robot ride the explain payload + the ADR 0046 `explanation` key.
+    const showExplain = explainProps != null && sections.explanation !== false;
 
     const askAiLabel = aiBusy ? t('word.ask_ai_sending') : t('word.ask_ai');
 
     return (
         <>
             {/* The info popup above the card: the missing card's only
-                transient message is the ask-AI error. */}
+                transient message is the ask-AI error — the Anki notices and
+                the explanation pane cannot occur here (the card can send
+                nothing and its toggle never enables). */}
             <InfoPopup
                 aiError={aiError}
                 aiErrorStatus={aiErrorStatus}
@@ -612,18 +641,102 @@ export function MissingPopupContent({surface, onAskAi = null, aiBusy = false, ai
             />
 
             <div className={`word-popup-card ${popupContainerClass} min-h-0 flex-1`}>
+                {/* The action toolbar — the real card's row, mirrored in full:
+                    know / remove mark on the left; pushed right, in order:
+                    Anki, the Explanation toggle, the live Ask-AI icon, the
+                    robot rightmost. Disabled, never hidden: no word behind
+                    the card means no progress / Anki handler to act with
+                    (the icons render inert through the same null-handler
+                    gates the real card reads) and no explanation target —
+                    but the robot stays live (the Models used popup needs no
+                    word) and Ask-AI stays live wherever its gating decides
+                    a valid language makes asking possible. */}
                 <div className="word-popup-actions shrink-0 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]">
                     <div className="flex items-center gap-1 py-1.5">
+                        {sections.progress_actions !== false && (
+                            <button
+                                type="button"
+                                title={t('word.i_know_this')}
+                                aria-label={t('word.i_know_this')}
+                                disabled={onProgressAction == null}
+                                className={`word-popup-progress-known ${toolbarButtonClass('verdigris')}`}
+                            >
+                                <Icon name="checkCircle" className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
+                        {sections.progress_actions !== false && (
+                            <button
+                                type="button"
+                                title={t('word.remove_mark')}
+                                aria-label={t('word.remove_mark')}
+                                disabled={onProgressAction == null}
+                                className={`word-popup-progress-reset ${toolbarButtonClass('vermilion')}`}
+                            >
+                                <Icon name="minusCircle" className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
+                        {/* The add form — no in-deck state exists to flip it
+                            (there is no word to check the deck for), and no
+                            hover probe: a send can never fire from this icon
+                            until the real card replaces it. The margin-auto
+                            push mirrors the real row's right-hand group. */}
+                        <button
+                            type="button"
+                            title={t('word.anki_send')}
+                            aria-label={t('word.anki_send')}
+                            disabled={onAnkiSend == null}
+                            className={`word-popup-anki-send ${toolbarButtonClass('neutral')} ml-auto`}
+                        >
+                            <Icon name="ankiAdd" className="h-[1.25em] w-[1.25em]"/>
+                        </button>
+                        {/* The Explanation toggle renders for toolbar parity
+                            whenever an explain payload exists, but the missing
+                            card can never explain — there is no word to attach
+                            the pane to — so it is a plain disabled, never
+                            pressed, never wired button. */}
+                        {showExplain && (
+                            <button
+                                type="button"
+                                title={t('word.explain_toggle')}
+                                aria-label={t('word.explain_toggle')}
+                                aria-pressed={false}
+                                disabled
+                                className={`word-popup-explain-toggle ${toolbarButtonClass('neutral')}`}
+                            >
+                                <Icon name="chatBubble" className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
+                        {/* The live Ask-AI icon — the only path from missing
+                            to populated. Disables while inapplicable: no
+                            handler (a column without a language descriptor,
+                            or the on-open resolve still in flight) or an ask
+                            in flight; failed attempts stay retryable. */}
                         <button
                             type="button"
                             title={askAiLabel}
                             aria-label={askAiLabel}
                             disabled={onAskAi == null || aiBusy}
                             onClick={onAskAi}
-                            className={`word-popup-ask-ai ${toolbarButtonClass()} ml-auto`}
+                            className={`word-popup-ask-ai ${toolbarButtonClass()}`}
                         >
                             <Icon name="sparkles" className="h-[1.25em] w-[1.25em]"/>
                         </button>
+                        {/* Not a toggle: opens the Models used popup. Rightmost
+                            on the row and LIVE — the popup needs no word,
+                            reading its models off the explain payload exactly
+                            like the real card's robot. */}
+                        {showExplain && (
+                            <button
+                                type="button"
+                                onClick={() => onModelsOpenChange?.(true)}
+                                title={t('ai.models_icon')}
+                                aria-label={t('ai.models_icon')}
+                                aria-haspopup="dialog"
+                                className={`word-popup-models-button ${toolbarButtonClass('info')}`}
+                            >
+                                <RobotHelpIcon className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -650,6 +763,23 @@ export function MissingPopupContent({surface, onAskAi = null, aiBusy = false, ai
                         </p>
                     )}
                 </div>
+
+                {/* The Models used popup — the robot's target, mounted behind
+                    the same gate as the robot itself, fed from the explain
+                    payload exactly like the real card's. While it is open it
+                    owns Escape and outside-click closing; the word popup
+                    underneath stays put. */}
+                {showExplain && (
+                    <ModelsUsedPopup
+                        open={modelsOpen}
+                        onClose={() => onModelsOpenChange?.(false)}
+                        enabled={explainProps.enabled !== false}
+                        answerModel={explainProps.answerLabel ? {label: explainProps.answerLabel} : null}
+                        explanationModel={explainProps.modelLabel
+                            ? {label: explainProps.modelLabel, followsAnswer: explainProps.followsAnswer === true}
+                            : null}
+                    />
+                )}
             </div>
         </>
     );
@@ -1281,15 +1411,19 @@ export function PopupContent({
  * A `wordId` of null is MISSING mode (popup-ai-enrich tickets 03 + 05): the
  * token had no word-map entry, so nothing is fetched and no word-events fire
  * — the card renders from the raw `surface` alone via MissingPopupContent
- * (honest not-in-the-dictionary note, the live Ask-AI icon). Its ask posts
- * `{surface, language_code}` from the `language` prop — the clicked column's
- * descriptor language ({code, name}|null); a column without one keeps the
- * icon disabled. The server derives the lookup key, adopts onto the existing
- * row or mints one unknown-class word, and enriches it — the response
- * payload swaps the missing card for the full dictionary view in the same
- * setData move a known word's ask uses (the handlers act on the adopted
- * `data.id` through resolvedWordId; the page's word map learns the new word
- * on its next refresh).
+ * (honest not-in-the-dictionary note, the full toolbar with every wordless
+ * icon disabled — word-popup-overhaul ticket 05 — and the live Ask-AI icon).
+ * Its ask posts `{surface, language_code}` from the `language` prop — the
+ * clicked column's descriptor language ({code, name}|null), or the AI-answer
+ * panel's ask language ({code}|null, derived learning-first from the
+ * resolution snapshot, `lib/aiAnswerTokens.mjs`'s `answerAskLanguage` —
+ * ADR 0096's adopt-less rule reversed for that surface); a mount without a
+ * code keeps the icon disabled. The server derives the lookup key, adopts
+ * onto the existing row or mints one unknown-class word, and enriches it —
+ * the response payload swaps the missing card for the full dictionary view
+ * in the same setData move a known word's ask uses (the handlers act on the
+ * adopted `data.id` through resolvedWordId; the page's word map learns the
+ * new word on its next refresh).
  *
  * With an `explain` payload ({rowKind, rowId, side, sentenceIndex, modelKey,
  * enabled, modelLabel, followsAnswer, answerLabel}) the popup grows the
@@ -2001,14 +2135,21 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                 // adoption ask swaps a payload in (ticket 05) or the
                 // on-open lookup resolves a hit (ticket 07): the unmapped
                 // token's card — raw surface, honest not-in-dictionary
-                // note, the live Ask-AI icon. No fetch, no open penalty
-                // (a word that stays missing costs nothing), no
-                // familiarity/frequency/form-of, no progress/Anki actions
-                // — ask-AI is the only path from missing to populated, and
-                // the response payload moves the popup to the full
-                // dictionary view below.
+                // note, the full toolbar (word-popup-overhaul ticket 05)
+                // with every wordless icon disabled. No fetch, no open
+                // penalty (a word that stays missing costs nothing), no
+                // familiarity/frequency/form-of, and no progress/Anki
+                // handlers passed down — their structural absence is what
+                // disables those icons — while the robot (Models used) and
+                // Ask-AI stay live. Ask-AI is the only path from missing to
+                // populated, and the response payload moves the popup to the
+                // full dictionary view below.
                 <MissingPopupContent
                     surface={surface}
+                    sections={effectiveSections}
+                    explainProps={explainProps}
+                    modelsOpen={modelsOpen}
+                    onModelsOpenChange={setModelsOpen}
                     onAskAi={language?.code != null && !lookupBusy ? askAiMissing : null}
                     aiBusy={aiBusy}
                     aiError={aiError}

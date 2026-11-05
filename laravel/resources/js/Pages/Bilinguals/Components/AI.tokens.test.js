@@ -18,9 +18,14 @@ import {describe, expect, it} from 'vitest';
 // event.target.closest, a Ctrl+click inside a link prevents the browser's
 // new-tab navigation, the popup mounts in a portal with wordId=null
 // (missing mode) and the RAW token surface, and NOTHING of the columns'
-// ledger reaches it — no column language (that is what suppresses
-// Ask-AI/adopt), no familiarity map, no progress recording. The columns'
-// explain CONFIG does ride along (ADR 0096 amendment) — toolbar parity:
+// ledger reaches it — no familiarity map, no progress recording. ONE
+// language descriptor DOES ride along since word-popup-overhaul ticket 05
+// (the ADR 0096 adopt-less rule reversed for this surface): the ask's
+// learning-first language derived from the resolution snapshot, which
+// un-suppresses the missing card's Ask-AI — asking about an unknown answer
+// word mints it into that language through the existing adopt-on-ask path
+// (existing-row adoption still wins). The columns'
+// explain CONFIG also rides along (ADR 0096 amendment) — toolbar parity:
 // the toggle renders disabled inside WordPopup (no sentence context to ask
 // about) and the robot opens the Models used popup — but no sentence id is
 // ever attached, so the payload stays context-free.
@@ -131,13 +136,10 @@ describe('AI panel: the WordPopup mount', () => {
         expect(portalSource).toContain('languageCodes={answerLanguageCodes(props.answerLanguages)}');
     });
 
-    it('reaches nothing of the columns’ ledger — no language, familiarity, onProgress', () => {
-        // Structural absences, each one load-bearing: no `language` prop is
-        // what suppresses the Ask-AI/adopt icon (nothing is ever minted from
-        // AI-answer text), no familiarity map opens the card untouched, no
-        // progress recording (no word-event ledger without sentence
-        // identity).
-        expect(portalSource).not.toContain('language=');
+    it('reaches nothing of the columns’ ledger — no familiarity, no onProgress', () => {
+        // Structural absences, each one load-bearing: no familiarity map
+        // opens the card untouched, no progress recording (no word-event
+        // ledger without sentence identity).
         expect(portalSource).not.toContain('familiarity=');
         expect(portalSource).not.toContain('onProgress=');
         // The explain config rides along (ADR 0096 amendment) but never
@@ -145,6 +147,22 @@ describe('AI panel: the WordPopup mount', () => {
         // exactly that absence.
         expect(portalSource).toContain('explain={props.explain ?? undefined}');
         expect(portalSource).not.toContain('sentenceId');
+    });
+
+    it('carries ONE ask language derived from the snapshot — learning-first (word-popup-overhaul ticket 05)', () => {
+        // The ADR 0096 adopt-less rule is reversed for this surface: the
+        // single `language` descriptor — the resolution order's FIRST code
+        // (the ask's learning language, base fallback), or null when the
+        // snapshot has no usable code — un-suppresses the missing card's
+        // Ask-AI, and asking mints the word into it through the existing
+        // adopt-on-ask path (existing-row adoption still wins). The
+        // `languageCodes` ordered resolve above stays unchanged for the
+        // lookup path; the derivation itself is behaviorally tested in
+        // lib/aiAnswerTokens.test.mjs.
+        expect(portalSource).toContain('language={answerAskLanguage(props.answerLanguages)}');
+        // Only the pure lib derivation — no inline snapshot reshaping in the
+        // component (ADR 0066: decisions live in the lib, tested there).
+        expect(portalSource).not.toContain('props.answerLanguages}');
     });
 
     it('the page threads the columns’ explain config into the panel (toolbar parity, ADR 0096 amendment)', () => {

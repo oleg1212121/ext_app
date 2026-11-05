@@ -6,6 +6,37 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-05 (word-popup-overhaul ticket 05 — the missing card's full toolbar; the AI answer's popup can adopt)
+
+The missing-word card's ask-AI-only toolbar strip became the real card's
+row **in full**: know / remove mark on the left, then pushed right — Anki,
+the Explanation toggle, Ask-AI, the robot (`MissingPopupContent` grew the
+`sections` / `explainProps` / `explainKey` / `modelsOpen` /
+`onModelsOpenChange` props; the outer `WordPopup` threads them, and passes
+NO progress/Anki handlers — their structural absence is what disables those
+icons through the same null-handler gates the dictionary card reads).
+Every wordless icon is disabled, never hidden; two stay live: the robot
+(the Models used popup now mounts behind the missing card's own
+`showExplain` gate, fed from the explain payload like the real card's) and
+Ask-AI on its existing gating. The Explanation toggle renders but can
+never enable — no word to attach the pane to. Once a word exists (resolved
+on open or adopted by an ask) the existing `setData` swap replaces the
+card with the real dictionary view, icons live. Alongside, the simulator's
+AI answer panel now passes ONE `language` descriptor to its popup mount —
+the ask's learning-first language, the resolution order's first code,
+`{code}`-shaped (`answerAskLanguage` in `lib/aiAnswerTokens.mjs`, null
+when the ask carried no usable code) — reversing ADR 0096's adopt-less
+rule for that surface (the ADR amendment itself is pending in the closure
+ticket): asking about an unknown answer word mints it into that language
+through the existing adopt-on-ask path, existing-row adoption still
+winning. The ordered `languageCodes` resolve is unchanged. Docs updated:
+`wiki/domains/interactive-words.md` (missing-card toolbar passage,
+adopt-on-ask scope, AI-panel bullets, frontmatter description) plus
+accuracy passes where the touched files are listed sources:
+`wiki/domains/bilinguals-simulator.md` (the AI-answer surface bullet —
+map-less stays, adopt-less reversed) and `wiki/domains/anki-export.md`
+(the missing card's toolbar icon is a disabled placeholder, no send).
+
 ## 2026-11-05 (word-popup-overhaul ticket 04 — the info popup: notices, errors and the explanation float above the card)
 
 Every transient word-popup message moved out of the card into one

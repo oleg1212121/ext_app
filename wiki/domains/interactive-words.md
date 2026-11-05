@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Interactive Words
-description: Interactive words on the reader and bilinguals simulator — every tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (ADR 0030); dictionary-linked tokens open a word popup aggregating the word family (ADR 0045 + 0047, stable-sorted live-before-demoted then completeness-descending, ADR 0083) with an action toolbar — per-word Anki send (ADR 0077), an on-demand AI Context explanation, and the ledger-tracked, re-askable Ask-AI enrichment (ADR 0082) — per-user block visibility (ADR 0046) and typography following the host page's font (ADR 0031). Unmapped tokens open a missing-word card whose Ask-AI icon adopts onto the existing row or mints one word through the ADR 0081 lookup key (the card re-resolves on open so an adopt stays found, ADR 0079). The simulator's streamed AI answer is a third interactive surface (ADR 0096): its tokens open the same popup missing-first, ordered learning→base over the ask's language snapshot, map-less and adopt-less. Segmentation is render-time (ADR 0027), sentence-reveal reads are ledger-deduped (ADR 0028) while every popup open of a mapped word costs −5 (native language free, no dedupe), and missing translations auto-fetch in the background (Yandex→Google, link-only, ledger-deduped with a permanent exclusions list).
+description: Interactive words on the reader and bilinguals simulator — every tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (ADR 0030); dictionary-linked tokens open a word popup aggregating the word family (ADR 0045 + 0047, stable-sorted live-before-demoted then completeness-descending, ADR 0083) with an action toolbar — per-word Anki send (ADR 0077), an on-demand AI Context explanation, and the ledger-tracked, re-askable Ask-AI enrichment (ADR 0082) — per-user block visibility (ADR 0046) and typography following the host page's font (ADR 0031). Unmapped tokens open a missing-word card — the full toolbar with every wordless icon disabled, the robot and Ask-AI live — whose Ask-AI icon adopts onto the existing row or mints one word through the ADR 0081 lookup key (the card re-resolves on open so an adopt stays found, ADR 0079). The simulator's streamed AI answer is a third interactive surface (ADR 0096): its tokens open the same popup missing-first, ordered learning→base over the ask's language snapshot, map-less — and since word-popup-overhaul ticket 05 adoptable, asking minting into the snapshot's learning-first language (ADR 0096's adopt-less rule reversed for this surface; the ADR amendment itself is pending in the closure ticket). Segmentation is render-time (ADR 0027), sentence-reveal reads are ledger-deduped (ADR 0028) while every popup open of a mapped word costs −5 (native language free, no dedupe), and missing translations auto-fetch in the background (Yandex→Google, link-only, ledger-deduped with a permanent exclusions list).
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-05T12:35:00+0000 }
+generated: { by: agent:zcode, at: 2026-11-05T13:05:00+0000 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -434,15 +434,25 @@ detail-fetch effect returns before its fetch while `fetchId` — `wordId ??
 lookedUpId` — is null), no open penalty (there is no word id to charge —
 a word that stays missing costs nothing; a resolve HIT posts
 `/words/opens` once per popup instance, word-popup-overhaul ticket 01),
-and no familiarity / frequency / form-of lines. The toolbar shows
-only what applies — the **live Ask-AI icon** (below): know / remove / Anki /
-the Explanation toggle / the robot are inapplicable there, and ask-AI is the
-only path from missing to populated. Each column's language
-(`{code, name}|null` — the reader's display-column descriptors carry it as
-`language`, the simulator's too) is plumbed `WordText` → `WordPopup` as the
-`language` prop; a column without a descriptor keeps the icon disabled
-(there is nothing valid to ask with). The structure mirrors the real card
-(same toolbar / header / dictionary blocks, hairlines and stable
+and no familiarity / frequency / form-of lines. The toolbar mirrors the
+real card's row IN FULL (word-popup-overhaul ticket 05) — know / remove
+mark on the left, then pushed right: Anki, the Explanation toggle, Ask-AI,
+the robot — with every wordless icon **disabled, never hidden**: the
+progress and Anki icons render inert through the same null-handler gates
+the real card reads (the outer `WordPopup` passes no handlers — there is
+nothing to act on yet), and the Explanation toggle can never enable (no
+word to attach the pane to; it is a plain disabled, never-pressed button —
+the working pane lives on the real card the ask swaps in). Two icons stay
+live: the **robot** (the Models used popup reads its models off the explain
+payload — no word needed) and the **Ask-AI icon** (below) — the only path
+from missing to populated; the moment a word exists (resolved on open or
+adopted by an ask) this card is replaced by the real dictionary view
+through the existing swap, and the icons go live there. Each column's
+language (`{code, name}|null` — the reader's display-column descriptors
+carry it as `language`, the simulator's too) is plumbed `WordText` →
+`WordPopup` as the `language` prop; a mount without a code keeps the icon
+disabled (there is nothing valid to ask with). The structure mirrors the
+real card (same toolbar / header / dictionary blocks, hairlines and stable
 `word-popup-*` hooks, `-title` on the surface, `-missing` on the note). The
 old unclickable phrasal-hit span branch merged into the interactive path: an
 unmapped phrasal-verb hit keeps its dotted underline + headword tooltip and
@@ -452,7 +462,10 @@ unchanged end to end.
 ## Adopt-on-ask (popup-ai-enrich ticket 05)
 
 The missing card's Ask-AI icon posts `{surface, language_code}` — the raw
-clicked surface plus the clicked column's language code — to the same
+clicked surface plus the clicked column's language code (word-popup-overhaul
+ticket 05 widens the path to the AI answer panel's missing card too: its ask
+carries the snapshot's learning-first language, see the AI-answer surface
+below) — to the same
 `POST /ai/word-enrich` the known-word ask uses (`AiWordEnrichRequest`
 validates `word_id` and `language_code` as the exclusive pair — a surface
 may ride on either mode, since the payload resolves from the clicked
@@ -558,11 +571,18 @@ re-resolves the surface server-side before the missing card settles:
   `languageCodes=[learning, base]` snapshotted from the ask payload the
   moment the stream started (`useAiStream.answerLanguages`, derived by the
   pure `answerLanguagesFromPayload` in `lib/aiAnswerTokens.mjs`; a side
-  flip after the ask never changes resolution, Ask again re-captures) — and the
-  mount passes **no `language` prop**: that structural absence keeps
-  Ask-AI/adopt disabled, so nothing is ever minted into the dictionary
-  from AI-answer text. Nothing else of the columns' ledger reaches it
-  either: no familiarity map (opens showing untouched, tokens untinted)
+  flip after the ask never changes resolution, Ask again re-captures) — and
+  since word-popup-overhaul ticket 05 the mount also passes ONE `language`
+  descriptor: the ask's learning-first language — the resolution order's
+  FIRST code, `{code}`-shaped (`answerAskLanguage` in the same lib; null
+  when the ask carried no usable code, which keeps Ask-AI disabled exactly
+  like the old column-less mount). This **reverses ADR 0096's adopt-less
+  rule for this surface** (the ADR amendment itself is pending in the
+  closure ticket): asking about an unknown answer word mints it into that
+  language through the existing adopt-on-ask path — existing-row adoption
+  still wins — and the card populates live through the same `setData`
+  swap, icons going live with it. Nothing else of the columns' ledger
+  reaches it: no familiarity map (opens showing untouched, tokens untinted)
   and no word-event recording (no sentence identity exists for an AI
   answer). The columns' **explain config does ride along** (ADR 0096's
   amendment, threaded Bilinguals → AI → WordPopup without a sentence id):
@@ -570,8 +590,10 @@ re-resolves the surface server-side before the missing card settles:
   Explanation toggle **disabled** (grey, non-responsive — no sentence
   context to ask about) and the robot **live** (the Models used popup
   with the answer + explanation models, matching the panel header's own
-  robot); a miss leaves the missing card, whose toolbar is the columns'
-  own Ask-AI-only card (its icon disabled — no `language`).
+  robot); a miss leaves the missing card, whose toolbar is the full
+  mirrored row (word-popup-overhaul ticket 05) — every wordless icon
+  disabled, the Explanation toggle included, with Ask-AI live on the
+  descriptor above and the robot live beside it.
 * **The 409 sync.** A 409 from the ask (the fresh-pending "in progress"
   gate — the only enrich 409 left since the ADR 0082 re-ask amendment)
   no longer leaves the ask state stale: the known path refetches
