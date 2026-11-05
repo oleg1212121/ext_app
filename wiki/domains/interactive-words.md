@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — every 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-05T11:35:00+0000 }
+generated: { by: agent:zcode, at: 2026-11-05T11:45:00+0000 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -164,7 +164,8 @@ source of truth for every surface; word-popup-overhaul ticket 01). Since
 ai-answer-words (ADR 0096) the simulator's streamed AI answer is a third
 interactive surface: its markdown-rendered tokens (a dedicated
 `ai-word-token` class — hover- and focus-underlined like the columns'
-tokens, scoped to the panel) open the same popup missing-first, resolved
+tokens (underline only — the panel paints no hover background since
+word-popup-overhaul ticket 02), scoped to the panel) open the same popup missing-first, resolved
 learning→base over the ask's language snapshot — **map-less and
 adopt-less**, no ledger, with the columns' explain config riding for
 toolbar parity (a disabled Explanation toggle — no sentence context
@@ -1144,5 +1145,6 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   explain config rides for toolbar parity (disabled Explanation toggle +
   live robot, no sentence id — ADR 0096's amendment), and the tokens
   carry the columns' hover-underline affordance scoped to the panel
-  (simulator.css). The deep description lives in the re-resolution
+  (simulator.css) — underline only, the panel paints no hover background
+  (ticket 02). The deep description lives in the re-resolution
   section's ordered-resolve and first-consumer bullets above.

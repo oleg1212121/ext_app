@@ -393,14 +393,6 @@ table.table:has(#all_target:checked) .hide_target {
 .dark #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, em, i, strong, b, mark, code, kbd, samp, u, ins, del, s, q, small, sub, sup, a, td, th):hover {
     text-shadow: 1px 1px 5px rgb(128 128 128 / 50%);
 } */
-#ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, code, td, th):hover {
-    background-color: var( --color-vellum);
-    
-}
-
-.dark #ai_answer_div :is(p, li, h1, h2, h3, h4, blockquote, pre, span, code, td, th):hover {
-    background-color: var( --color-vellum);
-}
 
 /* Word tokens (ai-word-token) are keyboard-focusable like the text columns'
    spans (role="button", tabindex): give focused tokens the same 2px ring the
@@ -413,8 +405,8 @@ table.table:has(#all_target:checked) .hide_target {
 
 /* Hover affordance on the tokens themselves — the columns' underline
    (app.css .word-token:hover), scoped to the panel so the columns'
-   familiarity-tint styles never leak in. Sits on top of the vellum
-   background fill above, which still marks every hovered element. */
+   familiarity-tint styles never leak in. The underline is the panel's
+   whole hover affordance: nothing here paints a background on hover. */
 #ai_answer_div .ai-word-token:hover,
 #ai_answer_div .ai-word-token:focus-visible {
     text-decoration: underline;

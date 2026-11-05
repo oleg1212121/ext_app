@@ -6,6 +6,26 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-05 (word-popup-overhaul ticket 02 — AI answer hover: underline only, no background fill)
+
+Hovering anything in the streamed AI answer panel no longer paints the
+vellum background block: the two `#ai_answer_div` background-on-hover
+rules in the static `public/css/simulator.css` (light + `.dark` — every
+text-bearing element: p/li/h1–h4/blockquote/pre/span/code/td/th) are
+deleted, so the hovered word token's underline is the panel's whole
+hover affordance and plain answer text gives only the pointer cursor.
+The token-affordance comment that referenced the removed fill is
+rewritten; the keyboard focus ring (2px `--wbench-accent` /
+`--wbench-accent-night`), the token hover/focus underline, and the
+cursor/transition + reduced-motion rules are untouched, as are the text
+columns' own styles (`resources/css/app.css`). The dead commented-out
+text-shadow block above the deleted rules stays (out of scope per the
+orchestrator). Docs: `interactive-words.md` hover-affordance passages
+(the overview bullet and the AI-panel consuming-surfaces bullet),
+`generated.at` bumped. No vitest pin exists for the static stylesheet —
+verification was rule inspection plus the full vitest suite green; no
+routes/models/commands changed, so no `wiki:sync` was needed.
+
 ## 2026-11-05 (word-popup-overhaul ticket 01 — open penalty: every popup open costs −5, native language free)
 
 The old lookup penalty (−2 on the FIRST popup open of a word per sentence
