@@ -131,40 +131,29 @@ it('credits each row of a batch separately', function () {
     expect($response->json('data.familiarity'))->toBe([$cat->id => 2]);
 });
 
-it('penalizes the first lookup of a word in a row but not repeats', function () {
-    $user = User::factory()->create();
-    ['meaningMatch' => $meaningMatch] = createEventScope();
-    $cat = createWord('en', 'cat', 'noun');
-    UserWord::create(['user_id' => $user->id, 'word_id' => $cat->id, 'familiarity' => 5]);
-
-    $event = ['row_key' => 'mm:'.$meaningMatch->id, 'kind' => 'lookup', 'word_ids' => [$cat->id]];
-    $response = $this->actingAs($user)
-        ->postJson(route('word.events.store'), ['events' => [$event]])
-        ->assertOk();
-    expect($response->json('data.familiarity'))->toBe([$cat->id => 3]);
-
-    $response = $this->actingAs($user)
-        ->postJson(route('word.events.store'), ['events' => [$event]])
-        ->assertOk();
-    expect($response->json('data.familiarity'))->toBe([$cat->id => 3]);
-});
-
 it('clamps familiarity to the 0-100 band', function () {
-    $user = User::factory()->create();
+    // A ru native keeps the en floor/ceiling words outside the popup-open
+    // native exclusion (the factory seeds native English).
+    $user = nativeRuUser();
     ['meaningMatch' => $meaningMatch] = createEventScope();
     $floor = createWord('en', 'floor', 'noun');
     $ceiling = createWord('en', 'ceiling', 'noun');
     UserWord::create(['user_id' => $user->id, 'word_id' => $floor->id, 'familiarity' => 1]);
     UserWord::create(['user_id' => $user->id, 'word_id' => $ceiling->id, 'familiarity' => 100]);
 
+    // The floor through the popup-open penalty (word-popup-overhaul ticket
+    // 01) — the only negative delta left; the ceiling through a read.
+    $floorResponse = $this->actingAs($user)
+        ->postJson(route('words.opens'), ['word_ids' => [$floor->id]])
+        ->assertOk();
+
     $response = $this->actingAs($user)
         ->postJson(route('word.events.store'), ['events' => [
-            ['row_key' => 'mm:'.$meaningMatch->id, 'kind' => 'lookup', 'word_ids' => [$floor->id]],
             ['row_key' => 'mm:'.$meaningMatch->id, 'kind' => 'read', 'word_ids' => [$ceiling->id]],
         ]])
         ->assertOk();
 
-    expect($response->json('data.familiarity.'.$floor->id))->toBe(0)
+    expect($floorResponse->json('data.familiarity.'.$floor->id))->toBe(0)
         ->and($response->json('data.familiarity.'.$ceiling->id))->toBe(100);
 });
 
@@ -188,6 +177,14 @@ it('rejects malformed events', function () {
     $this->actingAs($user)
         ->postJson(route('word.events.store'), ['events' => [
             ['row_key' => 'mm:'.$meaningMatch->id, 'kind' => 'banana', 'word_ids' => [$cat->id]],
+        ]])
+        ->assertJsonValidationErrors(['events.0.kind']);
+
+    // The lookup kind retired (word-popup-overhaul ticket 01): only reads
+    // ledger — popup opens POST /words/opens now.
+    $this->actingAs($user)
+        ->postJson(route('word.events.store'), ['events' => [
+            ['row_key' => 'mm:'.$meaningMatch->id, 'kind' => 'lookup', 'word_ids' => [$cat->id]],
         ]])
         ->assertJsonValidationErrors(['events.0.kind']);
 

@@ -4,8 +4,8 @@ title: Anki Export
 description: The path from saved words to the user's desktop Anki — per-user per-language connection/card settings (deck + field toggles per enabled language over a legacy global base) on the profile's Anki tab, a deterministic popup-styled card template (the Front is the word; the Back is header + the 13th Body field's popup-interleaved dictionary + footer) with split toggle semantics — scalar toggles hide-class template-side, body toggles shape the Body value at send time — one-click template sync into Anki, and per-word sends from the word popup that detect on open and refresh an already-saved own note in place, all driven browser-side through AnkiConnect (ADR 0077 + addenda; v3 records the updates-in-place reversal).
 tags: [anki, anki-connect, srs, export, profile, words, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-11-03T13:10:00+03:00 }
-verified: { by: agent:zcode, at: 2026-10-15T17:00:00+00:00 }
+generated: { by: agent:zcode, at: 2026-11-05T16:00:00+0000 }
+verified: { by: agent:zcode, at: 2026-11-05T16:00:00+0000 }
 sources:
   - id: adr
     resource: docs/adr/0077-browser-side-ankiconnect.md
@@ -50,7 +50,9 @@ like the app's reading popup), and two one-click writes —
 **template sync** (deck + the language's "ExtApp Vocabulary" note type +
 Front/Back/CSS landed in Anki) and **send to Anki** (the Anki tab's sample
 card, and a per-word send from the word popup's action toolbar everywhere
-it renders). A word already in the deck is never duplicated: a re-send of
+it renders — the missing-word card's mirrored toolbar icon stays
+handler-less and disabled: no word exists to send until an ask adopts
+one). A word already in the deck is never duplicated: a re-send of
 one of the app's own notes **refreshes it in place** — all thirteen values
 rebuilt, tags replaced, note id / deck / scheduling untouched — and only a
 foreign-model note leaves the send as an "Already in Anki" skip (ADR 0077
@@ -137,7 +139,13 @@ sources below).
    **local font stacks only** (no webfont fetch at review time). The
    dictionary structure itself — counts, entry labels, summary wording —
    lives in the field **values**, not the template (step 4); the template
-   stays a static, deterministic function of the scalar toggles. The tab
+   stays a static, deterministic function of the scalar toggles. The CSS
+   keeps the legacy `ef-more`/`ef-more-summary` expander rules even though
+   new sends no longer emit that markup: already-sent notes carry the
+   expander in their frozen values and must keep rendering across a
+   template re-sync (the CSS↔markup pairing test is one-way, emitted ⊆
+   styled, so keeping rules for no-longer-emitted classes cannot fail it).
+   The tab
    previews the real generated artifacts in a sandboxed iframe with copy
    buttons.
    The thirteen-field list and the connection defaults live canonically in
@@ -181,15 +189,20 @@ sources below).
    natively in Anki's WebView with no JS, each definition line prefixed
    with its usage labels as plain text ("(устар., редк.) …" — both display
    tiers alike, the prefix is study information rather than styling;
-   popup-usage-labels ticket 03) — the translations preview (the
-   popup's first-8 cap) behind a "+N more…" expander, " · "-joined
-   transcriptions, and the localized "form of" prefix inside the WordFamily
+   popup-usage-labels ticket 03) — the translations as the full comma-joined
+   list (no preview cap, no expander), every transcription bracketed and
+   " · "-joined (one composer bakes both shapes), and the localized "form
+   of" prefix inside the WordFamily
    value. The 13th field, **`Body`, is the rendered dictionary**: one
    hairline-separated section per entry in the popup's order — "WORD —
    pos" label (every entry, single-entry words included, exactly the
-   popup's pane), the translations line (cap 8 + expander, or the calm
-   "No translations yet" placeholder), the bracketed transcriptions (first
-   + "+N more…"), the counted collapsed Definitions/Examples/Etymology
+   popup's pane), the translations line (full list, or the calm
+   "No translations yet" placeholder), the bracketed " · "-joined
+   transcriptions as their own block line below it (a `<div>` baked into
+   the VALUE — not `display: block` in the CSS — so re-syncing the
+   template cannot restyle already-sent notes, whose frozen inline spans
+   keep their old run-on rendering), the counted collapsed
+   Definitions/Examples/Etymology
    ("No definitions yet." when empty; a labelled definition line carries
    the same plain-text label prefix) — and it is the only field that
    renders the dictionary on the card. **The body toggles are send-time**:
@@ -199,11 +212,12 @@ sources below).
    leaves no dangling label or placeholder — so they affect **newly sent
    cards only**; existing notes keep the body they were sent with, and
    re-syncing the template does not restyle it (ADR 0077 addendum v2). A
-   `labels` option carries the eight UI-language strings (the three
-   counted summaries, the expander, "form of", the two calm placeholders,
+   `labels` option carries the seven UI-language strings (the three
+   counted summaries, "form of", the two calm placeholders,
    and since popup-usage-labels ticket 03 the definition `label` resolver —
    the slug→name mapping behind the plain-text prefix, resolved through
-   the same `word.label_*` strings the popup's chips use):
+   the same `word.label_*` strings the popup's chips use; the old expander
+   wording left the builder when the values went full-list):
    senders pass their locale's wording — both build it with
    `ankiTemplate.js`'s `uiLabels(t)` over the app's
    `word.*` ui-strings, one shared mapping — and it is frozen into

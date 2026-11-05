@@ -119,9 +119,13 @@ _Avoid_: quality score, richness
 
 **AI word enrichment (ask AI)**:
 Filling a sparse word's entry on demand by asking the user's own AI
-model (the explanation model). The reply lands as ordinary dictionary
-content — per-row content stays unmarked; the word popup header's small
-source badge is the one word-level marker, reading the importing writer
+model (the explanation model). Admin-only — the toolbar icon renders
+for approved admins, hidden for everyone else — and queued: the click
+dispatches a job and answers at once, the enriched content appearing
+the next time the popup opens; a failed job is silent (the icon simply
+stays retryable). The reply lands as ordinary dictionary content —
+per-row content stays unmarked; the word popup's per-section provenance
+chips are the one word-level marker, reading the importing writer
 plus "· ai" (or "ai" alone for a word no importer stamped; an adopt-on-ask
 mint, whose source is 'ai' itself, dedups to the same plain "ai") once an
 ask succeeds. A succeeded ask is re-askable — the re-ask replaces the
@@ -141,9 +145,24 @@ a plain-text prefix; a word whose every definition is labelled
 obsolete/archaic will rank as a demoted entry in the popup.
 _Avoid_: POS tags, grammar tags, sense tags
 
+**Info popup**:
+The layer of transient word-popup communication — Anki send notices
+(auto-dismissed after ~4 seconds), the transient ask-AI started notice
+(same ~4s auto-dismiss), the sticky Anki errors, the sticky
+ask-AI error, and the AI Context explanation while its toolbar toggle
+is on — stacked in one absolutely positioned, card-surface-styled box
+floating above the word popup's card, so the card's content never
+shifts when messages come or go. Sticky items carry their own small
+dismiss control; everything clears when the popup closes or moves to
+another word, and the profile's Popups-tab preview renders its canned
+explanation through the same layer.
+_Avoid_: status line, toast, notification drawer
+
 **Missing word**:
 A word clicked in a text that the dictionary holds no entry for. It
 opens a placeholder card — the clicked spelling plus a plain
-"not in the dictionary yet" note — and asking AI is the only way that
+"not in the dictionary yet" note, with the real card's toolbar mirrored
+in full and every wordless icon disabled (the robot and, for approved
+admins, Ask-AI stay live) — and asking AI is the only way that
 card becomes a real dictionary entry.
 _Avoid_: unknown word, out-of-dictionary word

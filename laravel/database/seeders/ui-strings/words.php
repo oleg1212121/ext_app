@@ -36,6 +36,16 @@ return [
     // has one — the four-state contract words the error treatment
     // strictly): re-sends the ask through the same guarded callback.
     'word.ask_ai_retry' => ['en' => 'Retry', 'ru' => 'Повторить', 'be' => 'Паўтарыць'],
+    // The queued ask's dispatch notice (word-popup-overhaul ticket 06):
+    // the enrichment runs in the queue now, so a successful dispatch
+    // floats this transient line instead of swapping the payload — the
+    // content appears the next time the popup opens.
+    'word.ask_ai_started' => ['en' => 'AI enrichment started — open the word again to see the result.', 'ru' => 'Обогащение ИИ запущено — откройте слово снова, чтобы увидеть результат.', 'be' => 'Абагачэнне ШІ запушчана — адкрыйце слова зноў, каб убачыць вынік.'],
+    // The info popup's per-item dismiss control (word-popup-overhaul
+    // ticket 04): the sticky items — the Anki error and the ask-AI error —
+    // each carry one small button; the success notices auto-dismiss
+    // instead.
+    'word.info_dismiss' => ['en' => 'Dismiss', 'ru' => 'Скрыть', 'be' => 'Схаваць'],
     'word.explain_loading' => ['en' => 'Explaining…', 'ru' => 'Объясняю…', 'be' => 'Тлумачу…'],
     'word.explain_failed' => ['en' => 'Explanation failed (:status)', 'ru' => 'Не удалось объяснить (:status)', 'be' => 'Не ўдалося патлумачыць (:status)'],
     'word.explain_retry' => ['en' => 'Retry', 'ru' => 'Повторить', 'be' => 'Паўтарыць'],

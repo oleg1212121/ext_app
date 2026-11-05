@@ -5,7 +5,7 @@ description: Work-first Library browse surface (/works) — the works catalog, i
 tags: [entities, works, library, alignments-page, inertia, react, languages, hash, clone, illustrations, word-knowledge, pdf]
 status: stable
 stale_after: 2026-12-20
-generated: { by: agent:zcode, at: 2026-11-02T17:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-05T11:50:00+0000 }
 verified: { by: agent:zcode, at: 2026-10-29T18:30:00+03:00 }
 sources:
    - id: controller
@@ -339,7 +339,7 @@ and refreshed whenever it is stale: stale means computed before the
 entity's word list was last rebuilt (`computed_at <
 entities.words_indexed_at`, which sentence edits cause via the
 `crossword:refresh` sweep) or older than three days (familiarity drift
-from reads/lookups/crosswords). `ensure` refuses to compute while
+from reads/opens/crosswords). `ensure` refuses to compute while
 `EntityWordIndexer::isStale` — the page then shows a "calculating" state
 — and a viewer never placed by the word test (`vocabulary_level` 0 —
 `user_word` rows alone don't count, a crossword-only user has plenty) sees

@@ -58,3 +58,21 @@ export function answerLanguageCodes(answerLanguages) {
         .filter((code) => typeof code === 'string' && code !== '');
     return codes.length > 0 ? codes : null;
 }
+
+/**
+ * The single language descriptor the AI answer's word popup asks with
+ * (word-popup-overhaul ticket 05 — the ADR 0096 adopt-less rule reversed
+ * for this surface): the ask's learning-first language, i.e. the FIRST code
+ * of the snapshotted resolution order (`answerLanguageCodes` — the learning
+ * language, base fallback), which un-suppresses the missing card's Ask-AI.
+ * Asking about an unknown answer word then mints the word into that
+ * language through the existing adopt-on-ask path; a snapshot without
+ * usable codes yields null and keeps the icon disabled, exactly like the
+ * old column-less mount. The descriptor is `{code}`-shaped and nothing
+ * more: the answer snapshot carries codes only, WordPopup's ask gating
+ * reads the code alone, and a display name must never be invented here.
+ */
+export function answerAskLanguage(answerLanguages) {
+    const code = answerLanguageCodes(answerLanguages)?.[0];
+    return code != null ? {code} : null;
+}

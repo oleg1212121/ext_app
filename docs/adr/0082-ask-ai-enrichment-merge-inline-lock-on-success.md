@@ -187,3 +187,89 @@ shape-identical. Per-row content stays unmarked: the per-row `source`
 columns (null = imported / 'ai') are unchanged, and an imported vs an
 AI-written definition still reads identically in the popup — the badge
 speaks about the word's row, never about which content rows the AI wrote.
+
+## Amended 2026-11-05 (word-popup-overhaul ticket 06: admin-only, queued, fire-and-forget)
+
+The ask-AI flow splits in two: the HTTP request does everything cheap,
+and a queued job does everything that spends the provider's time. The
+merge semantics above are untouched — same prompt, same lenient parse,
+same replace-on-re-ask transactional merge, same link-only translations,
+same ledger row; only who may ask, where the AI call runs, and what the
+endpoint answers changed.
+
+- **Admin-only.** The sparkles icon renders for **approved admins only**
+  — hidden, not disabled, for everyone else (plain and re-ask variants,
+  dictionary and missing cards, read off the shared `auth.user`; the
+  profile Popups-tab preview passes the same gate) — and `POST
+  /ai/word-enrich` answers a non-admin **403** in the reading-surfaces
+  JSON shape ("Only approved admins can ask the AI to enrich a word.")
+  before any gate, mint or ledger row: the ask spends the asker's own
+  BYO-key tokens, so readers fund nothing they cannot trigger. A lapsed
+  admin (unapproved) bounces earlier still, at the route's `approved`
+  middleware redirect; the controller's `is_approved` half is
+  defense-in-depth.
+- **The dispatch half.** The click validates, runs the admin gate, binds
+  the word (both ledger gates — the fresh-pending "in progress" 409; a
+  truly simultaneous double-ask whose ledger insert bounces the unique
+  word constraint gets the same 409, never a 500), resolves model + key
+  **cheaply — no HTTP** (the existing 400 "Choose an AI model in your
+  profile settings." / invalid-model guidance answers here and dispatches
+  nothing; a keyless user resolves no model at all, the resolver
+  filtering unkeyed providers out, so the same 400 answers — the
+  distinct 403 "You have not added an API key for this provider." now
+  exists only inside the job), adopts/mints the word synchronously on the
+  missing path (the model gate still precedes the mint), records the
+  pending ledger row (attempts++, `asked_at` refreshed — the stale-window
+  takeover unchanged), dispatches
+  **`App\Jobs\FetchWordAiEnrichment($wordId, $userId)`** and answers the
+  minimal **`{queued: true}`**. Provider and parse failures no longer
+  answer HTTP statuses at all (the old 429/502 mappings are gone): the
+  endpoint answers 200 `{queued: true}` or 409 — or the dispatch-time
+  guidance 400s / the admin 403. The optional `surface` still rides the
+  request through validation, but with no response payload the
+  `is_form`/surface-normalized resolution belongs to the next `GET
+  /words/{id}?surface=` (the 409 refetch and every next open).
+- **The queued half.** The job carries scalar ids only — the word's and
+  the ASKING user's — and resolves model AND BYO key **inside the worker
+  against that user** through `AIModelResolver`'s explicit-user seam
+  (optional `?User` parameters on `resolveExplanationModel` /
+  `resolveAnswerModel` / `getGroupedModelChoices` / `ask`, defaulting to
+  `Auth::user()`; the grouped-choices memo keyed per user id so the
+  session path and the job path can never cross) — never the
+  authenticated session, which a worker does not have, so the ask spends
+  the asker's own key whatever worker picks it up. It then runs the
+  prompt ask → the lenient parse → the transactional merge → the
+  succeeded finalize → the word touch. Known failures (no-model,
+  invalid model, provider exceptions including the keyless 403,
+  unparseable replies, a word or asker vanished between dispatch and
+  run) finalize the ledger failed and return **silently** — nothing
+  surfaces client-side, the icon simply stays retryable, and the ledger
+  row is the only failure record; an unexpected `Throwable` finalizes
+  failed then rethrows (the `failed_jobs` record, still no retry).
+- **`$tries = 1`, `$timeout = 300`, deliberately NOT `ShouldBeUnique`.**
+  No auto-retry: a failed run finalizes the ledger failed once and the
+  user re-asks via the still-retryable icon — queue-level retries would
+  double-spend tokens against the asker's own key. The timeout sits
+  above the provider layer's 120s cURL cap, and a run the timeout kills
+  finalizes nothing: decision 2's 15-minute stale-pending window — whose
+  failure mode now reads "crashed (or timeout-killed) worker" — is
+  exactly the net for that orphan. Uniqueness is refused on purpose: the
+  per-word unique ledger constraint plus the dispatch-time fresh-pending
+  409 are the double-ask race net, and a uniqueness lock would fight the
+  stale-pending takeover.
+- **Decision 4's "the response is the word-show payload" is superseded.**
+  No payload comes back to swap live: the popup keeps its content, floats
+  a transient "AI enrichment started" notice, and the enriched content
+  (`ai_asked` included — the re-ask variant) appears the next time the
+  popup opens, through the unchanged 409-refetch / next-GET path. The
+  shared `WordPopupPayload` assembler still builds every payload the
+  popup ever swaps, so the endpoint shapes cannot drift — there is just
+  one left.
+- **The UX rides ticket 04's info popup**: dispatch-time errors land
+  verbatim in the floating layer (sticky, with Retry + the go-to-settings
+  link), the queued success floats the auto-dismissing started notice
+  (the `word.ask_ai_started` ui-string, en/ru/be), and a failed job says
+  nothing anywhere.
+
+Consequence: the AI call's duration — up to the provider's own two-minute
+ceiling — no longer occupies an HTTP worker; a queue worker does.

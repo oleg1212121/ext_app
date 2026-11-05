@@ -9,6 +9,7 @@ use App\Classes\WordPopupPayload;
 use App\Classes\WordTranslationFetchService;
 use App\Classes\WordTranslations\WordTranslationResolver;
 use App\Http\Requests\RecordWordEventsRequest;
+use App\Http\Requests\RecordWordOpensRequest;
 use App\Http\Requests\UpdateWordProgressRequest;
 use App\Http\Requests\WordLookupRequest;
 use App\Models\Language;
@@ -140,14 +141,35 @@ class WordController extends Controller
     }
 
     /**
-     * Record read/lookup events (ledger-deduplicated) and return the
-     * resulting familiarity per touched word.
+     * Record read events (ledger-deduplicated) and return the resulting
+     * familiarity per touched word.
      */
     public function recordEvents(RecordWordEventsRequest $request): JsonResponse
     {
         $familiarity = $this->familiarity->applyEvents(
             (int) $request->user()->id,
             $request->validated('events'),
+        );
+
+        return response()->json(['data' => ['familiarity' => $familiarity]]);
+    }
+
+    /**
+     * The popup-open penalty (word-popup-overhaul ticket 01): every popup
+     * open of a dictionary-mapped word costs the caller OPEN_PENALTY
+     * familiarity, every time — the user_word_event ledger's once-per-row
+     * rule belongs to the sentence-reveal read credits alone. The
+     * native-language filter is server-side (WordFamiliarityService::applyOpens)
+     * so every popup surface shares one source of truth. The response
+     * mirrors recordEvents' shape — familiarity per referenced word — so
+     * the client recolors from the response alone.
+     */
+    public function recordOpens(RecordWordOpensRequest $request): JsonResponse
+    {
+        $familiarity = $this->familiarity->applyOpens(
+            (int) $request->user()->id,
+            $request->validated('word_ids'),
+            $request->user()->nativeLanguage()?->id,
         );
 
         return response()->json(['data' => ['familiarity' => $familiarity]]);

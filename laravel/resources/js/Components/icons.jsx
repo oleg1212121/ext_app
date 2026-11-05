@@ -56,6 +56,9 @@ const ICON_PATHS = {
         {d: ARROW_PATH},
         {d: SPARKLES_PATH, transform: 'translate(6.3 7.575) scale(0.45)', nonScalingStroke: true},
     ],
+    // An x (heroicons-outline x-mark) — the info popup's per-item dismiss
+    // control (word-popup-overhaul ticket 04).
+    xMark: 'M6 6l12 12M18 6 6 18',
 };
 
 export function Icon({name, className, strokeWidth = 2}) {

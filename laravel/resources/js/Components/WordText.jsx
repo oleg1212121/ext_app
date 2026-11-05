@@ -2,7 +2,7 @@ import React, {useCallback, useLayoutEffect, useMemo, useRef, useState} from 're
 import {createPortal} from 'react-dom';
 import {segmentText} from '../lib/wordTokenizer.mjs';
 import {stressOffsets} from '../lib/stressMarks.mjs';
-import {FAMILIARITY_MAX, FAMILIARITY_STRONG_AT, FAMILIARITY_PROGRESS_AT, recordWordEvents} from '../lib/wordFamiliarity';
+import {FAMILIARITY_MAX, FAMILIARITY_STRONG_AT, FAMILIARITY_PROGRESS_AT, recordWordOpens} from '../lib/wordFamiliarity';
 import WordPopup from './WordPopup.jsx';
 import IllustrationFigure from './IllustrationFigure.jsx';
 
@@ -105,7 +105,8 @@ function stressContent(segment, pieces) {
  * ({l_word: {w: wordId, s: familiarity|null}}) keep the familiarity tint and
  * fetch the popup; unmapped ones render plain (no tint) and open the popup in
  * missing mode — the raw surface plus an honest not-in-the-dictionary note,
- * nothing fetched, no lookup events. Ctrl+click opens the popup (plain clicks
+ * nothing fetched, no open penalty (a word that stays missing costs
+ * nothing). Ctrl+click opens the popup (plain clicks
  * do nothing); highlight = knowledge tinting, gated by the caller.
  *
  * Interactive tokens are role="button" spans, not real <button> elements:
@@ -280,8 +281,9 @@ function WordText({
         // Missing mode (popup-ai-enrich ticket 03): an unmapped token has no
         // word id — the card opens from the RAW surface (the folded key would
         // show ё-folded, mark-stripped text), nothing is fetched, and no
-        // lookup event fires. The only way from missing to populated is
-        // ticket 05's adopt-on-ask.
+        // open penalty fires (a word that stays missing costs nothing —
+        // word-popup-overhaul ticket 01). The only way from missing to
+        // populated is ticket 05's adopt-on-ask.
         if (!entry?.w) {
             setPopup({
                 wordId: null,
@@ -299,19 +301,24 @@ function WordText({
             rect: event.currentTarget.getBoundingClientRect(),
             sentenceId,
         });
-        if (rowKey) {
-            recordWordEvents([{row_key: rowKey, kind: 'lookup', word_ids: [entry.w]}])
-                .then((familiarity) => {
-                    if (familiarity[entry.w] === undefined) {
-                        return;
-                    }
-                    setPopup((current) => current?.wordId === entry.w
-                        ? {...current, familiarity: familiarity[entry.w]}
-                        : current);
-                    onWordProgress?.(segment.key, familiarity[entry.w]);
-                });
-        }
-    }, [wordMap, rowKey, onWordProgress]);
+        // The popup-open penalty (word-popup-overhaul ticket 01): EVERY open
+        // of a mapped word costs −5, every time — no row-key guard, no
+        // dedupe (the ledger's once-per-row rule belongs to the read
+        // credits alone). The native-language filter is server-side — a
+        // native word's response echoes its unchanged score, so nothing
+        // visibly moves. The response recolors the token and patches the
+        // open popup's header exactly as the old lookup event's did.
+        recordWordOpens([entry.w])
+            .then((familiarity) => {
+                if (familiarity[entry.w] === undefined) {
+                    return;
+                }
+                setPopup((current) => current?.wordId === entry.w
+                    ? {...current, familiarity: familiarity[entry.w]}
+                    : current);
+                onWordProgress?.(segment.key, familiarity[entry.w]);
+            });
+    }, [wordMap, onWordProgress]);
 
     const handleProgress = useCallback((key, familiarity) => {
         setPopup(null);

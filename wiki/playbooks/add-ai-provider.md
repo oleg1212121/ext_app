@@ -4,7 +4,7 @@ title: Adding an AI Provider
 description: Steps to register a new AI provider so it appears in the simulator's model picker.
 tags: [ai, providers, howto]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-05T15:15:00+0000 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: resolver
@@ -54,7 +54,10 @@ through `AIModelResolver` with `provider:model` strings.
    any user who has stored a **User key** for it (and the admin has it enabled) —
    visibility is now user-keyed, not env-keyed (`isConfigured()` only probes the
    `.env` System key). Store a User key for it from the Profile page to see it in
-   the simulator picker.
+   the simulator picker. (Nothing extra for the queued ask-AI job: the
+   per-user model/key resolution flows through the resolver's optional
+   explicit-`?User` seam — word-popup-overhaul ticket 06 — which picks the
+   new provider up automatically.)
 6. **Test**: add a Pest test mocking the HTTP call (see existing provider
    tests, if any, for the pattern) and run
    `docker exec ext_app_laravel php artisan test --filter=Ai`.

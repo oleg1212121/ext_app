@@ -9,7 +9,7 @@
 // list derived from the displayed answer's ask codes.
 import {describe, expect, it} from 'vitest';
 
-import {answerLanguageCodes, answerLanguagesFromPayload, opensTokenPopup} from './aiAnswerTokens.mjs';
+import {answerAskLanguage, answerLanguageCodes, answerLanguagesFromPayload, opensTokenPopup} from './aiAnswerTokens.mjs';
 
 describe('opensTokenPopup: the ADR 0030 gate for both event kinds', () => {
     it('opens on Ctrl+click — a click event carries no key', () => {
@@ -93,5 +93,37 @@ describe('answerLanguageCodes: the displayed answer’s ordered resolve list', (
         // like a column-less mount: missing card, no Ask-AI.
         expect(answerLanguageCodes({learning: null, base: null})).toBeNull();
         expect(answerLanguageCodes({learning: '', base: ''})).toBeNull();
+    });
+});
+
+describe('answerAskLanguage: the AI answer popup’s single ask language (word-popup-overhaul ticket 05)', () => {
+    it('carries the learning language — the first code of the snapshotted resolution order', () => {
+        // The ask's learning-first language (base fallback, exactly the
+        // ordered resolve's first code) is what an adoption ask mints into.
+        expect(answerAskLanguage({learning: 'ru', base: 'en'})).toEqual({code: 'ru'});
+    });
+
+    it('falls back to the base language when the ask carried no learning code', () => {
+        expect(answerAskLanguage({learning: null, base: 'en'})).toEqual({code: 'en'});
+    });
+
+    it('is code-only — the snapshot carries no display name, and none is invented', () => {
+        // WordPopup's ask gating reads the code alone; the answer snapshot
+        // ({learning, base}) has no name field, so the descriptor must not
+        // synthesize one.
+        const language = answerAskLanguage({learning: 'ru', base: 'en'});
+        expect(Object.keys(language)).toEqual(['code']);
+    });
+
+    it('stays null with no answer — nothing to ask with, Ask-AI stays disabled', () => {
+        expect(answerAskLanguage(null)).toBeNull();
+        expect(answerAskLanguage(undefined)).toBeNull();
+    });
+
+    it('stays null when the ask carried no usable code — the language-less mount, as before', () => {
+        // No code, no descriptor: the popup mounts exactly like a
+        // column-less mount — missing card, disabled Ask-AI.
+        expect(answerAskLanguage({learning: null, base: null})).toBeNull();
+        expect(answerAskLanguage({learning: '', base: ''})).toBeNull();
     });
 });

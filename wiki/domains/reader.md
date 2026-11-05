@@ -5,7 +5,7 @@ description: The reading surface — an explicit work-scoped URL tree (ADR 0091)
 tags: [reader, inertia, react, illustrations]
 status: stable
 stale_after: 2027-01-25
-generated: { by: agent:zcode, at: 2026-10-29T10:20:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-05T11:50:00+0000 }
 verified: { by: human:alex-agent, at: 2026-10-27T21:50:00+03:00 }
 sources:
   - id: controller
@@ -170,7 +170,7 @@ canonical side order — each sentence self-describing: `{id, text,
 stressed?, phrasal?}` for text, `{id, image: {url, width, height},
 text: caption}` for illustrations, annotation keys present only when the
 data exists. Row `key`s (`mm:`/`es:` prefixes) scope
-familiarity lookup events to a sentence pair (ADR 0028); the sentence `id`
+ledgered read-credit events to a sentence pair (ADR 0028); the sentence `id`
 is what the word-explanation request addresses.
 
 **Illustrations are image sentences inside the ordered list** (ADR 0050):
@@ -249,9 +249,10 @@ simulator ships from; the reader's `answerLabel` is null — ADR 0035).
 (`{side, language, wordMap, highlightable, explainable}` — the reading
 surfaces' shared shape, ADR 0068; the reader's `language` carries the code
 only) and renders both row halves
-through the shared `WordText`/`WordPopup` components (each gets the row's
-`key`, so clicking a word fires a ledger-deduplicated **lookup** event —
-the reader never credits reads); the primary line is a `role="button"` div
+through the shared `WordText`/`WordPopup` components (clicking a word fires
+the flat **popup-open penalty** — −5 per open, native language free,
+`POST /words/opens` — the reader never credits reads; word-popup-overhaul
+ticket 01); the primary line is a `role="button"` div
 (not a `<button>`) so word buttons inside it stay valid HTML — activating
 the line itself still toggles the translation, word clicks stop
 propagation. Both reading lines style themselves with

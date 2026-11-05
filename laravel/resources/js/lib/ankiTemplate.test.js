@@ -68,7 +68,7 @@ const MULTI = {
     ],
 };
 
-// One past the popup's 8-line translations preview cap.
+// One past the old 8-line preview cap — the note builder lists them all.
 const TEN_TRANSLATIONS = [...Array(10).keys()].map((index) => ({word: `t${index}`, language_code: 'ru'}));
 
 const NAMES = ANKI_FIELDS.map(({name}) => name);
@@ -285,7 +285,7 @@ describe('buildNoteFields', () => {
         const note = buildNoteFields(DATA, {familiarity: 40, tags: ['A2', 'top-3000'], nativeLanguage: 'ru'});
         expect(Object.keys(note)).toEqual(NAMES);
         expect(note.Word).toBe('melted');
-        expect(note.Transcription).toBe('melt');
+        expect(note.Transcription).toBe('[melt]');
         expect(note.PartOfSpeech).toBe('Verb');
         expect(note.Frequency).toBe('2143');
         expect(note.WordFamily).toBe('form of melt');
@@ -393,21 +393,14 @@ describe('buildNoteFields', () => {
         expect(note.Definitions).toContain('<span class="ef-entry-label">MELT — verb</span>');
     });
 
-    it('previews the first 8 translations, expanding the rest behind "+N more…"', () => {
+    it('lists all translations comma-joined — no cap, no expander, however many', () => {
         const note = buildNoteFields({word: 'melt', entries: [{translations: TEN_TRANSLATIONS}]});
-        expect(note.Translations).toBe(
-            't0, t1, t2, t3, t4, t5, t6, t7'
-            + '<details class="ef-more"><summary class="ef-more-summary">+2 more…</summary>t8, t9</details>',
-        );
-
-        // At the cap the value stays a plain joined line.
-        const atCap = buildNoteFields({word: 'melt', entries: [{translations: TEN_TRANSLATIONS.slice(0, 8)}]});
-        expect(atCap.Translations).toBe('t0, t1, t2, t3, t4, t5, t6, t7');
+        expect(note.Translations).toBe('t0, t1, t2, t3, t4, t5, t6, t7, t8, t9');
     });
 
-    it('joins transcriptions with the popup\'s " · " separator', () => {
-        expect(buildNoteFields(MULTI).Transcription).toBe('melt · MELT');
-        expect(buildNoteFields(DATA).Transcription).toBe('melt');
+    it('brackets every transcription in the flat field and joins them with the popup\'s " · " separator', () => {
+        expect(buildNoteFields(MULTI).Transcription).toBe('[melt] · [MELT]');
+        expect(buildNoteFields(DATA).Transcription).toBe('[melt]');
     });
 
     it('narrows translations to the native language code', () => {
@@ -432,12 +425,11 @@ describe('buildNoteFields', () => {
         expect(buildNoteFields(DATA).Tags).toBe('');
     });
 
-    it('takes summary, expander, and form-of wording from the labels parameter', () => {
+    it('takes summary and form-of wording from the labels parameter', () => {
         const labels = {
             definitions: (count) => `Определения (${count})`,
             examples: (count) => `Примеры (${count})`,
             etymology: (count) => `Этимология (${count})`,
-            more: (count) => `ещё ${count}…`,
             formOf: 'форма слова',
         };
         const note = buildNoteFields(MULTI, {labels});
@@ -445,8 +437,6 @@ describe('buildNoteFields', () => {
         expect(note.Examples).toContain('<summary class="ef-summary">Примеры (1)</summary>');
         expect(note.Etymology).toContain('<summary class="ef-summary">Этимология (1)</summary>');
         expect(note.WordFamily).toBe('форма слова melt');
-        expect(buildNoteFields({word: 'melt', entries: [{translations: TEN_TRANSLATIONS}]}, {labels}).Translations)
-            .toContain('<summary class="ef-more-summary">ещё 2…</summary>');
 
         // English defaults when the sender passes nothing.
         const plain = buildNoteFields(DATA);
@@ -494,7 +484,7 @@ describe('buildNoteFields Body', () => {
         const markers = [
             '<span class="ef-entry-label">MELT — verb</span>',
             '<span class="ef-translations">таять, плавить</span>',
-            '<span class="ef-transcriptions">[melt]',
+            '<div class="ef-transcriptions">[melt] · [MELT]</div>',
             'Definitions (2)',
             'Examples (1)',
             'Etymology (1)',
@@ -522,29 +512,37 @@ describe('buildNoteFields Body', () => {
         expect(body.match(/<div class="ef-entry">/g)).toHaveLength(1);
         expect(body).toContain('<span class="ef-entry-label">MELTED — verb</span>');
         expect(body).toContain('<span class="ef-translations">таять, таяць</span>');
-        expect(body).toContain('<span class="ef-transcriptions">[melt]</span>');
+        expect(body).toContain('<div class="ef-transcriptions">[melt]</div>');
         expect(body).toContain('<summary class="ef-summary">Definitions (1)</summary>');
         expect(body).toContain('<summary class="ef-summary">Examples (1)</summary>');
         expect(body).toContain('<summary class="ef-summary">Etymology (1)</summary>');
     });
 
-    it('caps per-entry translations at 8 and expands the rest behind "+N more…"', () => {
-        const body = buildNoteFields({word: 'melt', entries: [{translations: TEN_TRANSLATIONS}]}).Body;
+    it('lists all per-entry translations comma-joined, the transcriptions block on its own line below', () => {
+        const body = buildNoteFields({
+            word: 'melt',
+            entries: [
+                {
+                    transcriptions: [{value: 'melt'}, {value: 'MELT'}],
+                    translations: TEN_TRANSLATIONS,
+                },
+            ],
+        }).Body;
         // No word_class on the entry: the popup's label is the bare headword.
+        // The transcriptions are a block element baked into the VALUE (a
+        // <div>, not a span restyled CSS-side) so already-sent notes keep
+        // their old inline rendering — and the line starts below the
+        // translations line.
         expect(body).toBe('<div class="ef-entry">'
             + '<span class="ef-entry-label">MELT</span>\n'
-            + '<span class="ef-translations">t0, t1, t2, t3, t4, t5, t6, t7'
-            + '<details class="ef-more"><summary class="ef-more-summary">+2 more…</summary>t8, t9</details></span>\n'
+            + '<span class="ef-translations">t0, t1, t2, t3, t4, t5, t6, t7, t8, t9</span>\n'
+            + '<div class="ef-transcriptions">[melt] · [MELT]</div>\n'
             + '<p class="ef-empty">No definitions yet.</p></div>');
     });
 
-    it('brackets per-entry transcriptions and expands the rest behind "+N more…"', () => {
+    it('brackets per-entry transcriptions " · "-joined — no expander', () => {
         const body = buildNoteFields(MULTI).Body;
-        // The first is bracketed like the popup's collapsed line; the rest
-        // open behind the expander, joined with the popup's " · ".
-        expect(body)
-            .toContain('<span class="ef-transcriptions">[melt]'
-                + '<details class="ef-more"><summary class="ef-more-summary">+1 more…</summary> · MELT</details></span>');
+        expect(body).toContain('<div class="ef-transcriptions">[melt] · [MELT]</div>');
         // An entry without transcriptions carries no line at all.
         expect(body.slice(body.lastIndexOf('<div class="ef-entry">'))).not.toContain('ef-transcriptions');
     });
@@ -630,11 +628,10 @@ describe('uiLabels', () => {
         ]);
     });
 
-    it('maps the eight keys to the app\'s word.* ui-strings — the mapping both senders share', () => {
+    it('maps the seven keys to the app\'s word.* ui-strings — the mapping both senders share', () => {
         expect(probe((labels) => labels.definitions(3))).toEqual([{key: 'word.definitions', params: {count: 3}}]);
         expect(probe((labels) => labels.examples(2))).toEqual([{key: 'word.examples', params: {count: 2}}]);
         expect(probe((labels) => labels.etymology(1))).toEqual([{key: 'word.etymology', params: {count: 1}}]);
-        expect(probe((labels) => labels.more(5))).toEqual([{key: 'word.more', params: {count: 5}}]);
         expect(probe((labels) => labels.label('obsolete'))).toEqual([{key: 'word.label_obsolete', params: undefined}]);
         expect(probe((labels) => labels.noTranslations)).toEqual([]);
         expect(probe((labels) => labels.noDefinitions)).toEqual([]);
@@ -679,18 +676,17 @@ describe('renderCardHtml', () => {
         expect(html).not.toContain('{{/');
     });
 
-    it('renders the structured values untouched — labels, details, and expander survive substitution', () => {
+    it('renders the structured values untouched — labels, details, and the full lists survive substitution', () => {
         const {back} = generateCardTemplate({});
         const html = renderCardHtml(back, buildNoteFields(MULTI, {familiarity: 40, tags: ['A2']}));
         expect(html).toContain('<span class="ef-entry-label">MELT — verb</span>');
         expect(html).toContain('<details class="ef-details"><summary class="ef-summary">Definitions (2)</summary>');
 
-        const expanded = renderCardHtml(
+        const full = renderCardHtml(
             back,
             buildNoteFields({word: 'melt', entries: [{translations: TEN_TRANSLATIONS}]}, {tags: ['A2']}),
         );
-        expect(expanded)
-            .toContain('<details class="ef-more"><summary class="ef-more-summary">+2 more…</summary>t8, t9</details>');
+        expect(full).toContain('t0, t1, t2, t3, t4, t5, t6, t7, t8, t9');
     });
 
     it('renders a non-empty Body inside the ef-dictionary slot', () => {

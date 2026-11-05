@@ -6,6 +6,313 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-05 (word-popup-overhaul review pass — the ask gate extracted to lib/authUser.js, the profile.md drift re-stamped)
+
+Review-fix pass: the approved-admin ask gate (`role === 'admin' &&
+is_approved === true`) that WordPopup.jsx and the profile's
+PopupsSettings.jsx each derived inline now lives in one shared helper,
+`lib/authUser.js::isApprovedAdmin` (behavioral vitest tests beside it;
+the toolbar pin over the verbatim expression became a wiring-level pin),
+and the popup-open header's fallback derivation is pinned lift-and-
+evaluate style. `wiki/domains/profile.md` re-stamped
+(`generated.at`) after its listed PopupsSettings.jsx source changed —
+its claims were checked and remain accurate (the preview still mirrors
+the live gate).
+
+## 2026-11-05 (word-popup-overhaul ticket 07 — knowledge base closure: the three ADR amendments, the accuracy sweep, the full green pass)
+
+The feature's decision record closed out. **ADR 0028** gained its
+amendment: the popup-open penalty — every open of a dictionary-mapped
+word costs −5, ungated and ledger-free (`POST /words/opens` →
+`WordFamiliarityService::applyOpens`; first touch creates the row at 0
+where the penalty clamps), the native-language exemption server-side
+(unset native excludes nothing) as the single source of truth for every
+surface, the `user_word_event` ledger + once-per-row rule narrowed to
+the sentence-reveal **read** credits (the `lookup` kind retired end to
+end, historical rows untouched), the response recoloring token + header,
+and the AI answer panel paying once per popup instance on a resolve hit.
+
+**ADR 0096** gained its amendment: the adopt-less rule (decision 2) is
+reversed for the AI-answer surface — the mount passes ONE `language`
+descriptor, `answerAskLanguage`'s learning-first code from the ask's
+snapshotted resolution order, un-suppressing Ask-AI (admin-only +
+queued per ADR 0082's amendment); a mint/adopt lands in the one
+definite language an answer's words can claim, the one the ordered
+resolve already looks under first, while the mount stays map-less with
+the open penalty as its only familiarity interaction. The same
+amendment notes the hover-affordance prose gone stale since
+word-popup-overhaul ticket 02: the vellum fill is deleted, the token
+underline is the panel's whole hover affordance.
+
+**ADR 0082** gained its amendment: ask-AI enrichment is **admin-only
+and queued** — the sparkles icon hidden for everyone but approved
+admins (403 to a direct non-admin POST before any gate, mint or ledger
+row; a lapsed admin bounces at the `approved` middleware first), the
+dispatch half validating + cheaply resolving model/key + running both
+ledger gates + adopting/minting + recording the pending row + answering
+the minimal `{queued: true}`, the queued `FetchWordAiEnrichment` (carrying
+scalar word + asking-user ids, resolving model AND BYO key inside the
+worker via `AIModelResolver`'s explicit-user seam) running ask → lenient
+parse → transactional merge → succeeded finalize → touch, known failures
+finalizing the ledger failed silently, `$tries = 1` / `$timeout = 300` /
+deliberately NOT `ShouldBeUnique`, decision 4's word-show-payload
+response superseded (the enriched content appears on the next open;
+provider failures no longer answer HTTP statuses at all, and the
+keyless 403 exists only inside the job — at dispatch a keyless user
+resolves no model and gets the 400 guidance).
+
+The accuracy sweep over the concepts: `interactive-words.md` verified
+end to end against the shipped behavior and corrected where the
+per-ticket bumps had left cross-ticket staleness — the Routes table's
+`POST /ai/word-enrich` row now carries the admin gate + the
+endpoint/job split + the `{queued: true}` contract (the word-show-payload
+swap is gone), the consuming-surfaces AI-panel bullet and the "What it
+does" sentence no longer call the mount adopt-less, the adopt-on-ask and
+first-consumer passages drop their "amendment pending" flags and the
+ticket-05-era "populates live via setData" claim (the dispatch swaps
+nothing since ticket 06), the ask-AI contract bullet states the
+no-key-at-dispatch reality (the same 400, the resolver filtering
+unkeyed providers) and the middleware/controller 403 split, the Anki
+note-values passage carries ticket 03's full-list shapes and the
+seventh-label count, and the three ADR source titles name their
+amendments. `anki-export.md` verified accurate end to end (no content
+change needed — ticket 03's rewrite already carried the full-list
+values, the legacy-expander CSS note and the disabled missing-card
+icon). The sweep also caught a genuinely stale passage ticket 02 had
+missed outside its own concept: `bilinguals-simulator.md` still
+described the deleted vellum background fill as the panel's hover
+affordance — rewritten to the shipped underline-only state, its
+"amendment pending" flag dropped, its ADR 0096 source title updated.
+GLOSSARY: the **Info popup** entry gained the transient ask-AI started
+notice; the **AI word enrichment** entry gained the admin-only +
+queued/silent-failure posture and now points at the popup's per-section
+provenance chips (the header badge moved 2026-10-24); the **Missing
+word** entry names the mirrored full toolbar. `generated.at` + the
+accuracy-pass `verified` stamps bumped on interactive-words,
+anki-export and bilinguals-simulator. Machine references: `wiki:sync`
+kept all three unchanged (no routes/models/commands in this ticket);
+`wiki:validate` green — 80 warning(s), all acknowledged;
+`wiki:validate --prune` found nothing to drop.
+
+**The spec's pre-review gate, both green:** full `composer run test` —
+1676 passed, 1 skipped (the pre-existing skip), 0 failed (9227
+assertions, 6 parallel workers, ~18 min); full vitest `npm run test` —
+29 files, 409 tests, all passed.
+
+## 2026-11-05 (word-popup-overhaul ticket 06 — Ask-AI is admin-only, queued, fire-and-forget)
+
+The word popup's Ask-AI enrichment no longer runs its provider call inside
+the HTTP request. The sparkles icon (plain and re-ask variants, dictionary
+and missing cards alike) now renders for **approved admins only** — hidden,
+not disabled, for everyone else, read off the shared `auth.user`'s
+`role`/`is_approved` (the profile Popups-tab preview passes the same gate);
+`POST /ai/word-enrich` answers a non-admin **403** in the reading-surfaces
+JSON shape before any gate, mint or ledger row. The click still validates,
+resolves model + key cheaply against the session user (the existing
+400/403 guidance answers at dispatch and dispatches nothing), adopts/mints
+the word synchronously, records the pending ledger row, then dispatches
+**`App\Jobs\FetchWordAiEnrichment`** (`#[Queue(QueueLane::DEFAULT)]`,
+`$tries = 1` — no auto-retry double-spend against the asker's own key —
+`$timeout = 300`, above the 120s cURL cap; deliberately NOT
+`ShouldBeUnique`: the unique ledger constraint + the fresh-pending 409
+gate are the race net and uniqueness would fight the stale-pending
+takeover) and answers the minimal **`{queued: true}`** — the word-show
+payload swap is GONE. The job carries scalar ids (word + asking user) and
+resolves model AND BYO key inside the worker against that user through
+**`AIModelResolver`'s new explicit-user seam** (optional `?User` params on
+`resolveExplanationModel`/`resolveAnswerModel`/`getGroupedModelChoices`/
+`ask`, defaulting to `Auth::user()`; the grouped-choices memo is keyed per
+user id), then runs ask → lenient parse → merge → succeeded finalize →
+word touch; every failure (provider, unparseable, no-model, vanished
+word/asker) finalizes the ledger failed and the job stays silent
+client-side. The popup floats a transient
+`word.ask_ai_started` notice ("AI enrichment started — open the word
+again to see the result", new ui-string en/ru/be) in the info popup
+(auto-dismissed through the ticket 04 `ANKI_NOTICE_LIFETIME_MS` gate,
+cleared on word change); the 409 refetch paths are byte-identical. Docs
+updated: `wiki/domains/interactive-words.md` (ask-AI section rewritten —
+admin-only/queued/`{queued: true}`/silent failure + a "The job" bullet —
+toolbar + missing-card + adopt-on-ask passages, new `enrich-job` source,
+generated.at) and `wiki/domains/ai-providers.md` (resolver bullets name
+the seam, the consumer bullet un-locks the ledger, generated.at). Tests:
+`AiWordEnrichEndpointTest` / `AiWordEnrichAdoptTest` restructured to the
+Queue::fake dispatch + direct `handle()` split (30 tests), the vitest
+source pins updated for the notice + admin gates (409 tests green,
+`npm run build` green).
+
+## 2026-11-05 (word-popup-overhaul ticket 05 — the missing card's full toolbar; the AI answer's popup can adopt)
+
+The missing-word card's ask-AI-only toolbar strip became the real card's
+row **in full**: know / remove mark on the left, then pushed right — Anki,
+the Explanation toggle, Ask-AI, the robot (`MissingPopupContent` grew the
+`sections` / `explainProps` / `explainKey` / `modelsOpen` /
+`onModelsOpenChange` props; the outer `WordPopup` threads them, and passes
+NO progress/Anki handlers — their structural absence is what disables those
+icons through the same null-handler gates the dictionary card reads).
+Every wordless icon is disabled, never hidden; two stay live: the robot
+(the Models used popup now mounts behind the missing card's own
+`showExplain` gate, fed from the explain payload like the real card's) and
+Ask-AI on its existing gating. The Explanation toggle renders but can
+never enable — no word to attach the pane to. Once a word exists (resolved
+on open or adopted by an ask) the existing `setData` swap replaces the
+card with the real dictionary view, icons live. Alongside, the simulator's
+AI answer panel now passes ONE `language` descriptor to its popup mount —
+the ask's learning-first language, the resolution order's first code,
+`{code}`-shaped (`answerAskLanguage` in `lib/aiAnswerTokens.mjs`, null
+when the ask carried no usable code) — reversing ADR 0096's adopt-less
+rule for that surface (the ADR amendment itself is pending in the closure
+ticket): asking about an unknown answer word mints it into that language
+through the existing adopt-on-ask path, existing-row adoption still
+winning. The ordered `languageCodes` resolve is unchanged. Docs updated:
+`wiki/domains/interactive-words.md` (missing-card toolbar passage,
+adopt-on-ask scope, AI-panel bullets, frontmatter description) plus
+accuracy passes where the touched files are listed sources:
+`wiki/domains/bilinguals-simulator.md` (the AI-answer surface bullet —
+map-less stays, adopt-less reversed) and `wiki/domains/anki-export.md`
+(the missing card's toolbar icon is a disabled placeholder, no send).
+
+## 2026-11-05 (word-popup-overhaul ticket 04 — the info popup: notices, errors and the explanation float above the card)
+
+Every transient word-popup message moved out of the card into one
+**info popup**: an absolutely positioned, card-surface-styled layer
+anchored above the card (`bottom: 100%` + an 8px gap, spanning the card's
+width, viewport-clamped — it measures the space between the viewport's
+top edge and the card's top edge via its positioned wrapper's
+`getBoundingClientRect().top`, floored at 96px, re-measured on resize —
+and internally scrollable when tall). The portal wrapper split in two:
+`WordPopup.jsx`'s wrapper is now positioning-only (`word-popup absolute
+z-50 flex flex-col` + the dialog semantics + the close handlers' ref),
+and the overflow-hidden card surface (`word-popup-card`, still
+`popupContainerClass`) renders inside `PopupContent`/`MissingPopupContent`
+— the split is what lets the layer hang above the card unclipped while
+contributing no layout, so the toolbar/header/dictionary are byte-stable
+while messages come and go. What lives there, stacked with hairline
+separators: the Anki added/updated/duplicate notices (now AUTO-DISMISSING
+~4s via a timer effect beside the send state whose cleanup tears the
+timer down on any ankiSend change — the file's first setTimeout), the
+sticky Anki error (taxonomy and `/profile?tab=anki` link unchanged), the
+sticky ask-AI error (Retry + 400/403 link unchanged), and the AI Context
+explanation behind its toolbar toggle gate (`explainSlot` prop; the
+page-lifetime `explainCache`, auto-fire and "Ask again" behavior are
+byte-identical — only the mount point moved, out of the dictionary view's
+first row). Each sticky item carries the new shared
+`InfoDismissButton` (`word-popup-info-dismiss`, new `xMark` line-art
+icon, new `word.info_dismiss` ui-string en/ru/be — seeded via
+UiStringSeeder); successes take no control. Everything still clears on
+popup close/word change through the existing reset. The profile's
+Popups-tab preview renders the same layer above its preview card (its
+wrapper gained `relative` as the layer's positioning context; still
+message-free and network-inert — the canned `word.explain_preview`
+answer flows through the same pane). Toolbar strips (both cards) keep
+only their icon rows. Source pins re-pointed: `WordPopup.toolbar.test.js`
+(status lines + ask-error mounts now pinned on the layer, new describe
+for the layer's structure/clamp/stacking/auto-dismiss/dismiss/card
+byte-stability, preview positioning pin) and `WordText.missing.test.js`
+(missing card mounts the layer; new `word.info_dismiss` seeder pin);
+`icons.jsx` gained `xMark`. Docs: GLOSSARY gained the **Info popup**
+term; this concept's toolbar passage (icons-only strip), class-hook list
+(`-card`, `-info`, `-info-items`, `-info-dismiss`, relocated
+`-explain-row`/`-anki-*`/`-ask-ai-*`), viewport-fit paragraph, missing-card
+ask-error, Context-explanation mount point, ask-AI error and Anki
+status-line passages updated, `generated.at` bumped. Verification:
+touched vitest files 64 green, full vitest suite 29 files / 396 green,
+`npm run build` green (vitest reads component source as text only, so
+the build is the JSX parse gate); no routes/models/commands changed, so
+no `wiki:sync` was needed; Pest endpoint contracts untouched.
+
+## 2026-11-05 (word-popup-overhaul ticket 03 — Anki notes bake full lists, transcriptions on their own line)
+
+Anki note values stop truncating: `ankiTemplate.js`'s `buildNoteFields`
+drops the popup-preview caps and the "+N more…" `<details>` expanders
+from the value side entirely — the flat Translations field and the
+Body's per-entry translations line list everything comma-joined; every
+transcription is bracketed and " · "-joined in both the flat
+Transcription field (previously unbracketed) and the Body (previously
+first-reading + expander), both composed by one `transcriptionsLine`
+helper so the shapes cannot drift. The Body's transcriptions render as
+their own block line below the translations line via a
+`<div class="ef-transcriptions">` baked into the VALUE — the class name
+stays so already-sent notes keep their font/opacity styling, and the
+CSS `.ef-transcriptions` rule is untouched so re-syncing the template
+cannot restyle old notes' run-on inline spans (the frozen-values
+semantics; the block div affects newly sent notes only). The unused
+expander wording plumbing left the builder (`more` gone from
+`DEFAULT_LABELS` and `uiLabels` — seven labels now); the `word.more`
+ui-string and WordPopup's own "+N more" preview expander stay. The
+template CSS keeps the legacy `ef-more`/`ef-more-summary` rules so
+already-sent notes keep rendering after a template re-sync (the
+CSS↔markup pairing test is one-way and unaffected). Both senders (the
+popup's per-word send, the Anki tab's sample card/preview) go through
+the same `buildNoteFields`, so the tab's preview/sample card show the
+full-list shapes identically. Send-time section toggles still drop
+their lines whole (pinned). Docs: `anki-export.md` sends/values passage
+rewritten (full lists, value-side transcription block, legacy CSS note,
+seven labels), `generated.at` bumped. Verification: `ankiTemplate.test.js`
+rewritten to the full-list pins (52 green), full vitest suite 385 green,
+`AnkiSettingsMirrorTest` 9 green; no routes/models/commands changed, so
+no `wiki:sync` was needed.
+
+## 2026-11-05 (word-popup-overhaul ticket 02 — AI answer hover: underline only, no background fill)
+
+Hovering anything in the streamed AI answer panel no longer paints the
+vellum background block: the two `#ai_answer_div` background-on-hover
+rules in the static `public/css/simulator.css` (light + `.dark` — every
+text-bearing element: p/li/h1–h4/blockquote/pre/span/code/td/th) are
+deleted, so the hovered word token's underline is the panel's whole
+hover affordance and plain answer text gives only the pointer cursor.
+The token-affordance comment that referenced the removed fill is
+rewritten; the keyboard focus ring (2px `--wbench-accent` /
+`--wbench-accent-night`), the token hover/focus underline, and the
+cursor/transition + reduced-motion rules are untouched, as are the text
+columns' own styles (`resources/css/app.css`). The dead commented-out
+text-shadow block above the deleted rules stays (out of scope per the
+orchestrator). Docs: `interactive-words.md` hover-affordance passages
+(the overview bullet and the AI-panel consuming-surfaces bullet),
+`generated.at` bumped. No vitest pin exists for the static stylesheet —
+verification was rule inspection plus the full vitest suite green; no
+routes/models/commands changed, so no `wiki:sync` was needed.
+
+## 2026-11-05 (word-popup-overhaul ticket 01 — open penalty: every popup open costs −5, native language free)
+
+The old lookup penalty (−2 on the FIRST popup open of a word per sentence
+row, ledger-deduped) is retired end to end and replaced by a flat
+**popup-open penalty**: every popup open of a dictionary-mapped word costs
+**−5 familiarity, every time** — mouse ctrl+click, Ctrl+Enter, Ctrl+Space
+alike, on every popup surface. New `POST /words/opens`
+(`WordController::recordOpens`, `RecordWordOpensRequest` — a bounded
+`word_ids` list, throttle 60/min beside the lookup resolve) applies it
+through `WordFamiliarityService::applyOpens`: ledger-free (the
+`user_word_event` once-per-row rule now belongs to the sentence-reveal
+**read** credits alone — `POST /word-events` accepts `kind: read` only,
+`UserWord::KIND_LOOKUP`/`LOOKUP_PENALTY` constants are gone, historical
+`lookup` rows stay untouched), first-ever touch creates the `user_word`
+row at 0 where the −5 clamps (scores never go negative), and repeat opens
+apply independently. Words in the user's **native language cost nothing**
+— the filter is server-side in `applyOpens` (each word's `language_id`
+against the caller's Native setting, an unset setting excluding nothing),
+the single source of truth for reader columns, simulator columns, and the
+AI answer panel. The response mirrors `/word-events`' shape (native words
+echo their unchanged reading, null while rowless) so the client recolors
+from the response alone: the columns' mapped open posts its id from
+`WordText` and patches the word map + popup header as the old lookup
+event's response did; a missing-mode popup whose on-open resolve lands a
+hit posts the resolved id **once per popup instance** from a new
+`WordPopup` effect keyed on `lookedUpId` (the 409 sync's re-resolve
+included) and reflects the new score in its header via
+`effectiveFamiliarity` — the AI panel's map-less mount included, whose
+tokens never tint; a word that stays missing costs nothing. New helper
+`recordWordOpens` in `lib/wordFamiliarity.js` (best-effort, never
+throws). Docs: `interactive-words.md` concept (familiarity-events,
+popup, missing-card, routes, consuming-surfaces passages + description);
+the now-lookup-free prose in `reader.md` and the AI-panel familiarity
+passage in `bilinguals-simulator.md` (+ `entities.md`'s drift sources);
+`generated.at` bumped on the concepts whose listed sources this ticket
+touched (interactive-words, reader, bilinguals-simulator, entities,
+crossword, overview, anki-export — the latter three for the
+`routes/web.php`/`WordPopup.jsx` listing ripple; profile.md's bump clears
+checkout-refreshed mtimes only, content untouched). The ADR 0028
+amendment itself is a closure-ticket item.
+
 ## 2026-11-04 (anki-tab-polish — learning-language preference, Anki tab opens on it + connection-beside-card-content layout, toggle-gated footer separator)
 
 Four tickets on the profile/Anki surfaces (spec `.scratch/anki-tab-polish/`).

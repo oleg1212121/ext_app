@@ -6,7 +6,7 @@ export const FAMILIARITY_STRONG_AT = 60;
 export const FAMILIARITY_PROGRESS_AT = 20;
 
 /**
- * Best-effort familiarity event logging: read (+1) and lookup (-2) events,
+ * Best-effort sentence-reveal read credits: +1 per fresh (word, row) read,
  * deduplicated per (word, sentence row, kind) on the server. Never throws —
  * reading must keep working when event logging fails; on failure the caller
  * just doesn't recolor.
@@ -22,6 +22,36 @@ export async function recordWordEvents(events) {
                 ...(token ? {'X-CSRF-TOKEN': token} : {}),
             },
             body: JSON.stringify({events}),
+        });
+        if (!res.ok) {
+            return {};
+        }
+        const json = await res.json();
+        return json?.data?.familiarity ?? {};
+    } catch {
+        return {};
+    }
+}
+
+/**
+ * Best-effort popup-open penalty (word-popup-overhaul ticket 01): every
+ * popup open of a dictionary-mapped word costs −5 familiarity, every time —
+ * no dedupe of any kind. The native-language filter is server-side, so a
+ * native word's response just echoes its unchanged score. Never throws —
+ * reading must keep working when the POST fails; on failure the caller
+ * just doesn't recolor.
+ */
+export async function recordWordOpens(wordIds) {
+    try {
+        const token = getCsrfToken();
+        const res = await fetch('/words/opens', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                ...(token ? {'X-CSRF-TOKEN': token} : {}),
+            },
+            body: JSON.stringify({word_ids: wordIds}),
         });
         if (!res.ok) {
             return {};

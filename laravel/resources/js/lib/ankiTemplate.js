@@ -225,8 +225,8 @@ const TEMPLATE_CSS = `.card {
 /* The counted sections carry the popup's dictionary size (0.857em) on the
    <details> itself; the definitions list inside compounds one step like the
    popup's text-[0.929em] does. Both summary flavors — the counted sections'
-   ef-summary and the expander's ef-more-summary — share the tap affordance.
-   The expander's summary is its own class (the baked values carry
+   ef-summary and the legacy expander's ef-more-summary — share the tap
+   affordance. The expander's summary is its own class (the baked values carry
    ef-more-summary, so the selectors must name that class: values are frozen
    into already-sent notes and a .ef-more .ef-summary descendant would match
    nothing), styled by the later rule. */
@@ -268,6 +268,9 @@ const TEMPLATE_CSS = `.card {
     font-size: 0.857em;
     opacity: 0.6;
 }
+/* Legacy expander rules: new sends bake full lists (no "+N more…" markup
+   anymore), but already-sent notes carry <details class="ef-more"> in their
+   frozen values and must keep rendering across a template re-sync. */
 .ef-more { display: inline; }
 .ef-more-summary {
     margin: 0 4px;
@@ -350,11 +353,6 @@ const distinct = (values) => [...new Set(values)]
 
 // --- Value-side structure: the popup's dictionary body ----------------------
 
-// The popup's preview caps (WordPopup's TRANSLATIONS_PREVIEW /
-// TRANSCRIPTIONS_PREVIEW).
-const TRANSLATIONS_PREVIEW = 8
-const TRANSCRIPTIONS_PREVIEW = 1
-
 // English default wording for the value-side labels — the popup's own
 // strings (database/seeders/ui-strings/words.php). Senders (the word popup's
 // send, the Anki tab) pass their UI language's strings through the `labels`
@@ -365,7 +363,6 @@ const DEFAULT_LABELS = {
     definitions: (count) => `Definitions (${count})`,
     examples: (count) => `Examples (${count})`,
     etymology: (count) => `Etymology (${count})`,
-    more: (count) => `+${count} more…`,
     formOf: 'form of',
     noTranslations: 'No translations yet — automatic translation may still be in progress.',
     noDefinitions: 'No definitions yet.',
@@ -375,7 +372,7 @@ const DEFAULT_LABELS = {
     label: (slug) => slug,
 }
 
-// The localized counterpart of the defaults: the same eight keys pulled from
+// The localized counterpart of the defaults: the same seven keys pulled from
 // the app's own ui-strings (database/seeders/ui-strings/words.php). Both
 // senders (the word popup's sendToAnki, the Anki tab's sampleNoteFields)
 // call this with their `useI18n` t — one definition of the mapping, so the
@@ -387,7 +384,6 @@ export function uiLabels(t) {
         definitions: (count) => t('word.definitions', {count}),
         examples: (count) => t('word.examples', {count}),
         etymology: (count) => t('word.etymology', {count}),
-        more: (count) => t('word.more', {count}),
         formOf: t('word.form_of'),
         noTranslations: t('word.no_translations'),
         noDefinitions: t('word.no_definitions'),
@@ -452,27 +448,16 @@ const etymologySection = (items, wording) => items.length === 0 ? null
     : countedSection(wording.etymology(items.length), items.map((item) => `<p class="ef-etymology-item">${escapeHtml(item)}</p>`).join(''))
 
 // The translations line, shared by the flat field and the Body's per-entry
-// line: the popup's preview cap, the rest behind a "+N more…" expander —
-// an inline <details> so it opens into the same line instead of breaking
-// the joined list.
-const translationsLine = (words, wording) => {
-    const previewed = words.slice(0, TRANSLATIONS_PREVIEW).map(escapeHtml).join(', ')
-    const rest = words.slice(TRANSLATIONS_PREVIEW)
-    return rest.length === 0
-        ? previewed
-        : `${previewed}<details class="ef-more"><summary class="ef-more-summary">${wording.more(rest.length)}</summary>${rest.map(escapeHtml).join(', ')}</details>`
-}
+// line: the full list, comma-joined — notes bake everything at send time
+// (the old preview cap and "+N more…" expander lived in the value; the
+// popup's own preview stays in WordPopup).
+const translationsLine = (words) => words.map(escapeHtml).join(', ')
 
 // The bracketed transcriptions line, the Body's per-entry counterpart of
-// translationsLine: the popup's first reading, the rest behind a "+N
-// more…" expander whose content leads with the " · " separator.
-const transcriptionsLine = (values, wording) => {
-    const rest = values.slice(TRANSCRIPTIONS_PREVIEW)
-    const more = rest.length === 0
-        ? ''
-        : `<details class="ef-more"><summary class="ef-more-summary">${wording.more(rest.length)}</summary> · ${rest.map(escapeHtml).join(' · ')}</details>`
-    return `[${escapeHtml(values[0])}]${more}`
-}
+// translationsLine and the flat Transcription field's composer: every
+// reading bracketed, joined with the popup's " · " — one composition, so
+// the two shapes cannot drift apart.
+const transcriptionsLine = (values) => values.map((value) => `[${escapeHtml(value)}]`).join(' · ')
 
 // The popup's per-entry blocks for one flat field: only entries carrying
 // content render (no dangling label over nothing), each wrapped with its
@@ -509,12 +494,12 @@ const isOn = (fields, key) => fields?.[key] !== false
 
 // One entry's Body section — the popup's dictionary pane, top to bottom:
 // the "WORD — pos" label, the translations line (or its calm placeholder),
-// the bracketed transcriptions (first, the rest behind the expander), the
-// counted collapsed Definitions ("No definitions yet." when empty, exactly
-// the popup), Examples and Etymologies (hidden whole when empty). The
-// send-time section toggles drop their lines entire — placeholder included,
-// exactly like the popup's section gates. Null when nothing renders, so a
-// fully-suppressed entry leaves no empty block behind.
+// the bracketed transcriptions on their own line, the counted collapsed
+// Definitions ("No definitions yet." when empty, exactly the popup),
+// Examples and Etymologies (hidden whole when empty). The send-time section
+// toggles drop their lines entire — placeholder included, exactly like the
+// popup's section gates. Null when nothing renders, so a fully-suppressed
+// entry leaves no empty block behind.
 const entryBody = (entry, headword, wording, fields) => {
     const parts = []
 
@@ -527,12 +512,17 @@ const entryBody = (entry, headword, wording, fields) => {
         const words = (entry.translations ?? []).map((translation) => translation.word)
         parts.push(words.length === 0
             ? `<p class="ef-empty">${wording.noTranslations}</p>`
-            : `<span class="ef-translations">${translationsLine(words, wording)}</span>`)
+            : `<span class="ef-translations">${translationsLine(words)}</span>`)
     }
 
     const transcriptions = (entry.transcriptions ?? []).map((item) => item.value)
     if (isOn(fields, 'transcription') && transcriptions.length > 0) {
-        parts.push(`<span class="ef-transcriptions">${transcriptionsLine(transcriptions, wording)}</span>`)
+        // A block element in the VALUE, not `display: block` in the CSS:
+        // values are frozen into already-sent notes, whose old inline
+        // <span class="ef-transcriptions"> must keep its old rendering
+        // across a template re-sync (the class stays the same so those
+        // notes' font/opacity styling continuity is preserved).
+        parts.push(`<div class="ef-transcriptions">${transcriptionsLine(transcriptions)}</div>`)
     }
 
     if (isOn(fields, 'definitions')) {
@@ -578,7 +568,7 @@ const bodyValue = (entries, headword, wording, fields) => entries
 // language, falling back to all translations when none match (or nothing
 // was passed) — the Body copies the popup instead: per-entry translations
 // as the payload carries them, native-first. `labels` carries the sender's
-// UI-language summary/expander/form-of/placeholder strings and the
+// UI-language summary/form-of/placeholder strings and the
 // definition label names (English defaults). `fields` is the resolved Anki settings map: the body section
 // toggles (translations, transcription, definitions, examples, etymology)
 // plus the `body` master toggle shape the Body value at SEND TIME — they
@@ -601,12 +591,11 @@ export function buildNoteFields(data, {familiarity = null, tags = [], nativeLang
 
     return {
         Word: escapeHtml(word),
-        Transcription: distinct(entries.flatMap((entry) => (entry.transcriptions ?? []).map((t) => t.value)))
-            .map(escapeHtml).join(' · '),
+        Transcription: transcriptionsLine(distinct(entries.flatMap((entry) => (entry.transcriptions ?? []).map((t) => t.value)))),
         PartOfSpeech: inlineValue(distinct(entries.map((entry) => entry.word_class))),
         Frequency: data?.frequency == null ? '' : escapeHtml(data.frequency),
         Definitions: entrySections(entries, word, labeled, (entry) => definitionsSection(entry.definitions ?? [], wording)),
-        Translations: translationsLine(words, wording),
+        Translations: translationsLine(words),
         Examples: entrySections(entries, word, labeled, (entry) => examplesSection(entry.examples ?? [], wording)),
         Etymology: entrySections(entries, word, labeled, (entry) => etymologySection(entry.etymologies ?? [], wording)),
         WordFamily: formOfValue(data?.form_of ?? [], wording.formOf),

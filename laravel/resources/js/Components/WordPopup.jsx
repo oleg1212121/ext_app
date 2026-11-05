@@ -1,13 +1,14 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
 import {Link, usePage} from '@inertiajs/react';
 import ModelsUsedPopup, {RobotHelpIcon} from './ModelsUsedPopup.jsx';
 import {useI18n} from '../i18n';
+import {isApprovedAdmin} from '../lib/authUser';
 import {getCsrfToken} from '../lib/http';
 import {renderMarkdown} from '../lib/markdown';
 import {canAskExplanation} from '../lib/wordExplain';
 import {dimsDefinition, dimsEntry, entryUsageChips, usageLabelChips} from '../lib/usageLabelDisplay';
-import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
+import {FAMILIARITY_MAX, recordWordOpens} from '../lib/wordFamiliarity';
 import {resolveWordId} from '../lib/wordLookup';
 import {Icon} from './icons.jsx';
 import {AnkiConnectError, ankiConnectEndpoint, markAnkiReachable, probeReachable, unmarkAnkiReachable} from '../lib/ankiConnect';
@@ -20,6 +21,15 @@ const VIEWPORT_MARGIN = 12;
 const MIN_POPUP_HEIGHT = 160;
 const TRANSLATIONS_PREVIEW = 8;
 const TRANSCRIPTIONS_PREVIEW = 1;
+// The info popup's viewport-clamp floor (word-popup-overhaul ticket 04):
+// the space between the viewport's top edge and the card's top edge bounds
+// the layer; this floor keeps a usable strip when a flipped card sits hard
+// against the top (the layer scrolls internally from there).
+const MIN_INFO_HEIGHT = 96;
+// The Anki success notices' lifetime (word-popup-overhaul ticket 04): the
+// info popup's only transient items — added / updated / duplicate dismiss
+// themselves after ~4 seconds; errors stay sticky.
+const ANKI_NOTICE_LIFETIME_MS = 4000;
 
 // Page-lifetime memo of Explanation-pane states, keyed by
 // rowKind|rowId|side|sentenceIndex|surface|modelKey. Client-side only — the
@@ -384,9 +394,11 @@ function ExplainPane({explain, explainKey, preview = false}) {
  * go-to-settings link for the no-model (400) / no-key (403) answers, and
  * the Retry control the four-state contract requires of an error state —
  * it re-sends the ask through the same guarded callback the toolbar icon
- * uses.
+ * uses. Rendered inside the info popup above the card (word-popup-overhaul
+ * ticket 04) — sticky until dismissed, so it takes the shared per-item
+ * dismiss control when a dismiss callback is passed.
  */
-function AskAiError({message, status, onRetry = null}) {
+function AskAiError({message, status, onRetry = null, onDismiss = null}) {
     const {t} = useI18n();
 
     if (!message) {
@@ -394,93 +406,410 @@ function AskAiError({message, status, onRetry = null}) {
     }
 
     return (
-        <div className="word-popup-ask-ai-error pb-2 text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">
-            <p>{message}</p>
-            {(status === 400 || status === 403) && (
-                <Link
-                    href="/profile?tab=ai"
-                    className="mt-1 inline-block underline underline-offset-2 hover:opacity-80"
-                >
-                    {t('word.explain_go_to_settings')}
-                </Link>
-            )}
-            {onRetry != null && (
-                <button
-                    type="button"
-                    onClick={onRetry}
-                    className={`word-popup-ask-ai-retry ${explainButtonClass} mt-1`}
-                >
-                    {t('word.ask_ai_retry')}
-                </button>
+        <div className="word-popup-ask-ai-error flex items-start gap-2 py-1.5 text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">
+            <div className="min-w-0 flex-1">
+                <p>{message}</p>
+                {(status === 400 || status === 403) && (
+                    <Link
+                        href="/profile?tab=ai"
+                        className="mt-1 inline-block underline underline-offset-2 hover:opacity-80"
+                    >
+                        {t('word.explain_go_to_settings')}
+                    </Link>
+                )}
+                {onRetry != null && (
+                    <button
+                        type="button"
+                        onClick={onRetry}
+                        className={`word-popup-ask-ai-retry ${explainButtonClass} mt-1`}
+                    >
+                        {t('word.ask_ai_retry')}
+                    </button>
+                )}
+            </div>
+            {onDismiss != null && (
+                <InfoDismissButton onClick={onDismiss}/>
             )}
         </div>
     );
 }
 
 /**
- * The missing-word card (popup-ai-enrich tickets 03 + 05): what an unmapped
- * token opens — the raw clicked surface as the title and an honest
- * "not in the dictionary yet" note. There is no word id behind it: nothing
- * is fetched, no lookup event fires, and no familiarity / frequency /
- * form-of lines exist. The toolbar shows only what applies — the LIVE Ask-AI
- * icon (ticket 05's adopt-on-ask): the ask resolves the raw surface
- * server-side (a lookup-key hit adopts onto the existing row, a miss mints
- * one word), enriches it, and the response payload swaps this card for the
- * full dictionary view — ask-AI is the only path from missing to populated.
- * Inapplicable states disable, never hide: no handler (the profile preview)
- * or no column language to ask with, a request in flight. A failed ask
- * shows the server's guidance verbatim beneath the toolbar — the no-model
- * and no-key cases carry the explain pane's go-to-settings link, and the
- * Retry control re-sends the ask (the shared AskAiError render). The
- * structure mirrors the real card (toolbar / header / dictionary, same
- * hairlines and stable `word-popup-*` hooks) so the card stays addressable
- * from outside styles the same way.
+ * The info popup's per-item dismiss control (word-popup-overhaul ticket
+ * 04): a small grey x in the toolbar's own button style. The sticky items —
+ * the Anki error and the ask-AI error — each carry one; the success notices
+ * auto-dismiss instead and take none.
  */
-export function MissingPopupContent({surface, onAskAi = null, aiBusy = false, aiError = null, aiErrorStatus = null, resolving = false}) {
+function InfoDismissButton({onClick}) {
     const {t} = useI18n();
+
+    return (
+        <button
+            type="button"
+            title={t('word.info_dismiss')}
+            aria-label={t('word.info_dismiss')}
+            onClick={onClick}
+            className={`word-popup-info-dismiss ${toolbarButtonClass()} shrink-0`}
+        >
+            <Icon name="xMark" className="h-[1.25em] w-[1.25em]"/>
+        </button>
+    );
+}
+
+/**
+ * The info popup (word-popup-overhaul ticket 04): every transient message
+ * the word popup has to deliver — the Anki send outcomes, the ask-AI error,
+ * the AI Context explanation while its toolbar toggle is on — floats in ONE
+ * absolutely positioned layer ABOVE the card, so the card's content never
+ * shifts when anything appears or disappears. The card surface is
+ * overflow-hidden, so the layer cannot nest inside it: it renders as the
+ * positioned wrapper's other child (the card surface's sibling),
+ * bottom-anchored to the card's top edge with a small gap, spanning its
+ * width, styled as the same card surface, viewport-clamped (a popup opened
+ * near the top keeps it visible) and internally scrollable when tall.
+ * Items stack in the ticket's listed order: the Anki notices (added /
+ * updated / duplicate — auto-dismissed by the outer WordPopup after ~4s),
+ * the sticky Anki error, the sticky ask-AI error (both carrying the shared
+ * per-item dismiss control), the queued ask's transient "started" notice
+ * (word-popup-overhaul ticket 06 — auto-dismissed like the Anki notices),
+ * and the explanation slot PopupContent passes in behind its toggle gate.
+ * With nothing to show the layer renders null — no box, no layout, no
+ * shadow.
+ */
+function InfoPopup({ankiSend = null, onDismissAnki = null, aiStarted = false, aiError = null, aiErrorStatus = null, onRetryAskAi = null, onDismissAskAi = null, explainSlot = null}) {
+    const {t} = useI18n();
+    const layerRef = useRef(null);
+    const [maxHeight, setMaxHeight] = useState(null);
+
+    // The viewport clamp: the layer hangs above the card, so the space
+    // between the viewport's top edge and the card's top edge bounds it.
+    // parentElement is the positioned wrapper in both mounts (the portal's
+    // absolute card wrapper and the profile preview's relative one — the
+    // layer is always their direct child), and the rect's top already
+    // accounts for the flip transform. Measured before paint (no unclamped
+    // flash), re-measured on resize; the listener dies with the layer.
+    useLayoutEffect(() => {
+        const measure = () => {
+            const parent = layerRef.current?.parentElement;
+            if (!parent) {
+                return;
+            }
+            const available = Math.floor(parent.getBoundingClientRect().top - POPUP_MARGIN - VIEWPORT_MARGIN);
+            setMaxHeight((current) => {
+                const next = Math.max(MIN_INFO_HEIGHT, available);
+                return next === current ? current : next;
+            });
+        };
+        measure();
+        window.addEventListener('resize', measure);
+        return () => window.removeEventListener('resize', measure);
+    }, []);
+
+    if (!explainSlot && aiError == null && !aiStarted
+        && ankiSend?.status !== 'added'
+        && ankiSend?.status !== 'updated'
+        && ankiSend?.status !== 'duplicate'
+        && ankiSend?.status !== 'error') {
+        return null;
+    }
+
+    return (
+        <div
+            ref={layerRef}
+            className={`word-popup-info absolute bottom-full left-0 right-0 z-10 mb-2 overflow-hidden rounded-md border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[#FDFBF5] dark:bg-[#1C1915] shadow-lg shadow-black/20 font-sans text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]`}
+            style={maxHeight != null ? {maxHeight: `${maxHeight}px`} : undefined}
+        >
+            <div className="word-popup-info-items divide-y divide-[var(--color-hairline)] overflow-y-auto px-3.5 py-1.5 dark:divide-[var(--color-hairline-night)]">
+                {ankiSend?.status === 'added' && (
+                    <p className="word-popup-anki-added py-1.5 text-[0.857em] text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
+                        {t('word.anki_added')}
+                    </p>
+                )}
+                {ankiSend?.status === 'updated' && (
+                    <p className="word-popup-anki-updated py-1.5 text-[0.857em] text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
+                        {t('word.anki_updated')}
+                    </p>
+                )}
+                {/* Reachable only when a FOREIGN-model note matched deck +
+                    Word + Language: a note of our own types updates in place
+                    and reports 'updated' above (lib/ankiSync.js). */}
+                {ankiSend?.status === 'duplicate' && (
+                    <p className="word-popup-anki-duplicate py-1.5 text-[0.857em] opacity-70">
+                        {t('word.anki_already')}
+                    </p>
+                )}
+                {ankiSend?.status === 'error' && (
+                    <div className="word-popup-anki-error flex items-start gap-2 py-1.5 text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">
+                        <div className="min-w-0 flex-1">
+                            <p>
+                                {ankiSend.error instanceof AnkiNoteTypeMismatchError
+                                    ? t('word.anki_mismatch', {model: ankiSend.error.modelName})
+                                    : (ankiSend.error instanceof AnkiConnectError && ankiSend.error.kind === 'anki'
+                                        ? t('word.anki_failed', {message: ankiSend.error.message})
+                                        : t('word.anki_unreachable'))}
+                            </p>
+                            <Link
+                                href="/profile?tab=anki"
+                                className="mt-1 inline-block underline underline-offset-2 hover:opacity-80"
+                            >
+                                {t('word.anki_go_to_settings')}
+                            </Link>
+                        </div>
+                        {onDismissAnki != null && (
+                            <InfoDismissButton onClick={onDismissAnki}/>
+                        )}
+                    </div>
+                )}
+                {/* A failed Ask-AI attempt: the server's guidance (no key,
+                    no model, already asked, throttled, provider error) lands
+                    verbatim — with the go-to-settings link for 400/403 and
+                    the four-state contract's Retry control re-sending the
+                    ask; sticky until dismissed, the icon stays retryable. */}
+                <AskAiError message={aiError} status={aiErrorStatus} onRetry={onRetryAskAi} onDismiss={onDismissAskAi}/>
+                {/* A QUEUED ask's dispatch notice (word-popup-overhaul
+                    ticket 06): the enrichment job is off the HTTP request —
+                    the content arrives on the next open, and the notice
+                    says exactly that. Transient like the Anki success
+                    notices: auto-dismissed by the outer WordPopup after
+                    ~4s, no dismiss control; mutually exclusive with the
+                    error above (a dispatch either queued or failed). */}
+                {aiStarted && (
+                    <p className="word-popup-ai-started py-1.5 text-[0.857em] text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
+                        {t('word.ask_ai_started')}
+                    </p>
+                )}
+                {explainSlot && (
+                    <div className="word-popup-explain-row py-1.5">
+                        {explainSlot}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+/**
+ * The missing-word card (popup-ai-enrich tickets 03 + 05; word-popup-overhaul
+ * ticket 05): what an unmapped token opens — the raw clicked surface as the
+ * title and an honest "not in the dictionary yet" note. There is no word id
+ * behind it: nothing is fetched, no open penalty fires (a word that stays
+ * missing costs nothing), and no familiarity / frequency / form-of lines
+ * exist. The toolbar mirrors the real card's row in full — know / remove
+ * mark, then pushed right: Anki, the Explanation toggle, Ask-AI, the robot —
+ * with every inapplicable icon DISABLED, never hidden: there is no word
+ * behind the card yet, so the progress and Anki handlers are structurally
+ * absent (the outer WordPopup passes none — the same null-handler gates the
+ * real card reads disable through them) and the Explanation toggle can
+ * never enable (no word to attach an explanation to; the working pane lives
+ * on the real card the ask swaps in). Two icons stay live: the robot (the
+ * Models used popup needs no word) and Ask-AI wherever its existing gating
+ * decides a valid language makes asking possible. The moment a word exists
+ * — resolved on open, or adopted by an ask — this card is replaced by the
+ * real `PopupContent` through the existing swap, and the icons go live
+ * there; this component never gains the handlers itself. The Ask-AI ask
+ * resolves the raw surface server-side (a lookup-key hit adopts onto the
+ * existing row, a miss mints one word) and dispatches the queued
+ * enrichment job — the card stays as it is and the minted word appears on
+ * the next open (the on-open resolve finds it), so ask-AI remains the only
+ * path from missing to populated without a live swap
+ * (word-popup-overhaul ticket 06). A failed ask floats the server's guidance verbatim in the info
+ * popup above the card (the shared InfoPopup layer, word-popup-overhaul
+ * ticket 04) — the no-model and no-key cases carry the explain pane's
+ * go-to-settings link, the Retry control re-sends the ask, and the sticky
+ * line takes the shared per-item dismiss control. The structure mirrors the
+ * real card (info popup / toolbar / header / dictionary, same hairlines and
+ * stable `word-popup-*` hooks) so the card stays addressable from outside
+ * styles the same way.
+ */
+export function MissingPopupContent({
+    surface,
+    sections = {},
+    explainProps = null,
+    modelsOpen = false,
+    onModelsOpenChange = null,
+    onProgressAction = null,
+    onAnkiSend = null,
+    // Ask-AI is admin-only (word-popup-overhaul ticket 06): false keeps
+    // the sparkles icon out of the toolbar — hidden, not disabled — for
+    // everyone but approved admins.
+    canAskAi = false,
+    onAskAi = null,
+    aiBusy = false,
+    // The queued ask's dispatch outcome (ticket 06): floats the transient
+    // "AI enrichment started" notice — the missing card too stays as it is
+    // after an ask; the minted word appears on the next open.
+    aiStarted = false,
+    aiError = null,
+    aiErrorStatus = null,
+    onDismissAskAi = null,
+    resolving = false,
+}) {
+    const {t} = useI18n();
+
+    // The same shared gate as the real card: the Explanation toggle and the
+    // robot ride the explain payload + the ADR 0046 `explanation` key.
+    const showExplain = explainProps != null && sections.explanation !== false;
 
     const askAiLabel = aiBusy ? t('word.ask_ai_sending') : t('word.ask_ai');
 
     return (
         <>
-            <div className="word-popup-actions shrink-0 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]">
-                <div className="flex items-center gap-1 py-1.5">
-                    <button
-                        type="button"
-                        title={askAiLabel}
-                        aria-label={askAiLabel}
-                        disabled={onAskAi == null || aiBusy}
-                        onClick={onAskAi}
-                        className={`word-popup-ask-ai ${toolbarButtonClass()} ml-auto`}
-                    >
-                        <Icon name="sparkles" className="h-[1.25em] w-[1.25em]"/>
-                    </button>
+            {/* The info popup above the card: the missing card's only
+                transient message is the ask-AI error — the Anki notices and
+                the explanation pane cannot occur here (the card can send
+                nothing and its toggle never enables). */}
+            <InfoPopup
+                aiStarted={aiStarted}
+                aiError={aiError}
+                aiErrorStatus={aiErrorStatus}
+                onRetryAskAi={onAskAi}
+                onDismissAskAi={onDismissAskAi}
+            />
+
+            <div className={`word-popup-card ${popupContainerClass} min-h-0 flex-1`}>
+                {/* The action toolbar — the real card's row, mirrored in full:
+                    know / remove mark on the left; pushed right, in order:
+                    Anki, the Explanation toggle, the live Ask-AI icon, the
+                    robot rightmost. Disabled, never hidden: no word behind
+                    the card means no progress / Anki handler to act with
+                    (the icons render inert through the same null-handler
+                    gates the real card reads) and no explanation target —
+                    but the robot stays live (the Models used popup needs no
+                    word) and Ask-AI stays live wherever its gating decides
+                    a valid language makes asking possible. */}
+                <div className="word-popup-actions shrink-0 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]">
+                    <div className="flex items-center gap-1 py-1.5">
+                        {sections.progress_actions !== false && (
+                            <button
+                                type="button"
+                                title={t('word.i_know_this')}
+                                aria-label={t('word.i_know_this')}
+                                disabled={onProgressAction == null}
+                                className={`word-popup-progress-known ${toolbarButtonClass('verdigris')}`}
+                            >
+                                <Icon name="checkCircle" className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
+                        {sections.progress_actions !== false && (
+                            <button
+                                type="button"
+                                title={t('word.remove_mark')}
+                                aria-label={t('word.remove_mark')}
+                                disabled={onProgressAction == null}
+                                className={`word-popup-progress-reset ${toolbarButtonClass('vermilion')}`}
+                            >
+                                <Icon name="minusCircle" className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
+                        {/* The add form — no in-deck state exists to flip it
+                            (there is no word to check the deck for), and no
+                            hover probe: a send can never fire from this icon
+                            until the real card replaces it. The margin-auto
+                            push mirrors the real row's right-hand group. */}
+                        <button
+                            type="button"
+                            title={t('word.anki_send')}
+                            aria-label={t('word.anki_send')}
+                            disabled={onAnkiSend == null}
+                            className={`word-popup-anki-send ${toolbarButtonClass('neutral')} ml-auto`}
+                        >
+                            <Icon name="ankiAdd" className="h-[1.25em] w-[1.25em]"/>
+                        </button>
+                        {/* The Explanation toggle renders for toolbar parity
+                            whenever an explain payload exists, but the missing
+                            card can never explain — there is no word to attach
+                            the pane to — so it is a plain disabled, never
+                            pressed, never wired button. */}
+                        {showExplain && (
+                            <button
+                                type="button"
+                                title={t('word.explain_toggle')}
+                                aria-label={t('word.explain_toggle')}
+                                aria-pressed={false}
+                                disabled
+                                className={`word-popup-explain-toggle ${toolbarButtonClass('neutral')}`}
+                            >
+                                <Icon name="chatBubble" className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
+                        {/* The live Ask-AI icon — the only path from missing
+                            to populated. Disables while inapplicable: no
+                            handler (a column without a language descriptor,
+                            or the on-open resolve still in flight) or an ask
+                            in flight; failed attempts stay retryable.
+                            Admin-only (word-popup-overhaul ticket 06):
+                            hidden — not disabled — for everyone but approved
+                            admins, matching the endpoint's 403. */}
+                        {canAskAi && (
+                            <button
+                                type="button"
+                                title={askAiLabel}
+                                aria-label={askAiLabel}
+                                disabled={onAskAi == null || aiBusy}
+                                onClick={onAskAi}
+                                className={`word-popup-ask-ai ${toolbarButtonClass()}`}
+                            >
+                                <Icon name="sparkles" className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
+                        {/* Not a toggle: opens the Models used popup. Rightmost
+                            on the row and LIVE — the popup needs no word,
+                            reading its models off the explain payload exactly
+                            like the real card's robot. */}
+                        {showExplain && (
+                            <button
+                                type="button"
+                                onClick={() => onModelsOpenChange?.(true)}
+                                title={t('ai.models_icon')}
+                                aria-label={t('ai.models_icon')}
+                                aria-haspopup="dialog"
+                                className={`word-popup-models-button ${toolbarButtonClass('info')}`}
+                            >
+                                <RobotHelpIcon className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
+                    </div>
                 </div>
 
-                <AskAiError message={aiError} status={aiErrorStatus} onRetry={onAskAi}/>
-            </div>
-
-            {/* The header carries the raw clicked surface only — no
-                familiarity / frequency / form-of lines (there is no word
-                behind the card). */}
-            <div className="word-popup-header shrink-0 border-b border-[var(--color-hairline)] px-3.5 pb-2.5 pt-3 dark:border-[var(--color-hairline-night)]">
-                <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="word-popup-title font-reading text-[1.286em] leading-tight">{surface}</span>
+                {/* The header carries the raw clicked surface only — no
+                    familiarity / frequency / form-of lines (there is no word
+                    behind the card). */}
+                <div className="word-popup-header shrink-0 border-b border-[var(--color-hairline)] px-3.5 pb-2.5 pt-3 dark:border-[var(--color-hairline-night)]">
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="word-popup-title font-reading text-[1.286em] leading-tight">{surface}</span>
+                    </div>
                 </div>
-            </div>
 
-            <div className="word-popup-dictionary min-h-0 flex-1 overflow-y-auto px-3.5 pb-2.5">
-                {/* While the on-open resolve is in flight the body holds the
-                    loading line instead of the not-in-dictionary note — the
-                    note is a verdict, and pronouncing it before the resolve
-                    answers reads as an empty popup that later swaps itself
-                    (ADR 0096 amendment). A miss settles the note back in. */}
-                {resolving ? (
-                    <p className="word-popup-loading mt-1 text-[0.929em] leading-snug opacity-70">{t('word.loading')}</p>
-                ) : (
-                    <p className="word-popup-missing mt-1 text-[0.929em] leading-snug opacity-70">
-                        {t('word.not_in_dictionary')}
-                    </p>
+                <div className="word-popup-dictionary min-h-0 flex-1 overflow-y-auto px-3.5 pb-2.5">
+                    {/* While the on-open resolve is in flight the body holds the
+                        loading line instead of the not-in-dictionary note — the
+                        note is a verdict, and pronouncing it before the resolve
+                        answers reads as an empty popup that later swaps itself
+                        (ADR 0096 amendment). A miss settles the note back in. */}
+                    {resolving ? (
+                        <p className="word-popup-loading mt-1 text-[0.929em] leading-snug opacity-70">{t('word.loading')}</p>
+                    ) : (
+                        <p className="word-popup-missing mt-1 text-[0.929em] leading-snug opacity-70">
+                            {t('word.not_in_dictionary')}
+                        </p>
+                    )}
+                </div>
+
+                {/* The Models used popup — the robot's target, mounted behind
+                    the same gate as the robot itself, fed from the explain
+                    payload exactly like the real card's. While it is open it
+                    owns Escape and outside-click closing; the word popup
+                    underneath stays put. */}
+                {showExplain && (
+                    <ModelsUsedPopup
+                        open={modelsOpen}
+                        onClose={() => onModelsOpenChange?.(false)}
+                        enabled={explainProps.enabled !== false}
+                        answerModel={explainProps.answerLabel ? {label: explainProps.answerLabel} : null}
+                        explanationModel={explainProps.modelLabel
+                            ? {label: explainProps.modelLabel, followsAnswer: explainProps.followsAnswer === true}
+                            : null}
+                    />
                 )}
             </div>
         </>
@@ -558,9 +887,10 @@ export function MissingPopupContent({surface, onAskAi = null, aiBusy = false, ai
  * hover (`onAnkiProbe`) or click is how a running Anki gets
  * re-discovered. `ankiSend` holds the send's outcome
  * ({status: 'sending'|'added'|'updated'|'duplicate'|'error', error?}) for
- * the inline status line beneath the icon row; 'duplicate' is reachable
- * only for a FOREIGN-model note — a note of our own types updates in place
- * (lib/ankiSync.js) and reports 'updated' instead.
+ * the info popup's status line above the card (word-popup-overhaul ticket
+ * 04); 'duplicate' is reachable only for a FOREIGN-model note — a note of
+ * our own types updates in place (lib/ankiSync.js) and reports 'updated'
+ * instead.
  */
 export function PopupContent({
     surface,
@@ -576,6 +906,13 @@ export function PopupContent({
     onAnkiSend = null,
     ankiSend = null,
     ankiExisting = 'absent',
+    // The info popup's dismiss controls (word-popup-overhaul ticket 04),
+    // wired by the outer WordPopup to the message state it owns: the sticky
+    // Anki error's button clears the send outcome, the sticky ask-AI
+    // error's clears the failure. Null in the preview (message-free there,
+    // so the controls never render anyway).
+    onDismissAnki = null,
+    onDismissAskAi = null,
     // The on-open reachability probe's outcome (popup-provenance ticket 05),
     // owned by the outer WordPopup — it needs the ankiSettings prop and the
     // loaded data to probe, so PopupContent only reads the answer: amber and
@@ -602,8 +939,18 @@ export function PopupContent({
     // ungated on the icon's hover so a cold session lights up in place the
     // moment the reader mouses over it; null in the preview — no probe.
     onAnkiProbe = null,
+    // Ask-AI is admin-only (word-popup-overhaul ticket 06): the outer
+    // WordPopup reads the shared auth user; false keeps the sparkles icon
+    // (plain or re-ask) out of the toolbar entirely — hidden, not
+    // disabled — for everyone else.
+    canAskAi = false,
     onAskAi = null,
     aiBusy = false,
+    // The queued ask's dispatch outcome (ticket 06): true for the ~4s
+    // after a successful dispatch, floating the transient "AI enrichment
+    // started" notice in the info popup — the payload itself is never
+    // swapped on an ask anymore.
+    aiStarted = false,
     aiError = null,
     aiErrorStatus = null,
     preview = false,
@@ -677,432 +1024,425 @@ export function PopupContent({
 
     return (
         <>
-            {/* The action toolbar — the popup's first row, above the word.
-                "I know this word" / "Remove mark" on the left; pushed right,
-                in order: "Save to Anki", the Explanation toggle, the live
-                Ask-AI icon, the robot (Models used popup) rightmost. Icons
-                always render: an inapplicable icon is disabled, not hidden
-                (know: familiarity already max or busy; remove mark: no mark
-                or busy; anki: no handler or a send in flight; ask-ai: no
-                handler or a request in flight — a word already asked keeps
-                the icon live as the re-ask variant). The
-                `progress_actions` visibility gate hides only the two
-                progress icons — the right-hand icons ignore the
-                popup-visibility toggles (spec). The Anki status lines and
-                the ask-AI error line render directly beneath the icon row. */}
-            <div className="word-popup-actions shrink-0 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]">
-                <div className="flex items-center gap-1 py-1.5">
-                    {sections.progress_actions !== false && (
+            {/* The info popup (word-popup-overhaul ticket 04): every
+                transient message — the Anki send outcomes, the ask-AI
+                error, the Explanation pane while its toggle is on — floats
+                in ONE layer above the card, absolutely positioned inside
+                the positioned wrapper (the card surface below is
+                overflow-hidden, so the layer must be its sibling), so the
+                card's content never shifts when anything appears or
+                disappears. The wrapper is the layer's measuring context:
+                parentElement in InfoPopup is this wrapper in both mounts
+                (the portal and the profile preview). */}
+            <InfoPopup
+                ankiSend={ankiSend}
+                onDismissAnki={onDismissAnki}
+                aiStarted={aiStarted}
+                aiError={aiError}
+                aiErrorStatus={aiErrorStatus}
+                onRetryAskAi={onAskAi}
+                onDismissAskAi={onDismissAskAi}
+                explainSlot={showExplain && explainShown && (
+                    <ExplainPane explain={explainProps} explainKey={explainKey} preview={preview}/>
+                )}
+            />
+
+            {/* The card surface — the overflow-hidden box every visible
+                block lives in (word-popup-overhaul ticket 04 split the
+                positioned wrapper from this surface so the info popup can
+                hang above it unclipped). min-h-0 flex-1 lets the wrapper's
+                maxHeight cap drive the dictionary's internal scroll; both
+                are inert in the profile preview, whose wrapper is
+                positioning-only and unconstrained. */}
+            <div className={`word-popup-card ${popupContainerClass} min-h-0 flex-1`}>
+                {/* The action toolbar — the card's first row, above the word:
+                    ICONS ONLY. "I know this word" / "Remove mark" on the left;
+                    pushed right, in order: "Save to Anki", the Explanation
+                    toggle, the live Ask-AI icon, the robot (Models used popup)
+                    rightmost. Icons always render: an inapplicable icon is
+                    disabled, not hidden (know: familiarity already max or busy;
+                    remove mark: no mark or busy; anki: no handler or a send in
+                    flight; ask-ai: no handler or a request in flight — a word
+                    already asked keeps the icon live as the re-ask variant).
+                    The `progress_actions` visibility gate hides only the two
+                    progress icons — the right-hand icons ignore the
+                    popup-visibility toggles (spec). Everything the icons
+                    trigger renders in the info popup ABOVE the card — the Anki
+                    status lines, the ask-AI error, the Explanation pane — never
+                    inside this strip (word-popup-overhaul ticket 04). */}
+                <div className="word-popup-actions shrink-0 border-b border-[var(--color-hairline)] px-3.5 dark:border-[var(--color-hairline-night)]">
+                    <div className="flex items-center gap-1 py-1.5">
+                        {sections.progress_actions !== false && (
+                            <button
+                                type="button"
+                                title={t('word.i_know_this')}
+                                aria-label={t('word.i_know_this')}
+                                disabled={progressBusy || onProgressAction == null || familiarity === FAMILIARITY_MAX}
+                                onClick={() => onProgressAction?.('known')}
+                                className={`word-popup-progress-known ${toolbarButtonClass('verdigris')}`}
+                            >
+                                <Icon name="checkCircle" className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
+                        {sections.progress_actions !== false && (
+                            <button
+                                type="button"
+                                title={t('word.remove_mark')}
+                                aria-label={t('word.remove_mark')}
+                                disabled={progressBusy || onProgressAction == null || familiarity == null}
+                                onClick={() => onProgressAction?.('reset')}
+                                className={`word-popup-progress-reset ${toolbarButtonClass('vermilion')}`}
+                            >
+                                <Icon name="minusCircle" className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
+                        {/* The Anki icon carries the word's in-deck state:
+                            'found' (the on-open check located the note) shows
+                            the update glyph + "Update in Anki"; checking,
+                            absent and a silent failure all keep the add form —
+                            the send still runs find-before-add, so a misjudged
+                            icon can never create a second card. Its color is
+                            the reachability probe's answer (amber while
+                            AnkiConnect answered, neutral grey otherwise) but
+                            since 2026-10-24 the DISABLED gate no longer reads
+                            it: with the on-open probe quiet until the session
+                            has heard from Anki, a cold session's icon must
+                            stay clickable or Anki could never be re-discovered
+                            — hovering or clicking fires the ungated probe
+                            (probeAnkiNow), and the click's send IS the check
+                            (its find-before-add talks to AnkiConnect for real;
+                            a network failure lands in the info popup above the
+                            card). Disabled only by its own state: no handler
+                            or a send in flight. The margin-auto push on this
+                            first right-hand icon shoves it and the icons after
+                            it to the row's right end. */}
                         <button
                             type="button"
-                            title={t('word.i_know_this')}
-                            aria-label={t('word.i_know_this')}
-                            disabled={progressBusy || onProgressAction == null || familiarity === FAMILIARITY_MAX}
-                            onClick={() => onProgressAction?.('known')}
-                            className={`word-popup-progress-known ${toolbarButtonClass('verdigris')}`}
+                            title={ankiActionLabel}
+                            aria-label={ankiActionLabel}
+                            disabled={onAnkiSend == null || ankiSend?.status === 'sending'}
+                            onClick={onAnkiSend}
+                            onMouseEnter={onAnkiProbe ?? undefined}
+                            className={`word-popup-anki-send ${toolbarButtonClass(ankiReachable ? 'amber' : 'neutral')} ml-auto`}
                         >
-                            <Icon name="checkCircle" className="h-[1.25em] w-[1.25em]"/>
+                            <Icon name={ankiExisting === 'found' ? 'ankiUpdate' : 'ankiAdd'} className="h-[1.25em] w-[1.25em]"/>
                         </button>
+                        {/* The Explanation toggle (popup-ai-enrich ticket 01):
+                            on demand — the first click mounts the ExplainPane in
+                            the info popup above the card (word-popup-overhaul
+                            ticket 04), a second click hides it (the page-lifetime
+                            cache survives, so re-showing never refetches). While
+                            shown, the icon reads as pressed. Exists only with an
+                            explain payload and vanishes with the ADR 0046
+                            `explanation: false` key, like the old tab strip. A
+                            payload without sentence identity (the AI-answer
+                            mount, ADR 0096 amendment) disables it — grey,
+                            non-responsive — so toolbar parity never implies an
+                            askable context. */}
+                        {showExplain && (
+                            <button
+                                type="button"
+                                title={t('word.explain_toggle')}
+                                aria-label={t('word.explain_toggle')}
+                                aria-pressed={explainShown}
+                                disabled={explainDisabled}
+                                onClick={() => setExplainShown((shown) => !shown)}
+                                className={`word-popup-explain-toggle ${toolbarButtonClass('neutral', explainShown)}`}
+                            >
+                                <Icon name="chatBubble" className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
+                        {/* The live Ask-AI icon (popup-ai-enrich ticket 04,
+                            re-ask per the ADR 0082 amendment): one in-flight ask
+                            at a time — a request in flight disables the icon,
+                            failed attempts stay retryable (the error shows in
+                            the info popup above the card, sticky until
+                            dismissed). A word the AI already enriched once shows
+                            the re-ask variant (sparkles inside the refresh
+                            arrows) with the "ask again" hint and stays
+                            clickable: the re-ask replaces the previous AI
+                            rows. Admin-only (word-popup-overhaul ticket 06):
+                            the icon renders for approved admins only —
+                            hidden, not disabled, for everyone else, matching
+                            the endpoint's 403. */}
+                        {canAskAi && (
+                            <button
+                                type="button"
+                                title={askAiLabel}
+                                aria-label={askAiLabel}
+                                disabled={onAskAi == null || aiBusy}
+                                onClick={onAskAi}
+                                className={`word-popup-ask-ai ${toolbarButtonClass()}`}
+                            >
+                                <Icon name={data.ai_asked ? 'sparklesRefresh' : 'sparkles'} className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
+                        {/* Not a toggle: opens the Models used popup. Rightmost
+                            on the row, behind the same gate as the Explanation
+                            toggle (ADR 0046 `explanation: false` removes it,
+                            exactly as it once dropped the tab strip's robot). */}
+                        {showExplain && (
+                            <button
+                                type="button"
+                                onClick={() => onModelsOpenChange?.(true)}
+                                title={t('ai.models_icon')}
+                                aria-label={t('ai.models_icon')}
+                                aria-haspopup="dialog"
+                                className={`word-popup-models-button ${toolbarButtonClass('info')}`}
+                            >
+                                <RobotHelpIcon className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                {/* The header block (word / familiarity / frequency / form-of),
+                    closed by the hairline the POS sections separate themselves
+                    with — the old tab strip's rule now belongs to the header
+                    (popup-ai-enrich ticket 01). */}
+                <div className="word-popup-header shrink-0 border-b border-[var(--color-hairline)] px-3.5 pb-2.5 pt-3 dark:border-[var(--color-hairline-night)]">
+                    {/* Reading font: RU headwords carry U+0301, which gaps when
+                        base and mark come from different fonts (see --font-reading). */}
+                    <span className="word-popup-title font-reading text-[1.286em] leading-tight">{data.word}</span>
+
+                    {sections.familiarity !== false && (
+                        <p className="word-popup-familiarity mt-0.5 text-[0.786em] tabular-nums opacity-60">
+                            {t('word.familiarity', {value: familiarity ?? 0, max: FAMILIARITY_MAX})}
+                        </p>
                     )}
-                    {sections.progress_actions !== false && (
-                        <button
-                            type="button"
-                            title={t('word.remove_mark')}
-                            aria-label={t('word.remove_mark')}
-                            disabled={progressBusy || onProgressAction == null || familiarity == null}
-                            onClick={() => onProgressAction?.('reset')}
-                            className={`word-popup-progress-reset ${toolbarButtonClass('vermilion')}`}
-                        >
-                            <Icon name="minusCircle" className="h-[1.25em] w-[1.25em]"/>
-                        </button>
+
+                    {sections.frequency !== false && data.frequency != null && (
+                        <p className="word-popup-frequency mt-0.5 text-[0.786em] tabular-nums opacity-60">
+                            {t('word.frequency', {rank: Number(data.frequency).toLocaleString()})}
+                        </p>
                     )}
-                    {/* The Anki icon carries the word's in-deck state:
-                        'found' (the on-open check located the note) shows
-                        the update glyph + "Update in Anki"; checking,
-                        absent and a silent failure all keep the add form —
-                        the send still runs find-before-add, so a misjudged
-                        icon can never create a second card. Its color is
-                        the reachability probe's answer (amber while
-                        AnkiConnect answered, neutral grey otherwise) but
-                        since 2026-10-24 the DISABLED gate no longer reads
-                        it: with the on-open probe quiet until the session
-                        has heard from Anki, a cold session's icon must
-                        stay clickable or Anki could never be re-discovered
-                        — hovering or clicking fires the ungated probe
-                        (probeAnkiNow), and the click's send IS the check
-                        (its find-before-add talks to AnkiConnect for real;
-                        a network failure lands in the inline error line
-                        below). Disabled only by its own state: no handler
-                        or a send in flight. The margin-auto push on this
-                        first right-hand icon shoves it and the icons after
-                        it to the row's right end. */}
-                    <button
-                        type="button"
-                        title={ankiActionLabel}
-                        aria-label={ankiActionLabel}
-                        disabled={onAnkiSend == null || ankiSend?.status === 'sending'}
-                        onClick={onAnkiSend}
-                        onMouseEnter={onAnkiProbe ?? undefined}
-                        className={`word-popup-anki-send ${toolbarButtonClass(ankiReachable ? 'amber' : 'neutral')} ml-auto`}
-                    >
-                        <Icon name={ankiExisting === 'found' ? 'ankiUpdate' : 'ankiAdd'} className="h-[1.25em] w-[1.25em]"/>
-                    </button>
-                    {/* The Explanation toggle (popup-ai-enrich ticket 01):
-                        on demand — the first click mounts the ExplainPane as
-                        the dictionary view's first row, a second click hides
-                        it (the page-lifetime cache survives, so re-showing
-                        never refetches). While shown, the icon reads as
-                        pressed. Exists only with an explain payload and
-                        vanishes with the ADR 0046 `explanation: false` key,
-                        like the old tab strip. A payload without sentence
-                        identity (the AI-answer mount, ADR 0096 amendment)
-                        disables it — grey, non-responsive — so toolbar
-                        parity never implies an askable context. */}
-                    {showExplain && (
-                        <button
-                            type="button"
-                            title={t('word.explain_toggle')}
-                            aria-label={t('word.explain_toggle')}
-                            aria-pressed={explainShown}
-                            disabled={explainDisabled}
-                            onClick={() => setExplainShown((shown) => !shown)}
-                            className={`word-popup-explain-toggle ${toolbarButtonClass('neutral', explainShown)}`}
-                        >
-                            <Icon name="chatBubble" className="h-[1.25em] w-[1.25em]"/>
-                        </button>
-                    )}
-                    {/* The live Ask-AI icon (popup-ai-enrich ticket 04,
-                        re-ask per the ADR 0082 amendment): one in-flight ask
-                        at a time — a request in flight disables the icon,
-                        failed attempts stay retryable (the error shows
-                        beneath). A word the AI already enriched once shows
-                        the re-ask variant (sparkles inside the refresh
-                        arrows) with the "ask again" hint and stays
-                        clickable: the re-ask replaces the previous AI
-                        rows. */}
-                    <button
-                        type="button"
-                        title={askAiLabel}
-                        aria-label={askAiLabel}
-                        disabled={onAskAi == null || aiBusy}
-                        onClick={onAskAi}
-                        className={`word-popup-ask-ai ${toolbarButtonClass()}`}
-                    >
-                        <Icon name={data.ai_asked ? 'sparklesRefresh' : 'sparkles'} className="h-[1.25em] w-[1.25em]"/>
-                    </button>
-                    {/* Not a toggle: opens the Models used popup. Rightmost
-                        on the row, behind the same gate as the Explanation
-                        toggle (ADR 0046 `explanation: false` removes it,
-                        exactly as it once dropped the tab strip's robot). */}
-                    {showExplain && (
-                        <button
-                            type="button"
-                            onClick={() => onModelsOpenChange?.(true)}
-                            title={t('ai.models_icon')}
-                            aria-label={t('ai.models_icon')}
-                            aria-haspopup="dialog"
-                            className={`word-popup-models-button ${toolbarButtonClass('info')}`}
-                        >
-                            <RobotHelpIcon className="h-[1.25em] w-[1.25em]"/>
-                        </button>
+
+                    {sections.form_of !== false && (data.form_of?.length > 0 || data.is_form) && (
+                        <p className="word-popup-form-of mt-1 text-[0.857em] italic opacity-70">
+                            «{surface}» — {t('word.form_of')}{' '}
+                            {(data.form_of?.length > 0 ? data.form_of : [data.word]).map((headword, index) => (
+                                <React.Fragment key={`${headword}-${index}`}>
+                                    {index > 0 && ', '}
+                                    «{headword}»
+                                </React.Fragment>
+                            ))}
+                        </p>
                     )}
                 </div>
 
-                {ankiSend?.status === 'added' && (
-                    <p className="word-popup-anki-added pb-2 text-[0.857em] text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
-                        {t('word.anki_added')}
-                    </p>
-                )}
-                {ankiSend?.status === 'updated' && (
-                    <p className="word-popup-anki-updated pb-2 text-[0.857em] text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
-                        {t('word.anki_updated')}
-                    </p>
-                )}
-                {/* Reachable only when a FOREIGN-model note matched deck +
-                    Word + Language: a note of our own types updates in place
-                    and reports 'updated' above (lib/ankiSync.js). */}
-                {ankiSend?.status === 'duplicate' && (
-                    <p className="word-popup-anki-duplicate pb-2 text-[0.857em] opacity-70">
-                        {t('word.anki_already')}
-                    </p>
-                )}
-                {ankiSend?.status === 'error' && (
-                    <div className="word-popup-anki-error pb-2 text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">
-                        <p>
-                            {ankiSend.error instanceof AnkiNoteTypeMismatchError
-                                ? t('word.anki_mismatch', {model: ankiSend.error.modelName})
-                                : (ankiSend.error instanceof AnkiConnectError && ankiSend.error.kind === 'anki'
-                                    ? t('word.anki_failed', {message: ankiSend.error.message})
-                                    : t('word.anki_unreachable'))}
-                        </p>
-                        <Link
-                            href="/profile?tab=anki"
-                            className="mt-1 inline-block underline underline-offset-2 hover:opacity-80"
+                {/* The dictionary view — always rendered (no tab strip), and
+                    since word-popup-overhaul ticket 04 holding ONLY the word
+                    family's sections: the Explanation pane moved up into the
+                    info popup above the card. */}
+                <div className="word-popup-dictionary min-h-0 flex-1 overflow-y-auto px-3.5 pb-2.5">
+                    {entries?.map((entry, index) => (
+                        <section
+                            key={entry.id}
+                            className={`word-popup-section${index > 0
+                                ? ' mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]'
+                                : ''}${dimsEntry(entry)
+                                ? ' word-popup-section-dimmed opacity-50 transition-opacity hover:opacity-100'
+                                : ''}`}
                         >
-                            {t('word.anki_go_to_settings')}
-                        </Link>
-                    </div>
-                )}
-                {/* A failed Ask-AI attempt: the server's guidance (no key,
-                    no model, already asked, throttled, provider error) lands
-                    verbatim — with the go-to-settings link for 400/403 and
-                    the four-state contract's Retry control re-sending the
-                    ask (the shared AskAiError render, the missing card's
-                    error state included); the icon stays retryable. */}
-                <AskAiError message={aiError} status={aiErrorStatus} onRetry={onAskAi}/>
-            </div>
+                            {sectionLabel(entry, data.word) && (
+                                // The word-level mark (popup-usage-labels
+                                // follow-up) dims the WHOLE <section> — the dim
+                                // branch in the section's className above carries
+                                // word-popup-section-dimmed at half opacity over
+                                // every block, hover restoring full opacity —
+                                // while the header keeps its own base 60% and
+                                // chips the mark after the text in the same tier
+                                // styling as a sense's.
+                                <h3 className="word-popup-section-label text-[0.786em] tracking-wider opacity-60">
+                                    {sectionLabel(entry, data.word)}
+                                    {entryUsageChips(entry, t).map((chip, chipIndex) => (
+                                        <span
+                                            key={chipIndex}
+                                            className={chip.dimming
+                                                ? 'word-popup-section-label-chip ml-1.5 inline-block rounded-sm border border-[var(--color-vermilion)]/40 px-1 text-[0.786em] leading-tight text-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)]/40 dark:text-[var(--color-vermilion-night)]'
+                                                : 'word-popup-section-label-chip ml-1.5 text-[0.786em] opacity-60'}
+                                        >
+                                            {chip.text}
+                                        </span>
+                                    ))}
+                                    {/* The provenance chips
+                                        (popup-provenance ticket 04) — the
+                                        header badge's new home: one small
+                                        bordered label per source part trails
+                                        every section label's very end
+                                        ("DECIMATED — verb [wiktionary] [ai]"),
+                                        where each reads as the form's data
+                                        origin without crowding the headword.
+                                        Hidden entirely when neither the
+                                        importer nor a succeeded ask-AI is
+                                        known — pre-provenance rows stay
+                                        honest. */}
+                                    {sourceBadge.map((part) => (
+                                        <span
+                                            key={part}
+                                            className="word-popup-section-source ml-1.5 inline-block whitespace-nowrap rounded-sm border border-[var(--color-hairline)] px-1 text-[0.786em] leading-tight opacity-60 dark:border-[var(--color-hairline-night)]"
+                                        >
+                                            {part}
+                                        </span>
+                                    ))}
+                                </h3>
+                            )}
 
-            {/* The header block (word / familiarity / frequency / form-of),
-                closed by the hairline the POS sections separate themselves
-                with — the old tab strip's rule now belongs to the header
-                (popup-ai-enrich ticket 01). */}
-            <div className="word-popup-header shrink-0 border-b border-[var(--color-hairline)] px-3.5 pb-2.5 pt-3 dark:border-[var(--color-hairline-night)]">
-                {/* Reading font: RU headwords carry U+0301, which gaps when
-                    base and mark come from different fonts (see --font-reading). */}
-                <span className="word-popup-title font-reading text-[1.286em] leading-tight">{data.word}</span>
-
-                {sections.familiarity !== false && (
-                    <p className="word-popup-familiarity mt-0.5 text-[0.786em] tabular-nums opacity-60">
-                        {t('word.familiarity', {value: familiarity ?? 0, max: FAMILIARITY_MAX})}
-                    </p>
-                )}
-
-                {sections.frequency !== false && data.frequency != null && (
-                    <p className="word-popup-frequency mt-0.5 text-[0.786em] tabular-nums opacity-60">
-                        {t('word.frequency', {rank: Number(data.frequency).toLocaleString()})}
-                    </p>
-                )}
-
-                {sections.form_of !== false && (data.form_of?.length > 0 || data.is_form) && (
-                    <p className="word-popup-form-of mt-1 text-[0.857em] italic opacity-70">
-                        «{surface}» — {t('word.form_of')}{' '}
-                        {(data.form_of?.length > 0 ? data.form_of : [data.word]).map((headword, index) => (
-                            <React.Fragment key={`${headword}-${index}`}>
-                                {index > 0 && ', '}
-                                «{headword}»
-                            </React.Fragment>
-                        ))}
-                    </p>
-                )}
-            </div>
-
-            {/* The dictionary view — always rendered (no tab strip): the
-                Explanation pane, when toggled on, mounts as its first row
-                behind the POS sections' hairline, then the word family's
-                sections. */}
-            <div className="word-popup-dictionary min-h-0 flex-1 overflow-y-auto px-3.5 pb-2.5">
-                {showExplain && explainShown && (
-                    <div className="word-popup-explain-row mb-2.5 border-b border-[var(--color-hairline)] pb-2.5 dark:border-[var(--color-hairline-night)]">
-                        <ExplainPane explain={explainProps} explainKey={explainKey} preview={preview}/>
-                    </div>
-                )}
-                {entries?.map((entry, index) => (
-                    <section
-                        key={entry.id}
-                        className={`word-popup-section${index > 0
-                            ? ' mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]'
-                            : ''}${dimsEntry(entry)
-                            ? ' word-popup-section-dimmed opacity-50 transition-opacity hover:opacity-100'
-                            : ''}`}
-                    >
-                        {sectionLabel(entry, data.word) && (
-                            // The word-level mark (popup-usage-labels
-                            // follow-up) dims the WHOLE <section> — the dim
-                            // branch in the section's className above carries
-                            // word-popup-section-dimmed at half opacity over
-                            // every block, hover restoring full opacity —
-                            // while the header keeps its own base 60% and
-                            // chips the mark after the text in the same tier
-                            // styling as a sense's.
-                            <h3 className="word-popup-section-label text-[0.786em] tracking-wider opacity-60">
-                                {sectionLabel(entry, data.word)}
-                                {entryUsageChips(entry, t).map((chip, chipIndex) => (
-                                    <span
-                                        key={chipIndex}
-                                        className={chip.dimming
-                                            ? 'word-popup-section-label-chip ml-1.5 inline-block rounded-sm border border-[var(--color-vermilion)]/40 px-1 text-[0.786em] leading-tight text-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)]/40 dark:text-[var(--color-vermilion-night)]'
-                                            : 'word-popup-section-label-chip ml-1.5 text-[0.786em] opacity-60'}
-                                    >
-                                        {chip.text}
-                                    </span>
-                                ))}
-                                {/* The provenance chips
-                                    (popup-provenance ticket 04) — the
-                                    header badge's new home: one small
-                                    bordered label per source part trails
-                                    every section label's very end
-                                    ("DECIMATED — verb [wiktionary] [ai]"),
-                                    where each reads as the form's data
-                                    origin without crowding the headword.
-                                    Hidden entirely when neither the
-                                    importer nor a succeeded ask-AI is
-                                    known — pre-provenance rows stay
-                                    honest. */}
-                                {sourceBadge.map((part) => (
-                                    <span
-                                        key={part}
-                                        className="word-popup-section-source ml-1.5 inline-block whitespace-nowrap rounded-sm border border-[var(--color-hairline)] px-1 text-[0.786em] leading-tight opacity-60 dark:border-[var(--color-hairline-night)]"
-                                    >
-                                        {part}
-                                    </span>
-                                ))}
-                            </h3>
-                        )}
-
-                        {sections.translations !== false && (
-                            // Empty is normal here: the background
-                            // auto-fetch (Yandex → Google) queues silently
-                            // and only lands on the next open, so the card
-                            // says so calmly instead of showing an error —
-                            // but only while the raw line has nothing to
-                            // show either (ticket 02): a word carrying
-                            // staged candidates never reads as empty.
-                            <React.Fragment>
-                                <CollapsibleLine
-                                    items={entry.translations ?? []}
-                                    previewCount={TRANSLATIONS_PREVIEW}
-                                    separator=", "
-                                    label="translations"
-                                    renderItem={(translation) => translation.word}
-                                    className="mt-2 text-[0.929em] leading-snug text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
-                                    empty={(entry.staged_translations?.length ?? 0) > 0 ? null : (
-                                        <p className="word-popup-translations-placeholder mt-2 text-[0.857em] opacity-60">
-                                            {t('word.no_translations')}
-                                        </p>
-                                    )}
-                                />
-                                {(entry.staged_translations?.length ?? 0) > 0 && (
-                                    // The staged raw candidates (the
-                                    // words.translations JSON —
-                                    // popup-provenance ticket 02, ADR 0085):
-                                    // language-less as-is, amber, with the
-                                    // muted raw: label and the line's own
-                                    // "+N more…" expander. Popup-only — the
-                                    // Anki fields keep the linked
-                                    // translations.
+                            {sections.translations !== false && (
+                                // Empty is normal here: the background
+                                // auto-fetch (Yandex → Google) queues silently
+                                // and only lands on the next open, so the card
+                                // says so calmly instead of showing an error —
+                                // but only while the raw line has nothing to
+                                // show either (ticket 02): a word carrying
+                                // staged candidates never reads as empty.
+                                <React.Fragment>
                                     <CollapsibleLine
-                                        items={entry.staged_translations}
+                                        items={entry.translations ?? []}
                                         previewCount={TRANSLATIONS_PREVIEW}
                                         separator=", "
-                                        label="raw-translations"
-                                        renderItem={(candidate) => candidate}
-                                        decorate={(text) => (
-                                            <>
-                                                <span className="opacity-60">{t('word.raw_translations')}</span>
-                                                {' '}
-                                                {text}
-                                            </>
+                                        label="translations"
+                                        renderItem={(translation) => translation.word}
+                                        className="mt-2 text-[0.929em] leading-snug text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]"
+                                        empty={(entry.staged_translations?.length ?? 0) > 0 ? null : (
+                                            <p className="word-popup-translations-placeholder mt-2 text-[0.857em] opacity-60">
+                                                {t('word.no_translations')}
+                                            </p>
                                         )}
-                                        className="mt-1 text-[0.857em] leading-snug text-[var(--color-amber)] dark:text-[var(--color-amber-night)]"
                                     />
-                                )}
-                            </React.Fragment>
-                        )}
+                                    {(entry.staged_translations?.length ?? 0) > 0 && (
+                                        // The staged raw candidates (the
+                                        // words.translations JSON —
+                                        // popup-provenance ticket 02, ADR 0085):
+                                        // language-less as-is, amber, with the
+                                        // muted raw: label and the line's own
+                                        // "+N more…" expander. Popup-only — the
+                                        // Anki fields keep the linked
+                                        // translations.
+                                        <CollapsibleLine
+                                            items={entry.staged_translations}
+                                            previewCount={TRANSLATIONS_PREVIEW}
+                                            separator=", "
+                                            label="raw-translations"
+                                            renderItem={(candidate) => candidate}
+                                            decorate={(text) => (
+                                                <>
+                                                    <span className="opacity-60">{t('word.raw_translations')}</span>
+                                                    {' '}
+                                                    {text}
+                                                </>
+                                            )}
+                                            className="mt-1 text-[0.857em] leading-snug text-[var(--color-amber)] dark:text-[var(--color-amber-night)]"
+                                        />
+                                    )}
+                                </React.Fragment>
+                            )}
 
-                        {sections.transcriptions !== false && entry.transcriptions?.length > 0 && (
-                            <CollapsibleLine
-                                items={entry.transcriptions}
-                                previewCount={TRANSCRIPTIONS_PREVIEW}
-                                separator=" · "
-                                label="transcriptions"
-                                renderItem={(item) => item.value}
-                                decorate={(text) => `[${text}]`}
-                                className="mt-1 opacity-80"
-                            />
-                        )}
+                            {sections.transcriptions !== false && entry.transcriptions?.length > 0 && (
+                                <CollapsibleLine
+                                    items={entry.transcriptions}
+                                    previewCount={TRANSCRIPTIONS_PREVIEW}
+                                    separator=" · "
+                                    label="transcriptions"
+                                    renderItem={(item) => item.value}
+                                    decorate={(text) => `[${text}]`}
+                                    className="mt-1 opacity-80"
+                                />
+                            )}
 
-                        {sections.definitions !== false && (entry.definitions?.length > 0 ? (
-                            <details className="word-popup-definitions mt-2 text-[0.857em]">
-                                <summary className="word-popup-summary cursor-pointer opacity-70">
-                                    {t('word.definitions', {count: entry.definitions.length})}
-                                </summary>
-                                {/* list-inside keeps the markers in the card's
-                                    inline box — `ml-4` + outside markers push
-                                    wide ("100.") numbers past the card edge. */}
-                                <ol className="word-popup-definitions-list mt-1.5 list-decimal list-inside space-y-1 text-[0.929em] leading-snug">
-                                    {/* Usage-label chips (popup-usage-labels):
-                                        one per label before the sense text —
-                                        vermilion for the dimming tier, muted
-                                        plain text (the raw:-label precedent)
-                                        for the register one; a live section's
-                                        sense carrying any dimming label dims
-                                        whole, hover restoring the line — but a
-                                        sense inside an already-dimmed section
-                                        skips the extra opacity, or the static
-                                        stack would read 0.25 and hover would
-                                        restore only the sense, not the section.
-                                        Full literal class strings — Tailwind's
-                                        scanner reads this file's text. */}
-                                    {entry.definitions.map((definition, definitionIndex) => (
-                                        <li
-                                            key={definitionIndex}
-                                            className={!dimsEntry(entry) && dimsDefinition(definition.labels)
-                                                ? 'word-popup-definition-dimmed opacity-50 transition-opacity hover:opacity-100'
-                                                : undefined}
-                                        >
-                                            {usageLabelChips(definition.labels, t).map((chip, chipIndex) => (
-                                                <span
-                                                    key={chipIndex}
-                                                    className={chip.dimming
-                                                        ? 'word-popup-definition-label mr-1 inline-block rounded-sm border border-[var(--color-vermilion)]/40 px-1 text-[0.786em] leading-tight text-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)]/40 dark:text-[var(--color-vermilion-night)]'
-                                                        : 'word-popup-definition-label mr-1 text-[0.786em] opacity-60'}
-                                                >
-                                                    {chip.text}
-                                                </span>
-                                            ))}
-                                            {definition.text}
-                                        </li>
+                            {sections.definitions !== false && (entry.definitions?.length > 0 ? (
+                                <details className="word-popup-definitions mt-2 text-[0.857em]">
+                                    <summary className="word-popup-summary cursor-pointer opacity-70">
+                                        {t('word.definitions', {count: entry.definitions.length})}
+                                    </summary>
+                                    {/* list-inside keeps the markers in the card's
+                                        inline box — `ml-4` + outside markers push
+                                        wide ("100.") numbers past the card edge. */}
+                                    <ol className="word-popup-definitions-list mt-1.5 list-decimal list-inside space-y-1 text-[0.929em] leading-snug">
+                                        {/* Usage-label chips (popup-usage-labels):
+                                            one per label before the sense text —
+                                            vermilion for the dimming tier, muted
+                                            plain text (the raw:-label precedent)
+                                            for the register one; a live section's
+                                            sense carrying any dimming label dims
+                                            whole, hover restoring the line — but a
+                                            sense inside an already-dimmed section
+                                            skips the extra opacity, or the static
+                                            stack would read 0.25 and hover would
+                                            restore only the sense, not the section.
+                                            Full literal class strings — Tailwind's
+                                            scanner reads this file's text. */}
+                                        {entry.definitions.map((definition, definitionIndex) => (
+                                            <li
+                                                key={definitionIndex}
+                                                className={!dimsEntry(entry) && dimsDefinition(definition.labels)
+                                                    ? 'word-popup-definition-dimmed opacity-50 transition-opacity hover:opacity-100'
+                                                    : undefined}
+                                            >
+                                                {usageLabelChips(definition.labels, t).map((chip, chipIndex) => (
+                                                    <span
+                                                        key={chipIndex}
+                                                        className={chip.dimming
+                                                            ? 'word-popup-definition-label mr-1 inline-block rounded-sm border border-[var(--color-vermilion)]/40 px-1 text-[0.786em] leading-tight text-[var(--color-vermilion)] dark:border-[var(--color-vermilion-night)]/40 dark:text-[var(--color-vermilion-night)]'
+                                                            : 'word-popup-definition-label mr-1 text-[0.786em] opacity-60'}
+                                                    >
+                                                        {chip.text}
+                                                    </span>
+                                                ))}
+                                                {definition.text}
+                                            </li>
+                                        ))}
+                                    </ol>
+                                </details>
+                            ) : (
+                                <p className="word-popup-no-definitions mt-1.5 text-[0.857em] opacity-60">{t('word.no_definitions')}</p>
+                            ))}
+
+                            {sections.examples !== false && entry.examples?.length > 0 && (
+                                <details className="word-popup-examples mt-2 text-[0.857em]">
+                                    <summary className="word-popup-summary cursor-pointer opacity-70">
+                                        {t('word.examples', {count: entry.examples.length})}
+                                    </summary>
+                                    <ul className="word-popup-examples-list ml-4 mt-1 list-disc space-y-0.5 italic opacity-80">
+                                        {entry.examples.map((example, exampleIndex) => (
+                                            <li key={exampleIndex}>{example}</li>
+                                        ))}
+                                    </ul>
+                                </details>
+                            )}
+
+                            {sections.etymologies !== false && entry.etymologies?.length > 0 && (
+                                <details className="word-popup-etymologies mt-2 text-[0.857em]">
+                                    <summary className="word-popup-summary cursor-pointer opacity-70">
+                                        {t('word.etymology', {count: entry.etymologies.length})}
+                                    </summary>
+                                    {entry.etymologies.map((etymology, etymologyIndex) => (
+                                        <p key={etymologyIndex} className="mt-1 text-[0.857em] italic leading-snug opacity-75">
+                                            {etymology}
+                                        </p>
                                     ))}
-                                </ol>
-                            </details>
-                        ) : (
-                            <p className="word-popup-no-definitions mt-1.5 text-[0.857em] opacity-60">{t('word.no_definitions')}</p>
-                        ))}
+                                </details>
+                            )}
+                        </section>
+                    ))}
+                </div>
 
-                        {sections.examples !== false && entry.examples?.length > 0 && (
-                            <details className="word-popup-examples mt-2 text-[0.857em]">
-                                <summary className="word-popup-summary cursor-pointer opacity-70">
-                                    {t('word.examples', {count: entry.examples.length})}
-                                </summary>
-                                <ul className="word-popup-examples-list ml-4 mt-1 list-disc space-y-0.5 italic opacity-80">
-                                    {entry.examples.map((example, exampleIndex) => (
-                                        <li key={exampleIndex}>{example}</li>
-                                    ))}
-                                </ul>
-                            </details>
-                        )}
-
-                        {sections.etymologies !== false && entry.etymologies?.length > 0 && (
-                            <details className="word-popup-etymologies mt-2 text-[0.857em]">
-                                <summary className="word-popup-summary cursor-pointer opacity-70">
-                                    {t('word.etymology', {count: entry.etymologies.length})}
-                                </summary>
-                                {entry.etymologies.map((etymology, etymologyIndex) => (
-                                    <p key={etymologyIndex} className="mt-1 text-[0.857em] italic leading-snug opacity-75">
-                                        {etymology}
-                                    </p>
-                                ))}
-                            </details>
-                        )}
-                    </section>
-                ))}
+                {/* The Models used popup — the robot's target, mounted behind the
+                    same gate as the robot itself. While it is open it owns Escape
+                    and outside-click closing; the word popup underneath stays
+                    put. */}
+                {showExplain && (
+                    <ModelsUsedPopup
+                        open={modelsOpen}
+                        onClose={() => onModelsOpenChange?.(false)}
+                        enabled={explainProps.enabled !== false}
+                        answerModel={explainProps.answerLabel ? {label: explainProps.answerLabel} : null}
+                        explanationModel={explainProps.modelLabel
+                            ? {label: explainProps.modelLabel, followsAnswer: explainProps.followsAnswer === true}
+                            : null}
+                    />
+                )}
             </div>
-
-            {/* The Models used popup — the robot's target, mounted behind the
-                same gate as the robot itself. While it is open it owns Escape
-                and outside-click closing; the word popup underneath stays
-                put. */}
-            {showExplain && (
-                <ModelsUsedPopup
-                    open={modelsOpen}
-                    onClose={() => onModelsOpenChange?.(false)}
-                    enabled={explainProps.enabled !== false}
-                    answerModel={explainProps.answerLabel ? {label: explainProps.answerLabel} : null}
-                    explanationModel={explainProps.modelLabel
-                        ? {label: explainProps.modelLabel, followsAnswer: explainProps.followsAnswer === true}
-                        : null}
-                />
-            )}
         </>
     );
 }
@@ -1118,15 +1458,21 @@ export function PopupContent({
  * A `wordId` of null is MISSING mode (popup-ai-enrich tickets 03 + 05): the
  * token had no word-map entry, so nothing is fetched and no word-events fire
  * — the card renders from the raw `surface` alone via MissingPopupContent
- * (honest not-in-the-dictionary note, the live Ask-AI icon). Its ask posts
- * `{surface, language_code}` from the `language` prop — the clicked column's
- * descriptor language ({code, name}|null); a column without one keeps the
- * icon disabled. The server derives the lookup key, adopts onto the existing
- * row or mints one unknown-class word, and enriches it — the response
- * payload swaps the missing card for the full dictionary view in the same
- * setData move a known word's ask uses (the handlers act on the adopted
- * `data.id` through resolvedWordId; the page's word map learns the new word
- * on its next refresh).
+ * (honest not-in-the-dictionary note, the full toolbar with every wordless
+ * icon disabled — word-popup-overhaul ticket 05 — and the live Ask-AI icon).
+ * Its ask posts `{surface, language_code}` from the `language` prop — the
+ * clicked column's descriptor language ({code, name}|null), or the AI-answer
+ * panel's ask language ({code}|null, derived learning-first from the
+ * resolution snapshot, `lib/aiAnswerTokens.mjs`'s `answerAskLanguage` —
+ * ADR 0096's adopt-less rule reversed for that surface); a mount without a
+ * code keeps the icon hidden for non-admins and disabled for admins. The
+ * server derives the lookup key, adopts onto the existing row or mints one
+ * unknown-class word, and dispatches the queued enrichment
+ * (word-popup-overhaul ticket 06 — no payload comes back to swap): the
+ * card stays missing until the popup reopens, when the on-open resolve
+ * finds the minted/adopted word and the fetch effect loads its payload
+ * (the handlers then act on the adopted `data.id` through resolvedWordId;
+ * the page's word map learns the new word on its next refresh).
  *
  * With an `explain` payload ({rowKind, rowId, side, sentenceIndex, modelKey,
  * enabled, modelLabel, followsAnswer, answerLabel}) the popup grows the
@@ -1178,6 +1524,13 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     const effectiveSections = sections ?? props.popupVisibility ?? {};
     const ankiSettings = props.ankiSettings ?? null;
     const nativeLanguage = props.auth?.user?.native_language ?? null;
+    // Ask-AI is an approved-admin capability (word-popup-overhaul ticket
+    // 06): the sparkles icon — plain and re-ask variants, dictionary and
+    // missing cards alike — renders ONLY for approved admins (hidden, not
+    // disabled, for everyone else; the endpoint answers the same gate with
+    // a 403). The gate itself lives in the shared lib helper — the
+    // profile's Popups-tab preview reads the same one.
+    const canAskAi = isApprovedAdmin(props.auth?.user);
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -1185,13 +1538,18 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     const [ankiSend, setAnkiSend] = useState(null);
     // The ask-AI request state for the current word: `aiBusy` while the
     // enrichment POST is in flight (the icon disables), `aiError` the latest
-    // failure's message (shown beneath the toolbar, the icon stays
-    // retryable), `aiErrorStatus` its HTTP status (400/403 — no model / no
-    // key — switch the missing card's error line to the explain pane's
-    // guidance treatment). A success swaps the whole `data` payload in place.
+    // failure's message (shown in the info popup above the card, sticky
+    // until dismissed — the icon stays retryable), `aiErrorStatus` its HTTP
+    // status (400/403 — no model / no key — switch the error line to the
+    // explain pane's guidance treatment). A success answers the minimal
+    // {queued: true} marker — the provider call runs in the queue now
+    // (word-popup-overhaul ticket 06) — so the payload is NEVER swapped:
+    // `aiStarted` floats the transient "enrichment started" notice instead,
+    // and the enriched content appears the next time the popup opens.
     const [aiBusy, setAiBusy] = useState(false);
     const [aiError, setAiError] = useState(null);
     const [aiErrorStatus, setAiErrorStatus] = useState(null);
+    const [aiStarted, setAiStarted] = useState(false);
     // The on-open re-resolution (popup-ai-enrich ticket 07): a missing-mode
     // popup with a column language descriptor resolves its RAW surface
     // server-side before the missing card settles — a hit means the word
@@ -1283,6 +1641,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             setLoading(false);
             setError(null);
             setData(null);
+            setAiStarted(false);
             return;
         }
         let cancelled = false;
@@ -1296,10 +1655,12 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         setAnkiExisting('checking');
         // A fresh word also clears the previous word's ask state — an
         // in-flight enrichment for the old word is dropped by its
-        // staleAsk guard below, so the flag never sticks.
+        // staleAsk guard below, so the flag never sticks, and the queued
+        // ask's "started" notice belongs to the word it was asked on.
         setAiBusy(false);
         setAiError(null);
         setAiErrorStatus(null);
+        setAiStarted(false);
 
         fetch(`/words/${fetchId}?surface=${encodeURIComponent(surface)}`, {
             headers: {Accept: 'application/json'},
@@ -1330,6 +1691,40 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             cancelled = true;
         };
     }, [wordId, lookedUpId, surface, t]);
+
+    // The Anki success notices' auto-dismiss (word-popup-overhaul ticket
+    // 04): added / updated / duplicate are the info popup's only transient
+    // items — ~4 seconds after a send lands its notice dismisses itself.
+    // Errors are deliberately outside this gate: they stay sticky until
+    // their per-item dismiss control (or the word change / popup close
+    // below). The effect's cleanup is the timing guard: ANY change to
+    // `ankiSend` — a new send, a manual dismiss, the fetch effect's
+    // word-change reset, an unmount — tears the pending timer down before
+    // it can fire, so a notice can never outlive its word or swallow a
+    // newer one's state.
+    useEffect(() => {
+        if (ankiSend == null
+            || (ankiSend.status !== 'added' && ankiSend.status !== 'updated'
+                && ankiSend.status !== 'duplicate')) {
+            return;
+        }
+        const timer = setTimeout(() => setAnkiSend(null), ANKI_NOTICE_LIFETIME_MS);
+        return () => clearTimeout(timer);
+    }, [ankiSend]);
+
+    // The queued ask-AI's "started" notice auto-dismiss (word-popup-overhaul
+    // ticket 06): a successful dispatch floats the transient notice through
+    // the same ~4s gate as the Anki success notices — the same timing guard
+    // applies: ANY `aiStarted` change (a newer ask, the fetch effect's
+    // word-change reset, an unmount) tears the pending timer down before it
+    // can fire.
+    useEffect(() => {
+        if (!aiStarted) {
+            return;
+        }
+        const timer = setTimeout(() => setAiStarted(false), ANKI_NOTICE_LIFETIME_MS);
+        return () => clearTimeout(timer);
+    }, [aiStarted]);
 
     // The resolve list (ai-answer-words ticket 02), keyed as a primitive
     // string: the caller's ordered codes when a list is passed (ticket 03's
@@ -1375,6 +1770,40 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             cancelled = true;
         };
     }, [wordId, surface, lookupCodesKey]);
+
+    // The popup-open penalty (word-popup-overhaul ticket 01): a missing-mode
+    // popup whose surface RESOLVED to a dictionary entry — this instance's
+    // on-open lookup, or the 409 sync's re-resolve (both land through
+    // setLookedUpId) — costs −5 familiarity ONCE per popup instance, ledger-
+    // free (the server dedupes nothing; repeat opens are fresh instances
+    // and apply again). Keyed on the resolved id alone: a miss (null) never
+    // fires — a word that stays missing costs nothing — and a bound wordId
+    // never fires either (lookedUpId stays null; WordText posts that open's
+    // penalty itself). Best-effort like every event POST: a failure leaves
+    // the header at the stale score.
+    const [resolvedFamiliarity, setResolvedFamiliarity] = useState(null);
+    useEffect(() => {
+        if (lookedUpId == null) {
+            setResolvedFamiliarity(null);
+            return;
+        }
+        let cancelled = false;
+        recordWordOpens([lookedUpId]).then((familiarity) => {
+            if (!cancelled && familiarity[lookedUpId] !== undefined) {
+                setResolvedFamiliarity(familiarity[lookedUpId]);
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [lookedUpId]);
+
+    // The header's familiarity score: the caller's open-time value,
+    // overridden by the popup-open penalty's response once it lands — the
+    // same slot the columns patch through their own response handling
+    // (WordText), so both surfaces read one value; the Anki card's
+    // Familiarity field reports it too.
+    const effectiveFamiliarity = resolvedFamiliarity ?? familiarity ?? null;
 
     // On-open duplicate detection (anki-popup-refresh): the popup silently
     // asks Anki whether this word is already saved — scoped to the word's
@@ -1536,6 +1965,17 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         sendToAnki();
     };
 
+    // The info popup's dismiss controls (word-popup-overhaul ticket 04): the
+    // sticky items — the Anki error and the ask-AI error — clear their own
+    // message state on click; everything else (the success notices'
+    // auto-dismiss timer, the word change reset, the popup close unmount)
+    // keeps clearing through the same state.
+    const dismissAnkiStatus = () => setAnkiSend(null);
+    const dismissAskAiError = () => {
+        setAiError(null);
+        setAiErrorStatus(null);
+    };
+
     // The per-word "Save to Anki" / "Update in Anki" send: the note is built
     // from the payload the popup already loaded — the same builder the Anki
     // tab's sample card uses, with the Translations field narrowed to the
@@ -1557,10 +1997,10 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // stops at "Already in Anki.". The ensure (deck / note type / template)
     // is memoized module state shared with the tab, so the first send of a
     // session auto-creates them and later sends skip straight to the
-    // duplicate check. Failures land in `ankiSend` for the toolbar's inline
-    // hint — never a silent no-op — and every completion first checks the
-    // mirrored data ref: a popup that moved to another word never adopts the
-    // previous word's result.
+    // duplicate check. Failures land in `ankiSend` for the info popup above
+    // the card — never a silent no-op — and every completion first checks
+    // the mirrored data ref: a popup that moved to another word never
+    // adopts the previous word's result.
     const sendToAnki = () => {
         if (!ankiSettings || !data || ankiSend?.status === 'sending') {
             return;
@@ -1570,7 +2010,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         setAnkiSend({status: 'sending'});
         const tags = data.tags ?? [];
         const noteFields = buildNoteFields(data, {
-            familiarity,
+            familiarity: effectiveFamiliarity,
             tags,
             nativeLanguage,
             labels: uiLabels(t),
@@ -1620,18 +2060,23 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         );
     };
 
-    // The per-word Ask-AI send (popup-ai-enrich tickets 04 + 05): one POST
-    // to /ai/word-enrich. The response is the word-show payload (the same
-    // WordPopupPayload assembler serves both endpoints), so the swap is a
-    // plain setData — for a known word the enriched dictionary renders
-    // without a reopen; for the missing card the payload IS the transition
-    // to the full dictionary view. Both completion paths check the ask's
-    // origin first (see staleAsk): a late result for a popup that has moved
-    // to another token is dropped, and the fetch effect's reset clears the
-    // in-flight flag for the new word. Failures land in `aiError` beneath
-    // the toolbar — the server's guidance verbatim (no key, no model,
-    // already asked, in flight, throttled) — and the icon stays retryable,
-    // because only a succeeded ask locks.
+    // The per-word Ask-AI send (popup-ai-enrich tickets 04 + 05;
+    // word-popup-overhaul ticket 06 queued it): one POST to
+    // /ai/word-enrich. The response is the minimal {queued: true} marker —
+    // the provider call runs in the queue — so the success path NEVER
+    // swaps the payload: it floats the transient "AI enrichment started"
+    // notice through the info popup, and the enriched content appears the
+    // next time the popup opens (the icon's ai_asked flips then too — the
+    // re-ask variant picks it up from the fresh payload, never live). A
+    // failed JOB is silent client-side: nothing to wire, the ledger just
+    // stays failed and the icon retryable. Both completion paths check the
+    // ask's origin first (see staleAsk): a late result for a popup that
+    // has moved to another token is dropped, and the fetch effect's reset
+    // clears the in-flight flag and the notice for the new word.
+    // Failures of the dispatch itself land in `aiError` in the info popup
+    // above the card — the server's guidance verbatim (no key, no model,
+    // already asked/in flight, throttled, non-admin), sticky until
+    // dismissed.
     const staleAsk = (origin) => dataRef.current !== origin.data
         || originRef.current.wordId !== origin.wordId
         || originRef.current.surface !== origin.surface
@@ -1671,9 +2116,12 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                 if (staleAsk(origin)) {
                     return;
                 }
+                // Queued: the ask is dispatched, the content arrives on the
+                // next open — the notice says so, the card keeps its
+                // current content (no live swap).
                 setAiBusy(false);
                 setAiErrorStatus(null);
-                setData(json.data);
+                setAiStarted(true);
             })
             .catch((e) => {
                 if (staleAsk(origin)) {
@@ -1725,9 +2173,9 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // The known-word ask / re-ask (ticket 04, re-ask per the ADR 0082
     // amendment): the BOUND word id (data.id — the same id the server's
     // ledger tracks and the payload's ai_asked reports) plus the popup's
-    // current surface — the response payload resolves from the same surface
-    // the initial GET did, so an inflected surface keeps its form-of line
-    // on the live swap.
+    // current surface. The queued flow answers {queued: true} without a
+    // payload, so the surface matters only if the dispatch itself 409s —
+    // the refetch sync below reuses it.
     const askAi = () => {
         if (!data || aiBusy) {
             return;
@@ -1738,9 +2186,12 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // The missing card's adopt-on-ask (ticket 05): the RAW clicked surface
     // plus the clicked column's language code — the server derives the
     // lookup key (never trusting the title), adopts onto the existing row
-    // or mints one, and the response payload swaps the missing card for the
-    // full dictionary view. A column without a language descriptor keeps
-    // the icon disabled: there is nothing valid to ask with.
+    // or mints one, and dispatches the queued job. The card stays missing
+    // until the popup reopens: the on-open resolve then finds the minted
+    // word and the fetch effect loads its payload (the response carries no
+    // payload to swap anymore). A column without a language descriptor
+    // keeps the icon hidden for non-admins and disabled here for admins:
+    // there is nothing valid to ask with.
     const askAiMissing = () => {
         if (data != null || aiBusy || language?.code == null) {
             return;
@@ -1753,44 +2204,67 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         : null;
 
     return createPortal(
+        // The POSITIONED WRAPPER (word-popup-overhaul ticket 04): positioning
+        // only — popupStyle's box, the dialog semantics and the close
+        // handlers' `ref` — while the card surface itself lives one level
+        // down (PopupContent / MissingPopupContent render it). The split
+        // gives the info popup layer a home beside the overflow-hidden
+        // card surface: a child of THIS wrapper is never clipped by it.
         <div
             ref={ref}
             role="dialog"
             aria-label={data?.word ?? surface}
             style={{...popupStyle(rect, fontSize), fontSize: `${fontSize}px`}}
-            className={`word-popup absolute z-50 ${popupContainerClass}`}
+            className="word-popup absolute z-50 flex flex-col"
         >
             {wordId == null && lookedUpId == null && data == null ? (
                 // Missing mode (popup-ai-enrich ticket 03) until the
-                // adoption ask swaps a payload in (ticket 05) or the
-                // on-open lookup resolves a hit (ticket 07): the unmapped
-                // token's card — raw surface, honest not-in-dictionary
-                // note, the live Ask-AI icon. No fetch, no word-events, no
-                // familiarity/frequency/form-of, no progress/Anki actions
-                // — ask-AI is the only path from missing to populated, and
-                // the response payload moves the popup to the full
-                // dictionary view below.
+                // on-open lookup resolves the adopted word a queued ask
+                // minted (ticket 05's ask dispatches the job now — no
+                // payload comes back to swap — and ticket 07's resolve
+                // links it on the next open): the unmapped token's card —
+                // raw surface, honest not-in-dictionary note, the full
+                // toolbar (word-popup-overhaul ticket 05) with every
+                // wordless icon disabled. No fetch, no open penalty (a
+                // word that stays missing costs nothing), no
+                // familiarity/frequency/form-of, and no progress/Anki
+                // handlers passed down — their structural absence is what
+                // disables those icons — while the robot (Models used)
+                // stays live and Ask-AI renders for approved admins only
+                // (word-popup-overhaul ticket 06). Ask-AI is still the only
+                // path from missing to populated — by way of the reopen.
                 <MissingPopupContent
                     surface={surface}
-                    onAskAi={language?.code != null && !lookupBusy ? askAiMissing : null}
+                    sections={effectiveSections}
+                    explainProps={explainProps}
+                    modelsOpen={modelsOpen}
+                    onModelsOpenChange={setModelsOpen}
+                    canAskAi={canAskAi}
+                    onAskAi={canAskAi && language?.code != null && !lookupBusy ? askAiMissing : null}
                     aiBusy={aiBusy}
+                    aiStarted={aiStarted}
                     aiError={aiError}
                     aiErrorStatus={aiErrorStatus}
+                    onDismissAskAi={dismissAskAiError}
                     resolving={lookupBusy}
                 />
             ) : (
                 <>
                     {(loading || error) && data == null && (
-                        <div className="p-3.5">
-                            {loading && <p className="word-popup-loading text-[0.857em] opacity-60">{t('word.loading')}</p>}
-                            {error && <p className="word-popup-error text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">{error}</p>}
+                        // The pre-payload card (loading / load error): its own
+                        // card surface, same as the loaded views around it.
+                        <div className={`word-popup-card ${popupContainerClass} min-h-0 flex-1`}>
+                            <div className="p-3.5">
+                                {loading && <p className="word-popup-loading text-[0.857em] opacity-60">{t('word.loading')}</p>}
+                                {error && <p className="word-popup-error text-[0.857em] text-[var(--color-vermilion)] dark:text-[var(--color-vermilion-night)]">{error}</p>}
+                            </div>
                         </div>
                     )}
 
                     {data && (
                         <PopupContent
                             surface={surface}
-                            familiarity={familiarity}
+                            familiarity={effectiveFamiliarity}
                             data={data}
                             explainProps={explainProps}
                             explainKey={explainKey}
@@ -1806,10 +2280,14 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                             ankiSettings={ankiSettings}
                             ankiUnknown={ankiUnknown}
                             onAnkiProbe={probeAnkiNow}
-                            onAskAi={askAi}
+                            canAskAi={canAskAi}
+                            onAskAi={canAskAi ? askAi : null}
                             aiBusy={aiBusy}
+                            aiStarted={aiStarted}
                             aiError={aiError}
                             aiErrorStatus={aiErrorStatus}
+                            onDismissAnki={dismissAnkiStatus}
+                            onDismissAskAi={dismissAskAiError}
                         />
                     )}
                 </>

@@ -1,7 +1,9 @@
 import React, {useState} from 'react'
 import {useI18n} from '../../i18n'
+import {usePage} from '@inertiajs/react'
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave'
-import {PopupContent, popupContainerClass, DEFAULT_POPUP_FONT_SIZE} from '../../Components/WordPopup.jsx'
+import {isApprovedAdmin} from '../../lib/authUser'
+import {PopupContent, DEFAULT_POPUP_FONT_SIZE} from '../../Components/WordPopup.jsx'
 import {CheckboxRow, SectionHeader} from './ui.jsx'
 import {SAMPLE_DATA, SAMPLE_EXPLAIN, SAMPLE_FAMILIARITY} from './sampleWordData'
 
@@ -32,6 +34,12 @@ const POPUP_GROUPS = [
 
 export default function PopupsSettings({popupVisibility = null}) {
     const {t} = useI18n()
+    const {props} = usePage()
+    // Ask-AI renders for approved admins only (word-popup-overhaul ticket
+    // 06) — the preview mirrors exactly what the viewer would see live:
+    // the inert sparkles icon for an admin, none for anyone else. The gate
+    // is the popup's own shared lib helper.
+    const canAskAi = isApprovedAdmin(props.auth?.user)
     const [sections, setSections] = useState(() => {
         const resolved = {}
         for (const key of POPUP_SECTIONS) {
@@ -83,12 +91,18 @@ export default function PopupsSettings({popupVisibility = null}) {
                     <h3 className="text-[10px] font-medium uppercase tracking-[0.22em] text-[var(--color-ink-soft)] dark:text-[var(--color-vellum-night)]/60">
                         {t('profile.popups_preview_title')}
                     </h3>
-                    {/* Same structural class as the real portal wrapper
-                        (WordPopup.jsx) so user styles/tests treat the preview
-                        like the live popup — minus the portal's absolute/z-50
-                        positioning, which stays portal-only. */}
+                    {/* The POSITIONED WRAPPER of the preview (the real
+                        portal's class, WordPopup.jsx, minus its absolute/
+                        z-50): `relative` is what anchors the info popup
+                        layer — PopupContent renders it as the wrapper's
+                        absolutely positioned child, hanging above the card
+                        surface it renders below — so the preview's canned
+                        explanation floats above the preview card exactly
+                        like the live explanation above the real one. The
+                        card surface itself (popupContainerClass) comes from
+                        PopupContent. */}
                     <div
-                        className={`word-popup ${popupContainerClass} mt-3`}
+                        className="word-popup relative mt-3"
                         style={{width: 'min(560px, 100%)', fontSize: `${DEFAULT_POPUP_FONT_SIZE}px`}}
                         aria-label={t('profile.popups_preview_title')}
                     >
@@ -101,6 +115,7 @@ export default function PopupsSettings({popupVisibility = null}) {
                             sections={sections}
                             modelsOpen={modelsOpen}
                             onModelsOpenChange={setModelsOpen}
+                            canAskAi={canAskAi}
                             preview
                         />
                     </div>
