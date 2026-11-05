@@ -4,12 +4,16 @@ namespace App\Classes;
 
 use App\Models\UserWord;
 use App\Models\UserWordEvent;
+use App\Models\Word;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Applies familiarity deltas to the user's word rows, deduplicated by the
- * user_word_event ledger: a (user, word, row, kind) event is only ever
- * counted once, so re-revealing the same sentence never re-credits it.
+ * Applies familiarity deltas to the user's word rows. Sentence-reveal read
+ * credits go through the user_word_event ledger (applyEvents): a (user,
+ * word, row, kind) event is only ever counted once, so re-revealing the
+ * same sentence never re-credits it. Popup opens (applyOpens) apply their
+ * penalty ledger-free — every open costs, no dedupe (word-popup-overhaul
+ * ticket 01).
  */
 class WordFamiliarityService
 {
@@ -80,7 +84,10 @@ class WordFamiliarityService
     /**
      * Apply familiarity events in order, skipping those already recorded in
      * the ledger, then return word id => resulting familiarity for every
-     * word referenced by the request (deduped ones included).
+     * word referenced by the request (deduped ones included). Read credits
+     * only since word-popup-overhaul ticket 01: the ledger's once-per-row
+     * rule belongs to the sentence-reveal reveals — popup opens apply
+     * through applyOpens instead.
      *
      * @param  list<array{row_key: string, kind: string, word_ids: list<int>}>  $events
      * @return array<int, int>
@@ -126,12 +133,8 @@ class WordFamiliarityService
                     ])
                     ->all());
 
-                $delta = $event['kind'] === UserWord::KIND_READ
-                    ? UserWord::READ_STEP
-                    : -UserWord::LOOKUP_PENALTY;
-
                 foreach ($fresh as $wordId) {
-                    $deltas[$wordId] = ($deltas[$wordId] ?? 0) + $delta;
+                    $deltas[$wordId] = ($deltas[$wordId] ?? 0) + UserWord::READ_STEP;
                 }
             }
         });
@@ -148,6 +151,61 @@ class WordFamiliarityService
                 ->pluck('familiarity', 'word_id')
                 ->map(fn ($familiarity): int => (int) $familiarity)
                 ->all();
+        }
+
+        return $updated;
+    }
+
+    /**
+     * The popup-open penalty (word-popup-overhaul ticket 01): every popup
+     * open of a dictionary-mapped word costs OPEN_PENALTY familiarity,
+     * every time — no ledger, no dedupe; repeat opens apply independently.
+     * Words in the user's native language cost nothing, and the filter
+     * lives here (server-side) so every popup surface — reader columns,
+     * simulator columns, the AI answer panel — shares one source of truth;
+     * an unset native language excludes nothing (nothing is provably
+     * native). A first touch creates the user_word row at FAMILIARITY_MIN,
+     * where the penalty clamps — scores never go negative. Returns word id
+     * => familiarity covering every referenced word so the client recolors
+     * from the response alone: penalty words carry the resulting score,
+     * native words their unchanged reading (null while they have no row).
+     *
+     * @param  list<int>  $wordIds
+     * @param  int|null  $nativeLanguageId  the caller's native language id,
+     *                                      or null when unset (nothing excluded)
+     * @return array<int, int|null>
+     */
+    public function applyOpens(int $userId, array $wordIds, ?int $nativeLanguageId): array
+    {
+        $wordIds = collect($wordIds)->map(intval(...))->unique()->values();
+        if ($wordIds->isEmpty()) {
+            return [];
+        }
+
+        $languages = Word::query()->whereIn('id', $wordIds)->pluck('language_id', 'id');
+
+        $penalized = $wordIds
+            ->reject(fn (int $wordId): bool => $nativeLanguageId !== null
+                && (int) $languages->get($wordId) === $nativeLanguageId)
+            ->values();
+
+        $updated = $this->applyDeltas(
+            $userId,
+            $penalized->mapWithKeys(fn (int $wordId): array => [$wordId => -UserWord::OPEN_PENALTY])->all(),
+        );
+
+        // Native words keep their score — echo the current reading so the
+        // response still covers every referenced word.
+        $skipped = $wordIds->diff($penalized);
+        if ($skipped->isNotEmpty()) {
+            $readings = UserWord::query()
+                ->where('user_id', $userId)
+                ->whereIn('word_id', $skipped->all())
+                ->pluck('familiarity', 'word_id');
+
+            foreach ($skipped as $wordId) {
+                $updated[$wordId] = $readings->has($wordId) ? (int) $readings->get($wordId) : null;
+            }
         }
 
         return $updated;

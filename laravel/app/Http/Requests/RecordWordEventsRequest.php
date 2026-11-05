@@ -17,6 +17,10 @@ class RecordWordEventsRequest extends FormRequest
     }
 
     /**
+     * Read credits only (word-popup-overhaul ticket 01): the lookup kind
+     * retired — popup opens apply their penalty through POST /words/opens,
+     * ledger-free.
+     *
      * @return array<string, array<int, string|ValidationRule>>
      */
     public function rules(): array
@@ -24,7 +28,7 @@ class RecordWordEventsRequest extends FormRequest
         return [
             'events' => ['required', 'array', 'min:1', 'max:200'],
             'events.*.row_key' => ['required', 'string', 'max:64', 'regex:/^(mm|es):\d+$/'],
-            'events.*.kind' => ['required', 'string', Rule::in([UserWord::KIND_READ, UserWord::KIND_LOOKUP])],
+            'events.*.kind' => ['required', 'string', Rule::in([UserWord::KIND_READ])],
             'events.*.word_ids' => ['required', 'array', 'min:1', 'max:200'],
             'events.*.word_ids.*' => ['required', 'integer', 'exists:words,id'],
         ];

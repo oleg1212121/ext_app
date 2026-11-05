@@ -7,7 +7,7 @@ import {getCsrfToken} from '../lib/http';
 import {renderMarkdown} from '../lib/markdown';
 import {canAskExplanation} from '../lib/wordExplain';
 import {dimsDefinition, dimsEntry, entryUsageChips, usageLabelChips} from '../lib/usageLabelDisplay';
-import {FAMILIARITY_MAX} from '../lib/wordFamiliarity';
+import {FAMILIARITY_MAX, recordWordOpens} from '../lib/wordFamiliarity';
 import {resolveWordId} from '../lib/wordLookup';
 import {Icon} from './icons.jsx';
 import {AnkiConnectError, ankiConnectEndpoint, markAnkiReachable, probeReachable, unmarkAnkiReachable} from '../lib/ankiConnect';
@@ -421,7 +421,8 @@ function AskAiError({message, status, onRetry = null}) {
  * The missing-word card (popup-ai-enrich tickets 03 + 05): what an unmapped
  * token opens — the raw clicked surface as the title and an honest
  * "not in the dictionary yet" note. There is no word id behind it: nothing
- * is fetched, no lookup event fires, and no familiarity / frequency /
+ * is fetched, no open penalty fires (a word that stays missing costs
+ * nothing), and no familiarity / frequency /
  * form-of lines exist. The toolbar shows only what applies — the LIVE Ask-AI
  * icon (ticket 05's adopt-on-ask): the ask resolves the raw surface
  * server-side (a lookup-key hit adopts onto the existing row, a miss mints
@@ -1376,6 +1377,40 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         };
     }, [wordId, surface, lookupCodesKey]);
 
+    // The popup-open penalty (word-popup-overhaul ticket 01): a missing-mode
+    // popup whose surface RESOLVED to a dictionary entry — this instance's
+    // on-open lookup, or the 409 sync's re-resolve (both land through
+    // setLookedUpId) — costs −5 familiarity ONCE per popup instance, ledger-
+    // free (the server dedupes nothing; repeat opens are fresh instances
+    // and apply again). Keyed on the resolved id alone: a miss (null) never
+    // fires — a word that stays missing costs nothing — and a bound wordId
+    // never fires either (lookedUpId stays null; WordText posts that open's
+    // penalty itself). Best-effort like every event POST: a failure leaves
+    // the header at the stale score.
+    const [resolvedFamiliarity, setResolvedFamiliarity] = useState(null);
+    useEffect(() => {
+        if (lookedUpId == null) {
+            setResolvedFamiliarity(null);
+            return;
+        }
+        let cancelled = false;
+        recordWordOpens([lookedUpId]).then((familiarity) => {
+            if (!cancelled && familiarity[lookedUpId] !== undefined) {
+                setResolvedFamiliarity(familiarity[lookedUpId]);
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [lookedUpId]);
+
+    // The header's familiarity score: the caller's open-time value,
+    // overridden by the popup-open penalty's response once it lands — the
+    // same slot the columns patch through their own response handling
+    // (WordText), so both surfaces read one value; the Anki card's
+    // Familiarity field reports it too.
+    const effectiveFamiliarity = resolvedFamiliarity ?? familiarity ?? null;
+
     // On-open duplicate detection (anki-popup-refresh): the popup silently
     // asks Anki whether this word is already saved — scoped to the word's
     // language deck + Word + Language through lib/ankiSync.js's
@@ -1570,7 +1605,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         setAnkiSend({status: 'sending'});
         const tags = data.tags ?? [];
         const noteFields = buildNoteFields(data, {
-            familiarity,
+            familiarity: effectiveFamiliarity,
             tags,
             nativeLanguage,
             labels: uiLabels(t),
@@ -1765,7 +1800,8 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                 // adoption ask swaps a payload in (ticket 05) or the
                 // on-open lookup resolves a hit (ticket 07): the unmapped
                 // token's card — raw surface, honest not-in-dictionary
-                // note, the live Ask-AI icon. No fetch, no word-events, no
+                // note, the live Ask-AI icon. No fetch, no open penalty
+                // (a word that stays missing costs nothing), no
                 // familiarity/frequency/form-of, no progress/Anki actions
                 // — ask-AI is the only path from missing to populated, and
                 // the response payload moves the popup to the full
@@ -1790,7 +1826,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                     {data && (
                         <PopupContent
                             surface={surface}
-                            familiarity={familiarity}
+                            familiarity={effectiveFamiliarity}
                             data={data}
                             explainProps={explainProps}
                             explainKey={explainKey}

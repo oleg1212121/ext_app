@@ -161,7 +161,9 @@ export default function AI(props) {
                 structurally absent: no `language` prop — that absence is
                 what disables Ask-AI/adopt, so nothing is ever minted from
                 AI-answer text whose language is ambiguous; no familiarity
-                map (opens showing untouched, tokens untinted); no progress
+                map (its tokens never tint — the popup-open penalty still
+                applies server-side once per popup instance when the resolve
+                lands, its score surfacing in the popup header); no progress
                 recording (no sentence identity reaches this panel).
                 The columns' explain config rides along for toolbar parity
                 (ADR 0096 amendment): the toggle renders disabled (no

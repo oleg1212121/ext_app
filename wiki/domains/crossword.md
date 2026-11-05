@@ -5,7 +5,7 @@ description: Deterministic crossword puzzles generated from an entity's word lis
 tags: [crossword, puzzles, inertia, react, dictionary, queue]
 status: stable
 stale_after: 2027-01-30
-generated: { by: agent:zcode, at: 2026-11-01T19:56:23+03:00 }
+generated: { by: agent:zcode, at: 2026-11-05T11:50:00+0000 }
 verified: { by: agent:zcode, at: 2026-10-18T16:15:00+03:00 }
 sources:
   - id: controller

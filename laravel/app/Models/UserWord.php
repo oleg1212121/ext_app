@@ -15,7 +15,7 @@ class UserWord extends Model
 
     public const READ_STEP = 1;
 
-    public const LOOKUP_PENALTY = 2;
+    public const OPEN_PENALTY = 5;
 
     public const CROSSWORD_BONUS = 5;
 
@@ -27,8 +27,6 @@ class UserWord extends Model
     public const PLACEMENT_BASELINE = 60;
 
     public const KIND_READ = 'read';
-
-    public const KIND_LOOKUP = 'lookup';
 
     protected $fillable = ['user_id', 'word_id', 'familiarity'];
 

@@ -6,6 +6,47 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-05 (word-popup-overhaul ticket 01 — open penalty: every popup open costs −5, native language free)
+
+The old lookup penalty (−2 on the FIRST popup open of a word per sentence
+row, ledger-deduped) is retired end to end and replaced by a flat
+**popup-open penalty**: every popup open of a dictionary-mapped word costs
+**−5 familiarity, every time** — mouse ctrl+click, Ctrl+Enter, Ctrl+Space
+alike, on every popup surface. New `POST /words/opens`
+(`WordController::recordOpens`, `RecordWordOpensRequest` — a bounded
+`word_ids` list, throttle 60/min beside the lookup resolve) applies it
+through `WordFamiliarityService::applyOpens`: ledger-free (the
+`user_word_event` once-per-row rule now belongs to the sentence-reveal
+**read** credits alone — `POST /word-events` accepts `kind: read` only,
+`UserWord::KIND_LOOKUP`/`LOOKUP_PENALTY` constants are gone, historical
+`lookup` rows stay untouched), first-ever touch creates the `user_word`
+row at 0 where the −5 clamps (scores never go negative), and repeat opens
+apply independently. Words in the user's **native language cost nothing**
+— the filter is server-side in `applyOpens` (each word's `language_id`
+against the caller's Native setting, an unset setting excluding nothing),
+the single source of truth for reader columns, simulator columns, and the
+AI answer panel. The response mirrors `/word-events`' shape (native words
+echo their unchanged reading, null while rowless) so the client recolors
+from the response alone: the columns' mapped open posts its id from
+`WordText` and patches the word map + popup header as the old lookup
+event's response did; a missing-mode popup whose on-open resolve lands a
+hit posts the resolved id **once per popup instance** from a new
+`WordPopup` effect keyed on `lookedUpId` (the 409 sync's re-resolve
+included) and reflects the new score in its header via
+`effectiveFamiliarity` — the AI panel's map-less mount included, whose
+tokens never tint; a word that stays missing costs nothing. New helper
+`recordWordOpens` in `lib/wordFamiliarity.js` (best-effort, never
+throws). Docs: `interactive-words.md` concept (familiarity-events,
+popup, missing-card, routes, consuming-surfaces passages + description);
+the now-lookup-free prose in `reader.md` and the AI-panel familiarity
+passage in `bilinguals-simulator.md` (+ `entities.md`'s drift sources);
+`generated.at` bumped on the concepts whose listed sources this ticket
+touched (interactive-words, reader, bilinguals-simulator, entities,
+crossword, overview, anki-export — the latter three for the
+`routes/web.php`/`WordPopup.jsx` listing ripple; profile.md's bump clears
+checkout-refreshed mtimes only, content untouched). The ADR 0028
+amendment itself is a closure-ticket item.
+
 ## 2026-11-04 (anki-tab-polish — learning-language preference, Anki tab opens on it + connection-beside-card-content layout, toggle-gated footer separator)
 
 Four tickets on the profile/Anki surfaces (spec `.scratch/anki-tab-polish/`).

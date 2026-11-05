@@ -168,6 +168,49 @@ describe('WordPopup: the on-open lookup (ticket 07)', () => {
     });
 });
 
+describe('WordPopup: the popup-open penalty (word-popup-overhaul ticket 01)', () => {
+    // The penalty effect: between the resolve effect's dependency list and
+    // the Anki duplicate-detection comment.
+    const penaltyEffectSource = popupBody.slice(
+        popupBody.indexOf('const [resolvedFamiliarity'),
+        popupBody.indexOf('// On-open duplicate detection'),
+    );
+
+    it('POSTs the resolved id through the shared lib helper — CSRF-signed, ledger-free', () => {
+        // The lib POST (never a fetch literal in the component — the
+        // /words/lookup pin's one-POST-literal contract, extended to the
+        // opens helper).
+        expect(popupSource).toContain("from '../lib/wordFamiliarity'");
+        expect(penaltyEffectSource).toContain('recordWordOpens([lookedUpId])');
+    });
+
+    it('fires once per popup instance — keyed on the resolved id', () => {
+        // The effect's only trigger is lookedUpId: null until THIS
+        // instance's on-open resolve (or the 409 sync's re-resolve) lands a
+        // hit, reset when the popup moves on — so a miss never fires, a
+        // bound wordId never fires (WordText posts that one), and a repeat
+        // open is a fresh instance applying again.
+        expect(penaltyEffectSource).toMatch(/useEffect\(\(\) => \{\s*if \(lookedUpId == null\) \{\s*setResolvedFamiliarity\(null\);\s*return;\s*\}/);
+        expect(penaltyEffectSource).toMatch(/\}, \[lookedUpId\]\);/);
+    });
+
+    it('best-effort like every event POST — a failure leaves the header at the stale score', () => {
+        // The cancelled guard drops a late answer for a popup that moved;
+        // an absent map entry (failed POST) never overwrites the score.
+        expect(penaltyEffectSource).toContain('let cancelled = false;');
+        expect(penaltyEffectSource).toContain('cancelled = true;');
+        expect(penaltyEffectSource).toMatch(/if \(!cancelled && familiarity\[lookedUpId\] !== undefined\) \{\s*setResolvedFamiliarity\(familiarity\[lookedUpId\]\);\s*\}/);
+    });
+
+    it('the header shows the new score — effectiveFamiliarity feeds PopupContent', () => {
+        // The AI panel's mount passes no familiarity prop, so the resolved
+        // score becomes the header's value — the same slot the columns'
+        // WordText patches through their own response handling.
+        expect(popupBody).toContain('const effectiveFamiliarity = resolvedFamiliarity ?? familiarity ?? null;');
+        expect(popupRenderSource).toContain('familiarity={effectiveFamiliarity}');
+    });
+});
+
 describe('WordPopup: the 409 ask sync (ticket 07)', () => {
     it('refetches the word payload on a known-path 409 — a harmless sync with the ledger', () => {
         expect(runEnrichSource).toContain('if (e.status === 409)');

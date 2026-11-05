@@ -9,7 +9,7 @@ import {describe, expect, it} from 'vitest';
 // contract, NO familiarity tint) whose Ctrl+click / Ctrl+Enter opens the
 // popup in MISSING mode — the RAW surface as the title (the folded key would
 // show ё-folded, mark-stripped text) and zero network: no GET /words/, no
-// POST /word-events, nothing fetched or "being fetched". The old unclickable
+// POST /words/opens, nothing fetched or "being fetched". The old unclickable
 // phrasal-mark span branch merges into the same interactive path. Each
 // column's language travels down to the popup as a prop from both
 // surfaces (reader display columns, simulator columns) — ticket 05's
@@ -99,7 +99,7 @@ describe('WordText: the missing-mode payload', () => {
         // what the reader actually clicked — segment.text.
         const missingBranch = openPopupSource.slice(
             openPopupSource.indexOf('if (!entry?.w) {'),
-            openPopupSource.indexOf('recordWordEvents'),
+            openPopupSource.indexOf('recordWordOpens'),
         );
         expect(missingBranch).toContain('wordId: null');
         expect(missingBranch).toContain('surface: segment.text');
@@ -108,15 +108,29 @@ describe('WordText: the missing-mode payload', () => {
         expect(openPopupSource).toContain('surface: segment.key');
     });
 
-    it('fires nothing for a missing token — the event POST is unreachable there', () => {
-        // The missing branch RETURNS before recordWordEvents: no /word-events
-        // lookup can fire for a token without a word id.
+    it('fires nothing for a missing token — the open penalty is unreachable there', () => {
+        // The missing branch RETURNS before recordWordOpens: no /words/opens
+        // penalty can fire for a token without a word id (a word that stays
+        // missing costs nothing — word-popup-overhaul ticket 01).
         const missingBranch = openPopupSource.slice(
             openPopupSource.indexOf('if (!entry?.w) {'),
-            openPopupSource.indexOf('recordWordEvents'),
+            openPopupSource.indexOf('recordWordOpens'),
         );
         expect(missingBranch).toContain('return;');
-        expect(openPopupSource).toContain('recordWordEvents');
+        expect(openPopupSource).toContain('recordWordOpens');
+    });
+
+    it('posts the open penalty for every mapped open — no row-key guard left', () => {
+        // word-popup-overhaul ticket 01: the −5 applies on EVERY open of a
+        // mapped word — the old lookup event's `if (rowKey)` gate is gone
+        // (the penalty needs no row identity), and the response recolors
+        // the token + patches the popup header exactly as the lookup
+        // event's response did.
+        expect(openPopupSource).toContain('recordWordOpens([entry.w])');
+        expect(openPopupSource).not.toContain("kind: 'lookup'");
+        const postTail = openPopupSource.slice(openPopupSource.indexOf('recordWordOpens'));
+        expect(postTail).toContain('onWordProgress?.(segment.key');
+        expect(postTail).toContain('current?.wordId === entry.w');
     });
 });
 

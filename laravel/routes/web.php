@@ -130,6 +130,17 @@ Route::middleware(['auth', 'approved'])->group(function () {
     Route::post('/word-events', [WordController::class, 'recordEvents'])
         ->name('word.events.store');
 
+    // The popup-open penalty (word-popup-overhaul ticket 01): every popup
+    // open of a dictionary-mapped word costs −5 familiarity, every time —
+    // the ledger's once-per-row rule belongs to the sentence-reveal read
+    // credits alone, and the native-language filter lives server-side so
+    // every popup surface (reader columns, simulator columns, the AI
+    // answer panel) shares one source of truth. Throttled like the lookup
+    // resolve above.
+    Route::post('/words/opens', [WordController::class, 'recordOpens'])
+        ->name('words.opens')
+        ->middleware('throttle:60,1');
+
     // Library → Works: the catalog plus its Entities and Alignments branches
     // (ADR 0039). Static branch lists register before {work}; whereNumber
     // keeps /works/{work} disjoint from /works/entities and /works/alignments.

@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Interactive Words
-description: Interactive words on the reader and bilinguals simulator — every tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (ADR 0030); dictionary-linked tokens open a word popup aggregating the word family (ADR 0045 + 0047, stable-sorted live-before-demoted then completeness-descending, ADR 0083) with an action toolbar — per-word Anki send (ADR 0077), an on-demand AI Context explanation, and the ledger-tracked, re-askable Ask-AI enrichment (ADR 0082) — per-user block visibility (ADR 0046) and typography following the host page's font (ADR 0031). Unmapped tokens open a missing-word card whose Ask-AI icon adopts onto the existing row or mints one word through the ADR 0081 lookup key (the card re-resolves on open so an adopt stays found, ADR 0079). The simulator's streamed AI answer is a third interactive surface (ADR 0096): its tokens open the same popup missing-first, ordered learning→base over the ask's language snapshot, map-less and adopt-less. Segmentation is render-time (ADR 0027), familiarity events are ledger-deduped (ADR 0028), and missing translations auto-fetch in the background (Yandex→Google, link-only, ledger-deduped with a permanent exclusions list).
+description: Interactive words on the reader and bilinguals simulator — every tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (ADR 0030); dictionary-linked tokens open a word popup aggregating the word family (ADR 0045 + 0047, stable-sorted live-before-demoted then completeness-descending, ADR 0083) with an action toolbar — per-word Anki send (ADR 0077), an on-demand AI Context explanation, and the ledger-tracked, re-askable Ask-AI enrichment (ADR 0082) — per-user block visibility (ADR 0046) and typography following the host page's font (ADR 0031). Unmapped tokens open a missing-word card whose Ask-AI icon adopts onto the existing row or mints one word through the ADR 0081 lookup key (the card re-resolves on open so an adopt stays found, ADR 0079). The simulator's streamed AI answer is a third interactive surface (ADR 0096): its tokens open the same popup missing-first, ordered learning→base over the ask's language snapshot, map-less and adopt-less. Segmentation is render-time (ADR 0027), sentence-reveal reads are ledger-deduped (ADR 0028) while every popup open of a mapped word costs −5 (native language free, no dedupe), and missing translations auto-fetch in the background (Yandex→Google, link-only, ledger-deduped with a permanent exclusions list).
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-02T16:15:00+0000 }
+generated: { by: agent:zcode, at: 2026-11-05T11:35:00+0000 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -157,8 +157,10 @@ double-click natively selects the word so browser extensions (translators,
 dictionaries) can act on it. Their text is
 tinted by the reader's **Word familiarity** (0–19 → rose, 20–59 →
 amber, 60–99 → verdigris, ≥ 100 → green). Revealing a sentence pair on the
-simulator credits its words a read (+1); opening a word's popup costs a
-lookup (−2), once per word per sentence pair on both surfaces. Since
+simulator credits its words a read (+1); every popup open of a mapped word
+costs the **open penalty (−5)** — every time, no dedupe — while words in
+the reader's native language cost nothing (the filter is server-side, one
+source of truth for every surface; word-popup-overhaul ticket 01). Since
 ai-answer-words (ADR 0096) the simulator's streamed AI answer is a third
 interactive surface: its markdown-rendered tokens (a dedicated
 `ai-word-token` class — hover- and focus-underlined like the columns'
@@ -386,9 +388,11 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    font-size setting** (ADR 0031): the page derives
    `popupFontSizeFor(pageFont)` — 65% of the page font, floored at 14px,
    capped at 32px — and the popup scales with it (width 560px at the default
-   17px, still viewport-clamped; inner text sizes em-relative). When the
-   surrounding `WordText` has a `rowKey`
-   (see below), the click also fires a **lookup event**.
+   17px, still viewport-clamped; inner text sizes em-relative). Every open of
+   a mapped word also fires the **popup-open penalty** (−5, every open, no
+   dedupe; native-language words cost nothing — word-popup-overhaul ticket
+   01): the response recolors the token and the popup header exactly as the
+   old lookup event's did.
 4. **Progress actions.** `PATCH /words/{word}/progress`
    (`familiarity: 0-100`) and `DELETE /words/{word}/progress` implement "I
    know this word" / "Remove mark" (deletes the row). The popup
@@ -410,8 +414,10 @@ shared "Loading…" line instead of the not-in-dictionary note (the note is
 a verdict; ADR 0096's amendment), settling back in on a miss; no
 `GET /words/` fires until it resolves an id (the
 detail-fetch effect returns before its fetch while `fetchId` — `wordId ??
-lookedUpId` — is null), no `/word-events` lookup (there is no word id to
-ledger), and no familiarity / frequency / form-of lines. The toolbar shows
+lookedUpId` — is null), no open penalty (there is no word id to charge —
+a word that stays missing costs nothing; a resolve HIT posts
+`/words/opens` once per popup instance, word-popup-overhaul ticket 01),
+and no familiarity / frequency / form-of lines. The toolbar shows
 only what applies — the **live Ask-AI icon** (below): know / remove / Anki /
 the Explanation toggle / the robot are inapplicable there, and ask-AI is the
 only path from missing to populated. Each column's language
@@ -1020,12 +1026,32 @@ see [Profile](/domains/profile.md) for the Anki tab side):
 # Familiarity events (ADR 0028)
 
 * `POST /word-events` (`RecordWordEventsRequest`) takes up to 200 events
-  `{row_key, kind: read|lookup, word_ids}`. The
+  `{row_key, kind: read, word_ids}` — read credits only since
+  word-popup-overhaul ticket 01 (the `lookup` kind retired end to end;
+  historical ledger rows stay untouched). The
   `WordFamiliarityService` inserts each fresh (user, word, row_key, kind)
   into the `user_word_event` ledger (unique — repeat requests are no-ops),
-  applies +1 per fresh read / −2 per fresh lookup clamped to 0–100, and
+  applies +1 per fresh read clamped to 0–100, and
   responds `{data: {familiarity: {wordId: value}}}` covering every
   referenced word so the client can recolor without a refetch.
+* The **popup-open penalty** (`POST /words/opens`,
+  `RecordWordOpensRequest`, throttle 60/min; word-popup-overhaul ticket
+  01): every popup open of a dictionary-mapped word costs −5, EVERY time —
+  no ledger, no dedupe; repeat opens apply independently. Words in the
+  user's native language cost nothing — the filter is server-side
+  (`WordFamiliarityService::applyOpens` compares each word's `language_id`
+  against the caller's Native setting; an unset setting excludes nothing)
+  so it is the single source of truth for every surface: reader columns,
+  simulator columns, and the AI answer panel. A first touch creates the
+  `user_word` row at 0 and the penalty clamps there — scores never go
+  negative. The response mirrors the events shape (native words echo their
+  unchanged reading, null while they have no row) so the client recolors
+  from the response alone: the columns post their mapped open's id from
+  `WordText` and patch the word map + popup header from the response, and
+  a missing-mode popup whose on-open resolve lands a hit posts the
+  resolved id once per popup instance and reflects the new score in its
+  header (`WordPopup` — the AI panel's mount included, whose tokens never
+  tint).
 * `row_key` scopes one sentence pair: `mm:{meaningMatchId}` (aligned rows)
   or `es:{entitySentenceId}` (unaligned reader rows). Reading rows carry
   their `key` on the row object itself (ADR 0060), so no parallel key list
@@ -1033,11 +1059,10 @@ see [Profile](/domains/profile.md) for the Anki tab side):
 * **Reads** fire only on the bilinguals simulator (checking a row's EN
   checkbox, or the `all_en` header checkbox which batches the whole loaded
   page into one request), crediting the learning-language side's words.
-  **Lookups** fire on both surfaces, on the first popup open of a word
-  within a row. The browser fires events best-effort
+  The browser fires events and penalties best-effort
   (`lib/wordFamiliarity.js`) — failures never block reading.
 * Schema: `user_word.familiarity` (unsigned tinyint, default 0) +
-  `user_word_event` ledger; see
+  `user_word_event` ledger (read credits only); see
   [schema-overview](/database/schema-overview.md).
 
 # Highlighting rules
@@ -1071,7 +1096,8 @@ see [Profile](/domains/profile.md) for the Anki tab side):
 | `POST /ai/word-explain` | `ReadingAiController::explainWord` | Context explanation: prev/current/next sentence of the clicked side's entity + focused prompt through `AIModelResolver::ask`, native-language reply (`AiWordExplainRequest`, throttle 20/min) |
 | `PATCH /words/{word}/progress` | `WordController::setFamiliarity` | `UpdateWordProgressRequest` (`familiarity` 0–100); upsert `user_word` |
 | `DELETE /words/{word}/progress` | `WordController::resetProgress` | Delete the `user_word` row (back to untouched) |
-| `POST /word-events` | `WordController::recordEvents` | Ledger-deduplicated read/lookup events; returns resulting familiarity per word |
+| `POST /word-events` | `WordController::recordEvents` | Ledger-deduplicated read events (+1 per fresh row reveal); returns resulting familiarity per word |
+| `POST /words/opens` | `WordController::recordOpens` | The popup-open penalty (word-popup-overhaul ticket 01, `RecordWordOpensRequest`, throttle 60/min): `{word_ids}` — a mapped open posts its id, a missing-mode popup the id its on-open resolve landed (a word that stays missing costs nothing). −5 per word per open, no ledger, no dedupe; a first touch creates the `user_word` row at 0 and clamps there (never negative); native-language words are skipped server-side (`WordFamiliarityService::applyOpens`, unset setting excludes nothing) → `{data: {familiarity: {wordId: value}}}` covering every referenced word |
 
 # Consuming surfaces
 
@@ -1084,9 +1110,9 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   descriptors and renders both row halves through
   `WordText` (the primary line is a `role="button"` div so the word tokens —
   themselves `role="button"` spans — stay valid HTML inside it) and derives
-  the popup font from its own `fontSize`. Lookup events only — no read
-  crediting. Rows key `mm:{id}` / `es:{id}`; every sentence explains through
-  its entity-sentence id.
+   the popup font from its own `fontSize`. Open penalties only — no read
+   crediting. Rows key `mm:{id}` / `es:{id}`; every sentence explains through
+   its entity-sentence id.
 * **Bilinguals simulator** (`POST /text`): response gains the reader's
   sibling shape — `word_maps` (`{a, b}`, page-scoped like the reader) plus
   `highlightable`/`explainable` as their own keys (ADR 0060 amendment);
@@ -1110,7 +1136,11 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   learning→base resolve over the ask's language snapshot
   (`useAiStream.answerLanguages`), and passing **no `language` prop** —
   Ask-AI/adopt stay disabled, nothing is ever minted from AI-answer
-  text; no familiarity map, no word-event recording. The columns'
+  text; no familiarity map (its tokens never tint), and its one
+  familiarity interaction is the popup-open penalty — posted once per
+  popup instance when the ordered resolve lands a hit (word-popup-overhaul
+  ticket 01), a token that stays missing costing nothing; the response's
+  score surfaces in the popup header. The columns'
   explain config rides for toolbar parity (disabled Explanation toggle +
   live robot, no sentence id — ADR 0096's amendment), and the tokens
   carry the columns' hover-underline affordance scoped to the panel
