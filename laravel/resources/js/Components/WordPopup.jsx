@@ -469,11 +469,13 @@ function InfoDismissButton({onClick}) {
  * Items stack in the ticket's listed order: the Anki notices (added /
  * updated / duplicate — auto-dismissed by the outer WordPopup after ~4s),
  * the sticky Anki error, the sticky ask-AI error (both carrying the shared
- * per-item dismiss control), and the explanation slot PopupContent passes
- * in behind its toggle gate. With nothing to show the layer renders null —
- * no box, no layout, no shadow.
+ * per-item dismiss control), the queued ask's transient "started" notice
+ * (word-popup-overhaul ticket 06 — auto-dismissed like the Anki notices),
+ * and the explanation slot PopupContent passes in behind its toggle gate.
+ * With nothing to show the layer renders null — no box, no layout, no
+ * shadow.
  */
-function InfoPopup({ankiSend = null, onDismissAnki = null, aiError = null, aiErrorStatus = null, onRetryAskAi = null, onDismissAskAi = null, explainSlot = null}) {
+function InfoPopup({ankiSend = null, onDismissAnki = null, aiStarted = false, aiError = null, aiErrorStatus = null, onRetryAskAi = null, onDismissAskAi = null, explainSlot = null}) {
     const {t} = useI18n();
     const layerRef = useRef(null);
     const [maxHeight, setMaxHeight] = useState(null);
@@ -502,7 +504,7 @@ function InfoPopup({ankiSend = null, onDismissAnki = null, aiError = null, aiErr
         return () => window.removeEventListener('resize', measure);
     }, []);
 
-    if (!explainSlot && aiError == null
+    if (!explainSlot && aiError == null && !aiStarted
         && ankiSend?.status !== 'added'
         && ankiSend?.status !== 'updated'
         && ankiSend?.status !== 'duplicate'
@@ -563,6 +565,18 @@ function InfoPopup({ankiSend = null, onDismissAnki = null, aiError = null, aiErr
                     the four-state contract's Retry control re-sending the
                     ask; sticky until dismissed, the icon stays retryable. */}
                 <AskAiError message={aiError} status={aiErrorStatus} onRetry={onRetryAskAi} onDismiss={onDismissAskAi}/>
+                {/* A QUEUED ask's dispatch notice (word-popup-overhaul
+                    ticket 06): the enrichment job is off the HTTP request —
+                    the content arrives on the next open, and the notice
+                    says exactly that. Transient like the Anki success
+                    notices: auto-dismissed by the outer WordPopup after
+                    ~4s, no dismiss control; mutually exclusive with the
+                    error above (a dispatch either queued or failed). */}
+                {aiStarted && (
+                    <p className="word-popup-ai-started py-1.5 text-[0.857em] text-[var(--color-verdigris)] dark:text-[var(--color-verdigris-night)]">
+                        {t('word.ask_ai_started')}
+                    </p>
+                )}
                 {explainSlot && (
                     <div className="word-popup-explain-row py-1.5">
                         {explainSlot}
@@ -593,9 +607,11 @@ function InfoPopup({ankiSend = null, onDismissAnki = null, aiError = null, aiErr
  * real `PopupContent` through the existing swap, and the icons go live
  * there; this component never gains the handlers itself. The Ask-AI ask
  * resolves the raw surface server-side (a lookup-key hit adopts onto the
- * existing row, a miss mints one word), enriches it, and the response
- * payload performs the swap — ask-AI is the only path from missing to
- * populated. A failed ask floats the server's guidance verbatim in the info
+ * existing row, a miss mints one word) and dispatches the queued
+ * enrichment job — the card stays as it is and the minted word appears on
+ * the next open (the on-open resolve finds it), so ask-AI remains the only
+ * path from missing to populated without a live swap
+ * (word-popup-overhaul ticket 06). A failed ask floats the server's guidance verbatim in the info
  * popup above the card (the shared InfoPopup layer, word-popup-overhaul
  * ticket 04) — the no-model and no-key cases carry the explain pane's
  * go-to-settings link, the Retry control re-sends the ask, and the sticky
@@ -612,8 +628,16 @@ export function MissingPopupContent({
     onModelsOpenChange = null,
     onProgressAction = null,
     onAnkiSend = null,
+    // Ask-AI is admin-only (word-popup-overhaul ticket 06): false keeps
+    // the sparkles icon out of the toolbar — hidden, not disabled — for
+    // everyone but approved admins.
+    canAskAi = false,
     onAskAi = null,
     aiBusy = false,
+    // The queued ask's dispatch outcome (ticket 06): floats the transient
+    // "AI enrichment started" notice — the missing card too stays as it is
+    // after an ask; the minted word appears on the next open.
+    aiStarted = false,
     aiError = null,
     aiErrorStatus = null,
     onDismissAskAi = null,
@@ -634,6 +658,7 @@ export function MissingPopupContent({
                 the explanation pane cannot occur here (the card can send
                 nothing and its toggle never enables). */}
             <InfoPopup
+                aiStarted={aiStarted}
                 aiError={aiError}
                 aiErrorStatus={aiErrorStatus}
                 onRetryAskAi={onAskAi}
@@ -710,17 +735,22 @@ export function MissingPopupContent({
                             to populated. Disables while inapplicable: no
                             handler (a column without a language descriptor,
                             or the on-open resolve still in flight) or an ask
-                            in flight; failed attempts stay retryable. */}
-                        <button
-                            type="button"
-                            title={askAiLabel}
-                            aria-label={askAiLabel}
-                            disabled={onAskAi == null || aiBusy}
-                            onClick={onAskAi}
-                            className={`word-popup-ask-ai ${toolbarButtonClass()}`}
-                        >
-                            <Icon name="sparkles" className="h-[1.25em] w-[1.25em]"/>
-                        </button>
+                            in flight; failed attempts stay retryable.
+                            Admin-only (word-popup-overhaul ticket 06):
+                            hidden — not disabled — for everyone but approved
+                            admins, matching the endpoint's 403. */}
+                        {canAskAi && (
+                            <button
+                                type="button"
+                                title={askAiLabel}
+                                aria-label={askAiLabel}
+                                disabled={onAskAi == null || aiBusy}
+                                onClick={onAskAi}
+                                className={`word-popup-ask-ai ${toolbarButtonClass()}`}
+                            >
+                                <Icon name="sparkles" className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
                         {/* Not a toggle: opens the Models used popup. Rightmost
                             on the row and LIVE — the popup needs no word,
                             reading its models off the explain payload exactly
@@ -908,8 +938,18 @@ export function PopupContent({
     // ungated on the icon's hover so a cold session lights up in place the
     // moment the reader mouses over it; null in the preview — no probe.
     onAnkiProbe = null,
+    // Ask-AI is admin-only (word-popup-overhaul ticket 06): the outer
+    // WordPopup reads the shared auth user; false keeps the sparkles icon
+    // (plain or re-ask) out of the toolbar entirely — hidden, not
+    // disabled — for everyone else.
+    canAskAi = false,
     onAskAi = null,
     aiBusy = false,
+    // The queued ask's dispatch outcome (ticket 06): true for the ~4s
+    // after a successful dispatch, floating the transient "AI enrichment
+    // started" notice in the info popup — the payload itself is never
+    // swapped on an ask anymore.
+    aiStarted = false,
     aiError = null,
     aiErrorStatus = null,
     preview = false,
@@ -996,6 +1036,7 @@ export function PopupContent({
             <InfoPopup
                 ankiSend={ankiSend}
                 onDismissAnki={onDismissAnki}
+                aiStarted={aiStarted}
                 aiError={aiError}
                 aiErrorStatus={aiErrorStatus}
                 onRetryAskAi={onAskAi}
@@ -1119,17 +1160,22 @@ export function PopupContent({
                             the re-ask variant (sparkles inside the refresh
                             arrows) with the "ask again" hint and stays
                             clickable: the re-ask replaces the previous AI
-                            rows. */}
-                        <button
-                            type="button"
-                            title={askAiLabel}
-                            aria-label={askAiLabel}
-                            disabled={onAskAi == null || aiBusy}
-                            onClick={onAskAi}
-                            className={`word-popup-ask-ai ${toolbarButtonClass()}`}
-                        >
-                            <Icon name={data.ai_asked ? 'sparklesRefresh' : 'sparkles'} className="h-[1.25em] w-[1.25em]"/>
-                        </button>
+                            rows. Admin-only (word-popup-overhaul ticket 06):
+                            the icon renders for approved admins only —
+                            hidden, not disabled, for everyone else, matching
+                            the endpoint's 403. */}
+                        {canAskAi && (
+                            <button
+                                type="button"
+                                title={askAiLabel}
+                                aria-label={askAiLabel}
+                                disabled={onAskAi == null || aiBusy}
+                                onClick={onAskAi}
+                                className={`word-popup-ask-ai ${toolbarButtonClass()}`}
+                            >
+                                <Icon name={data.ai_asked ? 'sparklesRefresh' : 'sparkles'} className="h-[1.25em] w-[1.25em]"/>
+                            </button>
+                        )}
                         {/* Not a toggle: opens the Models used popup. Rightmost
                             on the row, behind the same gate as the Explanation
                             toggle (ADR 0046 `explanation: false` removes it,
@@ -1418,12 +1464,14 @@ export function PopupContent({
  * panel's ask language ({code}|null, derived learning-first from the
  * resolution snapshot, `lib/aiAnswerTokens.mjs`'s `answerAskLanguage` —
  * ADR 0096's adopt-less rule reversed for that surface); a mount without a
- * code keeps the icon disabled. The server derives the lookup key, adopts
- * onto the existing row or mints one unknown-class word, and enriches it —
- * the response payload swaps the missing card for the full dictionary view
- * in the same setData move a known word's ask uses (the handlers act on the
- * adopted `data.id` through resolvedWordId; the page's word map learns the
- * new word on its next refresh).
+ * code keeps the icon hidden for non-admins and disabled for admins. The
+ * server derives the lookup key, adopts onto the existing row or mints one
+ * unknown-class word, and dispatches the queued enrichment
+ * (word-popup-overhaul ticket 06 — no payload comes back to swap): the
+ * card stays missing until the popup reopens, when the on-open resolve
+ * finds the minted/adopted word and the fetch effect loads its payload
+ * (the handlers then act on the adopted `data.id` through resolvedWordId;
+ * the page's word map learns the new word on its next refresh).
  *
  * With an `explain` payload ({rowKind, rowId, side, sentenceIndex, modelKey,
  * enabled, modelLabel, followsAnswer, answerLabel}) the popup grows the
@@ -1475,6 +1523,13 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     const effectiveSections = sections ?? props.popupVisibility ?? {};
     const ankiSettings = props.ankiSettings ?? null;
     const nativeLanguage = props.auth?.user?.native_language ?? null;
+    // Ask-AI is an approved-admin capability (word-popup-overhaul ticket
+    // 06): the ask spends the asker's own API-key tokens, so the sparkles
+    // icon — plain and re-ask variants, dictionary and missing cards alike
+    // — renders ONLY for approved admins (hidden, not disabled, for
+    // everyone else; the endpoint answers the same gate with a 403). The
+    // shared auth user already carries `role` and `is_approved`.
+    const canAskAi = props.auth?.user?.role === 'admin' && props.auth?.user?.is_approved === true;
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -1485,11 +1540,15 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // failure's message (shown in the info popup above the card, sticky
     // until dismissed — the icon stays retryable), `aiErrorStatus` its HTTP
     // status (400/403 — no model / no key — switch the error line to the
-    // explain pane's guidance treatment). A success swaps the whole `data`
-    // payload in place.
+    // explain pane's guidance treatment). A success answers the minimal
+    // {queued: true} marker — the provider call runs in the queue now
+    // (word-popup-overhaul ticket 06) — so the payload is NEVER swapped:
+    // `aiStarted` floats the transient "enrichment started" notice instead,
+    // and the enriched content appears the next time the popup opens.
     const [aiBusy, setAiBusy] = useState(false);
     const [aiError, setAiError] = useState(null);
     const [aiErrorStatus, setAiErrorStatus] = useState(null);
+    const [aiStarted, setAiStarted] = useState(false);
     // The on-open re-resolution (popup-ai-enrich ticket 07): a missing-mode
     // popup with a column language descriptor resolves its RAW surface
     // server-side before the missing card settles — a hit means the word
@@ -1581,6 +1640,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
             setLoading(false);
             setError(null);
             setData(null);
+            setAiStarted(false);
             return;
         }
         let cancelled = false;
@@ -1594,10 +1654,12 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         setAnkiExisting('checking');
         // A fresh word also clears the previous word's ask state — an
         // in-flight enrichment for the old word is dropped by its
-        // staleAsk guard below, so the flag never sticks.
+        // staleAsk guard below, so the flag never sticks, and the queued
+        // ask's "started" notice belongs to the word it was asked on.
         setAiBusy(false);
         setAiError(null);
         setAiErrorStatus(null);
+        setAiStarted(false);
 
         fetch(`/words/${fetchId}?surface=${encodeURIComponent(surface)}`, {
             headers: {Accept: 'application/json'},
@@ -1648,6 +1710,20 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         const timer = setTimeout(() => setAnkiSend(null), ANKI_NOTICE_LIFETIME_MS);
         return () => clearTimeout(timer);
     }, [ankiSend]);
+
+    // The queued ask-AI's "started" notice auto-dismiss (word-popup-overhaul
+    // ticket 06): a successful dispatch floats the transient notice through
+    // the same ~4s gate as the Anki success notices — the same timing guard
+    // applies: ANY `aiStarted` change (a newer ask, the fetch effect's
+    // word-change reset, an unmount) tears the pending timer down before it
+    // can fire.
+    useEffect(() => {
+        if (!aiStarted) {
+            return;
+        }
+        const timer = setTimeout(() => setAiStarted(false), ANKI_NOTICE_LIFETIME_MS);
+        return () => clearTimeout(timer);
+    }, [aiStarted]);
 
     // The resolve list (ai-answer-words ticket 02), keyed as a primitive
     // string: the caller's ordered codes when a list is passed (ticket 03's
@@ -1983,19 +2059,23 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         );
     };
 
-    // The per-word Ask-AI send (popup-ai-enrich tickets 04 + 05): one POST
-    // to /ai/word-enrich. The response is the word-show payload (the same
-    // WordPopupPayload assembler serves both endpoints), so the swap is a
-    // plain setData — for a known word the enriched dictionary renders
-    // without a reopen; for the missing card the payload IS the transition
-    // to the full dictionary view. Both completion paths check the ask's
-    // origin first (see staleAsk): a late result for a popup that has moved
-    // to another token is dropped, and the fetch effect's reset clears the
-    // in-flight flag for the new word. Failures land in `aiError` in the
-    // info popup above the card — the server's guidance verbatim (no key,
-    // no model, already asked, in flight, throttled), sticky until
-    // dismissed — and the icon stays retryable, because only a succeeded
-    // ask locks.
+    // The per-word Ask-AI send (popup-ai-enrich tickets 04 + 05;
+    // word-popup-overhaul ticket 06 queued it): one POST to
+    // /ai/word-enrich. The response is the minimal {queued: true} marker —
+    // the provider call runs in the queue — so the success path NEVER
+    // swaps the payload: it floats the transient "AI enrichment started"
+    // notice through the info popup, and the enriched content appears the
+    // next time the popup opens (the icon's ai_asked flips then too — the
+    // re-ask variant picks it up from the fresh payload, never live). A
+    // failed JOB is silent client-side: nothing to wire, the ledger just
+    // stays failed and the icon retryable. Both completion paths check the
+    // ask's origin first (see staleAsk): a late result for a popup that
+    // has moved to another token is dropped, and the fetch effect's reset
+    // clears the in-flight flag and the notice for the new word.
+    // Failures of the dispatch itself land in `aiError` in the info popup
+    // above the card — the server's guidance verbatim (no key, no model,
+    // already asked/in flight, throttled, non-admin), sticky until
+    // dismissed.
     const staleAsk = (origin) => dataRef.current !== origin.data
         || originRef.current.wordId !== origin.wordId
         || originRef.current.surface !== origin.surface
@@ -2035,9 +2115,12 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                 if (staleAsk(origin)) {
                     return;
                 }
+                // Queued: the ask is dispatched, the content arrives on the
+                // next open — the notice says so, the card keeps its
+                // current content (no live swap).
                 setAiBusy(false);
                 setAiErrorStatus(null);
-                setData(json.data);
+                setAiStarted(true);
             })
             .catch((e) => {
                 if (staleAsk(origin)) {
@@ -2089,9 +2172,9 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // The known-word ask / re-ask (ticket 04, re-ask per the ADR 0082
     // amendment): the BOUND word id (data.id — the same id the server's
     // ledger tracks and the payload's ai_asked reports) plus the popup's
-    // current surface — the response payload resolves from the same surface
-    // the initial GET did, so an inflected surface keeps its form-of line
-    // on the live swap.
+    // current surface. The queued flow answers {queued: true} without a
+    // payload, so the surface matters only if the dispatch itself 409s —
+    // the refetch sync below reuses it.
     const askAi = () => {
         if (!data || aiBusy) {
             return;
@@ -2102,9 +2185,12 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // The missing card's adopt-on-ask (ticket 05): the RAW clicked surface
     // plus the clicked column's language code — the server derives the
     // lookup key (never trusting the title), adopts onto the existing row
-    // or mints one, and the response payload swaps the missing card for the
-    // full dictionary view. A column without a language descriptor keeps
-    // the icon disabled: there is nothing valid to ask with.
+    // or mints one, and dispatches the queued job. The card stays missing
+    // until the popup reopens: the on-open resolve then finds the minted
+    // word and the fetch effect loads its payload (the response carries no
+    // payload to swap anymore). A column without a language descriptor
+    // keeps the icon hidden for non-admins and disabled here for admins:
+    // there is nothing valid to ask with.
     const askAiMissing = () => {
         if (data != null || aiBusy || language?.code == null) {
             return;
@@ -2132,26 +2218,30 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         >
             {wordId == null && lookedUpId == null && data == null ? (
                 // Missing mode (popup-ai-enrich ticket 03) until the
-                // adoption ask swaps a payload in (ticket 05) or the
-                // on-open lookup resolves a hit (ticket 07): the unmapped
-                // token's card — raw surface, honest not-in-dictionary
-                // note, the full toolbar (word-popup-overhaul ticket 05)
-                // with every wordless icon disabled. No fetch, no open
-                // penalty (a word that stays missing costs nothing), no
+                // on-open lookup resolves the adopted word a queued ask
+                // minted (ticket 05's ask dispatches the job now — no
+                // payload comes back to swap — and ticket 07's resolve
+                // links it on the next open): the unmapped token's card —
+                // raw surface, honest not-in-dictionary note, the full
+                // toolbar (word-popup-overhaul ticket 05) with every
+                // wordless icon disabled. No fetch, no open penalty (a
+                // word that stays missing costs nothing), no
                 // familiarity/frequency/form-of, and no progress/Anki
                 // handlers passed down — their structural absence is what
-                // disables those icons — while the robot (Models used) and
-                // Ask-AI stay live. Ask-AI is the only path from missing to
-                // populated, and the response payload moves the popup to the
-                // full dictionary view below.
+                // disables those icons — while the robot (Models used)
+                // stays live and Ask-AI renders for approved admins only
+                // (word-popup-overhaul ticket 06). Ask-AI is still the only
+                // path from missing to populated — by way of the reopen.
                 <MissingPopupContent
                     surface={surface}
                     sections={effectiveSections}
                     explainProps={explainProps}
                     modelsOpen={modelsOpen}
                     onModelsOpenChange={setModelsOpen}
-                    onAskAi={language?.code != null && !lookupBusy ? askAiMissing : null}
+                    canAskAi={canAskAi}
+                    onAskAi={canAskAi && language?.code != null && !lookupBusy ? askAiMissing : null}
                     aiBusy={aiBusy}
+                    aiStarted={aiStarted}
                     aiError={aiError}
                     aiErrorStatus={aiErrorStatus}
                     onDismissAskAi={dismissAskAiError}
@@ -2189,8 +2279,10 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
                             ankiSettings={ankiSettings}
                             ankiUnknown={ankiUnknown}
                             onAnkiProbe={probeAnkiNow}
-                            onAskAi={askAi}
+                            canAskAi={canAskAi}
+                            onAskAi={canAskAi ? askAi : null}
                             aiBusy={aiBusy}
+                            aiStarted={aiStarted}
                             aiError={aiError}
                             aiErrorStatus={aiErrorStatus}
                             onDismissAnki={dismissAnkiStatus}

@@ -1,8 +1,9 @@
 <?php
 
 use App\Classes\AIModelResolver;
+use App\Classes\WordAiEnrichmentService;
 use App\Exceptions\AiProviderException;
-use App\Http\Controllers\ReadingAiController;
+use App\Jobs\FetchWordAiEnrichment;
 use App\Models\Definition;
 use App\Models\Etymology;
 use App\Models\Example;
@@ -11,20 +12,24 @@ use App\Models\Language;
 use App\Models\PromptTemplate;
 use App\Models\Transcription;
 use App\Models\TranscriptionType;
+use App\Models\User;
 use App\Models\Word;
 use App\Models\WordAiFetch;
 use App\Models\WordTranslation;
 use App\Support\PromptTemplates;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Mockery\MockInterface;
 
 const AI_ENRICH_MODEL_MOCK = ['id' => 7, 'key' => 'openrouter:google/gemini-3-flash-preview', 'label' => 'Gemini Flash'];
 
 /**
- * A sparse EN word (no content at all), the acting user's native language
+ * A sparse EN word (no content at all), the asking user's native language
  * Russian, and one EXISTING ru word («банк») the AI's translation candidate
  * can link to — plus a candidate no ru row carries, which must stage into
  * the source word's translations JSON instead of creating anything.
+ * The asker is an approved admin (word-popup-overhaul ticket 06): the
+ * endpoint answers 403 to everyone else.
  */
 function createEnrichFixture(): array
 {
@@ -36,15 +41,32 @@ function createEnrichFixture(): array
         'slug' => 'ipa',
         'title' => 'IPA',
     ]);
-    $user = nativeRuUser();
+    $user = adminRuEnricher();
 
     return ['word' => $enWord, 'ruWord' => $ruWord, 'user' => $user];
 }
 
+/**
+ * The approved-admin asker with the Russian native language — the fixture's
+ * acting user (helper name differs from AiWordEnrichAdoptTest's on purpose:
+ * parallel workers may load both files into one process).
+ */
+function adminRuEnricher(): User
+{
+    createLanguages();
+
+    $user = User::factory()->admin()->create();
+    $user->settings()->updateOrCreate([], [
+        'native_language_id' => Language::query()->where('code', 'ru')->value('id'),
+    ]);
+
+    return $user;
+}
+
 function enrichReply(): string
 {
-    // Fenced + prose-wrapped on purpose: the endpoint must take the lenient
-    // path end to end.
+    // Fenced + prose-wrapped on purpose: the job must take the lenient path
+    // end to end.
     return "Sure! Here is the JSON:\n```json\n".json_encode([
         'translations' => ['банк', 'берег', 'прибанок'],
         'definitions' => ['A financial institution.', 'The land alongside a river.'],
@@ -57,8 +79,8 @@ function enrichReply(): string
 /**
  * The mock's parseModelString answer: the real resolver's 'provider:model'
  * split (first colon, OpenRouter ids with '/' intact) as a plain closure —
- * every mock whose ask is reachable needs it, the controller splits the
- * ledger's provider/model through this API.
+ * every mock whose model resolution is reachable needs it, the controller
+ * splits the ledger's provider/model through this API.
  */
 function enrichModelSplit(): Closure
 {
@@ -72,12 +94,40 @@ function enrichModelSplit(): Closure
     };
 }
 
-function mockResolverForEnrich(?string $reply = null, ?string &$captured = null): MockInterface
+/**
+ * The DISPATCH-time mock (endpoint tests, Queue::fake): the click still
+ * resolves the model + key cheaply — against the SESSION user (withNoArgs)
+ * — and must never reach the provider: the ask lives in the queued job now
+ * (word-popup-overhaul ticket 06).
+ */
+function mockResolverForEnrichDispatch(): MockInterface
 {
     $mock = mock(AIModelResolver::class);
-    $mock->shouldReceive('resolveExplanationModel')->andReturn(AI_ENRICH_MODEL_MOCK);
+    $mock->shouldReceive('resolveExplanationModel')->withNoArgs()->andReturn(AI_ENRICH_MODEL_MOCK);
     $mock->shouldReceive('parseModelString')->andReturnUsing(enrichModelSplit());
-    $mock->shouldReceive('ask')->andReturnUsing(function ($model, $instruction, $question) use ($reply, &$captured) {
+    $mock->shouldReceive('ask')->never();
+    app()->instance(AIModelResolver::class, $mock);
+
+    return $mock;
+}
+
+/**
+ * The JOB-time mock: the queued job resolves the model against the CARRIED
+ * user (the explicit-user seam — never the authenticated session, a worker
+ * has none) and runs the provider ask. $capturedUser pins the seam; in a
+ * job test nothing is authenticated, so the ask only succeeds because the
+ * job passed its own user through.
+ */
+function mockResolverForEnrichJob(?string $reply = null, ?string &$captured = null, ?User &$capturedUser = null): MockInterface
+{
+    $mock = mock(AIModelResolver::class);
+    $mock->shouldReceive('resolveExplanationModel')->andReturnUsing(function (?User $user = null) use (&$capturedUser) {
+        $capturedUser = $user;
+
+        return AI_ENRICH_MODEL_MOCK;
+    });
+    $mock->shouldReceive('parseModelString')->andReturnUsing(enrichModelSplit());
+    $mock->shouldReceive('ask')->andReturnUsing(function ($model, $instruction, $question, $user = null) use ($reply, &$captured) {
         $captured = ['model' => $model, 'instruction' => $instruction, 'question' => $question];
 
         return $reply ?? enrichReply();
@@ -87,45 +137,70 @@ function mockResolverForEnrich(?string $reply = null, ?string &$captured = null)
     return $mock;
 }
 
-it('enriches a sparse word end to end with the faked AI: content rows, link-only translations, succeeded ledger, fresh payload', function () {
+/**
+ * The ledger row exactly as the dispatching controller leaves it: pending,
+ * attempts bumped, asked_at fresh, the resolved model's two halves stored.
+ * The job finalizes THIS row.
+ */
+function seedPendingEnrichLedger(int $wordId, int $attempts = 1): WordAiFetch
+{
+    return WordAiFetch::query()->create([
+        'word_id' => $wordId,
+        'status' => WordAiFetch::STATUS_PENDING,
+        'provider' => 'openrouter',
+        'model' => 'google/gemini-3-flash-preview',
+        'attempts' => $attempts,
+        'asked_at' => now(),
+    ]);
+}
+
+it('queues the ask: an admin POST answers the minimal {queued: true} payload, never touches the provider, records the pending ledger, and dispatches the job carrying the asking user', function () {
     $fixture = createEnrichFixture();
-    $captured = null;
-    mockResolverForEnrich(null, $captured);
+    Queue::fake();
+    mockResolverForEnrichDispatch();
 
     $response = $this->actingAs($fixture['user'])
         ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id]);
 
+    // The click answers immediately: no AI payload swap-in anymore — the
+    // response IS the minimal queued marker.
     $response->assertOk();
+    expect($response->json())->toBe(['queued' => true]);
 
-    $payload = $response->json('data');
-    // The popup swaps this payload in place of the initial fetch's, so the
-    // shape must match GET /words/{word} exactly, and the enriched content
-    // must already ride inside the entries.
-    $show = $this->actingAs($fixture['user'])
-        ->getJson('/words/'.$fixture['word']->id)->json('data');
-    expect(array_keys($payload))->toEqual(array_keys($show));
-    expect($payload['id'])->toBe($fixture['word']->id);
-    expect($payload['ai_asked'])->toBeTrue();
-    // Definitions ship as {text, labels} objects — and the ask response and
-    // the initial fetch carry the identical shape (the one assembler,
-    // popup-usage-labels ticket 01).
-    expect($payload['entries'][0]['definitions'])->toBe($show['entries'][0]['definitions']);
-    expect($payload['entries'][0]['definitions'])->toContain(['text' => 'A financial institution.', 'labels' => []]);
-    expect($payload['entries'][0]['transcriptions'][0]['value'])->toBe('bæŋk');
+    // No AI call in the HTTP request (the dispatch mock's ask->never pin)
+    // and nothing merged yet.
+    expect(Definition::query()->where('word_id', $fixture['word']->id)->count())->toBe(0);
 
-    // The staged raw strings ride the shared payload (popup-provenance
-    // ticket 02): the linked «банк» is deduped out, the unmatched two
-    // surface language-less as-is — on the ask response AND the refetched
-    // show payload, the one assembler serving both.
-    expect($payload['entries'][0]['staged_translations'])->toBe(['берег', 'прибанок']);
-    expect($show['entries'][0]['staged_translations'])->toBe(['берег', 'прибанок']);
+    // The dispatch-time ledger gate's row: pending, one attempt, the
+    // resolved model's two halves.
+    $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->firstOrFail();
+    expect($ledger->status)->toBe('pending');
+    expect($ledger->attempts)->toBe(1);
+    expect($ledger->provider)->toBe('openrouter');
+    expect($ledger->model)->toBe('google/gemini-3-flash-preview');
+    expect($ledger->asked_at)->not->toBeNull();
+    expect($ledger->succeeded_at)->toBeNull();
 
-    // The word's import provenance rides the same top level (popup-provenance
-    // ticket 04): null on BOTH sides here — the fixture word was never
-    // importer-stamped and enriching an existing row never claims its source
-    // (ADR 0084) — so the header badge shows "ai" alone for this word.
-    expect($payload['source'])->toBeNull();
-    expect($show['source'])->toBeNull();
+    // The job carries the asking user's id and the word's id — scalar ids,
+    // SerializesModels-friendly (the FetchWordTranslations precedent).
+    Queue::assertPushed(FetchWordAiEnrichment::class, fn (FetchWordAiEnrichment $job) => $job->wordId === $fixture['word']->id
+        && $job->userId === $fixture['user']->id);
+});
+
+it('runs the queued job: content rows merged with ai provenance, link-only translations, succeeded ledger, word touched, ai_asked true on the next open', function () {
+    $fixture = createEnrichFixture();
+    Http::fake();
+    seedPendingEnrichLedger($fixture['word']->id);
+
+    $captured = null;
+    $capturedUser = null;
+    mockResolverForEnrichJob(null, $captured, $capturedUser);
+
+    // Nothing is authenticated here: the job must run the ask against the
+    // user it CARRIES (the explicit-user seam), never an auth session.
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
+
+    expect($capturedUser?->is($fixture['user']))->toBeTrue();
 
     // Content rows all carry the ai provenance marker.
     expect(Definition::query()->where('word_id', $fixture['word']->id)->where('source', 'ai')->count())->toBe(2);
@@ -144,16 +219,25 @@ it('enriches a sparse word end to end with the faked AI: content rows, link-only
     $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->firstOrFail();
     expect($ledger->status)->toBe('succeeded');
     expect($ledger->attempts)->toBe(1);
-    expect($ledger->provider)->toBe('openrouter');
-    expect($ledger->model)->toBe('google/gemini-3-flash-preview');
     expect($ledger->asked_at)->not->toBeNull();
     expect($ledger->succeeded_at)->not->toBeNull();
     expect($ledger->error)->toBeNull();
 
-    // The word was touched, so ticket 02's completeness recalculated over
-    // the new content (weighted v2): links (3) + definitions on a major POS
-    // (2) + transcriptions + examples + etymologies (1 each) = 8, no
-    // frequency rank, no labels.
+    // The next open's payload: ai_asked true (the re-ask icon), the
+    // enriched content riding inside the entries, definitions as
+    // {text, labels} objects. The word was touched, so ticket 02's lazy
+    // completeness recalculated over the new content (weighted v2): links
+    // (3) + definitions on a major POS (2) + transcriptions + examples +
+    // etymologies (1 each) = 8, no frequency rank, no labels.
+    $show = $this->actingAs($fixture['user'])
+        ->getJson('/words/'.$fixture['word']->id)->json('data');
+    expect($show['id'])->toBe($fixture['word']->id);
+    expect($show['ai_asked'])->toBeTrue();
+    expect($show['entries'][0]['definitions'])->toContain(['text' => 'A financial institution.', 'labels' => []]);
+    expect($show['entries'][0]['transcriptions'][0]['value'])->toBe('bæŋk');
+    expect($show['entries'][0]['staged_translations'])->toBe(['берег', 'прибанок']);
+    expect($show['source'])->toBeNull();
+    $word = $fixture['word']->fresh();
     expect($word->completeness)->toBe(8);
     expect($word->completeness_at)->not->toBeNull();
 
@@ -165,8 +249,9 @@ it('enriches a sparse word end to end with the faked AI: content rows, link-only
     expect($captured['model'])->toBe('openrouter:google/gemini-3-flash-preview');
 });
 
-it('re-asks an already-enriched word: the previous AI rows are replaced, imported rows stay', function () {
+it('re-asks through the queue: the dispatch passes the succeeded gate, the job replaces the previous AI rows, imported rows stay', function () {
     Http::fake();
+    Queue::fake();
     $fixture = createEnrichFixture();
     // The first ask's succeeded ledger and its content: one AI-attributed
     // definition (the re-ask must clear it) beside one imported one (the
@@ -186,16 +271,21 @@ it('re-asks an already-enriched word: the previous AI rows are replaced, importe
     Definition::query()->create(['word_id' => $fixture['word']->id, 'definition' => 'An imported gloss.']);
 
     $captured = null;
-    mockResolverForEnrich(null, $captured);
+    mockResolverForEnrichJob(null, $captured);
 
     $response = $this->actingAs($fixture['user'])
         ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id]);
 
     // A succeeded row is no longer a lock (ADR 0082 amendment): the ask
-    // runs, the SAME ledger row advances, and the fresh reply replaces the
-    // previous AI rows — the imported one survives untouched.
+    // dispatches, and the SAME ledger row advances at dispatch time.
     $response->assertOk();
-    expect($response->json('data.ai_asked'))->toBeTrue();
+    expect($response->json('queued'))->toBeTrue();
+    Queue::assertPushed(FetchWordAiEnrichment::class, fn (FetchWordAiEnrichment $job) => $job->wordId === $fixture['word']->id);
+    expect(WordAiFetch::query()->where('word_id', $fixture['word']->id)->value('attempts'))->toBe(2);
+
+    // The queued job's fresh reply replaces the previous AI rows — the
+    // imported one survives untouched.
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
     expect($captured['question'])->toContain('bank');
 
     $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->sole();
@@ -216,7 +306,30 @@ it('re-asks an already-enriched word: the previous AI rows are replaced, importe
     expect($definitions->slice(1)->pluck('source')->all())->each->toBe('ai');
 });
 
-it('keeps ai_asked true after a failed re-ask — the icon stays the re-ask variant', function () {
+it('answers 403 to a non-admin before any ledger row or mint, and dispatches nothing', function () {
+    Http::fake();
+    Queue::fake();
+    createWordClasses();
+    $enWord = createWord('en', 'bank', 'noun');
+    // A plain approved user — the reading user the icon is hidden from.
+    $user = nativeRuUser();
+
+    $response = $this->actingAs($user)
+        ->postJson('/ai/word-enrich', ['word_id' => $enWord->id]);
+
+    // The reading-surfaces JSON error shape (ADR 0069), hidden-icon parity:
+    // the endpoint refuses what the UI never shows.
+    $response->assertForbidden();
+    expect($response->json('error'))->toBe('Only approved admins can ask the AI to enrich a word.');
+
+    Queue::assertNothingPushed();
+    expect(WordAiFetch::query()->where('word_id', $enWord->id)->exists())->toBeFalse();
+
+    // (An admin whose approval lapsed never reaches this gate: the route's
+    // `approved` middleware bounces them first — its own tests cover that.)
+});
+
+it('keeps ai_asked true after a failed re-ask job — the icon stays the re-ask variant', function () {
     Http::fake();
     $fixture = createEnrichFixture();
     WordAiFetch::query()->create([
@@ -235,9 +348,7 @@ it('keeps ai_asked true after a failed re-ask — the icon stays the re-ask vari
     );
     app()->instance(AIModelResolver::class, $mock);
 
-    $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
-        ->assertTooManyRequests();
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
 
     // The re-ask finalized FAILED — but succeeded_at (the first success)
     // is kept, and ai_asked is judged on it: the word-show payload stays
@@ -245,41 +356,20 @@ it('keeps ai_asked true after a failed re-ask — the icon stays the re-ask vari
     // regressing to the first-time icon.
     $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->sole();
     expect($ledger->status)->toBe('failed');
-    expect($ledger->attempts)->toBe(2);
+    expect($ledger->attempts)->toBe(1);
     expect($ledger->succeeded_at)->not->toBeNull();
+    expect($ledger->error)->toBe('The AI service is busy. Please try again in a moment.');
 
     $show = $this->actingAs($fixture['user'])
         ->getJson('/words/'.$fixture['word']->id)->json('data');
     expect($show['ai_asked'])->toBeTrue();
 });
 
-it('surfaces a missing provider key as 403 guidance and keeps the ask retryable', function () {
+it('keeps the ask retryable after a provider failure: the job finalizes the ledger failed once and the next dispatch passes the failed gate', function () {
+    Http::fake();
+    Queue::fake();
     $fixture = createEnrichFixture();
-
-    $mock = mock(AIModelResolver::class);
-    $mock->shouldReceive('resolveExplanationModel')->andReturn(AI_ENRICH_MODEL_MOCK);
-    $mock->shouldReceive('parseModelString')->andReturnUsing(enrichModelSplit());
-    $mock->shouldReceive('ask')->once()->andThrow(
-        new AiProviderException('You have not added an API key for this provider.', 403),
-    );
-    app()->instance(AIModelResolver::class, $mock);
-
-    $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
-        ->assertForbidden()
-        ->assertJsonPath('error', 'You have not added an API key for this provider.');
-
-    // Failed, not locked — and nothing was persisted.
-    $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->firstOrFail();
-    expect($ledger->status)->toBe('failed');
-    expect($ledger->attempts)->toBe(1);
-    expect($ledger->error)->toBe('You have not added an API key for this provider.');
-    expect($ledger->succeeded_at)->toBeNull();
-    expect(Definition::query()->where('word_id', $fixture['word']->id)->count())->toBe(0);
-});
-
-it('retries a failed ask with attempts++ and finalizes succeeded on the first success', function () {
-    $fixture = createEnrichFixture();
+    seedPendingEnrichLedger($fixture['word']->id);
 
     $mock = mock(AIModelResolver::class);
     $mock->shouldReceive('resolveExplanationModel')->andReturn(AI_ENRICH_MODEL_MOCK);
@@ -290,28 +380,82 @@ it('retries a failed ask with attempts++ and finalizes succeeded on the first su
     $mock->shouldReceive('ask')->once()->andReturn(enrichReply());
     app()->instance(AIModelResolver::class, $mock);
 
-    $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
-        ->assertTooManyRequests();
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
 
+    // Failed, not locked — the error rides the ledger row (the client-side
+    // silence is the UI's business: nothing surfaces on the next open).
+    $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->firstOrFail();
+    expect($ledger->status)->toBe('failed');
+    expect($ledger->attempts)->toBe(1);
+    expect($ledger->succeeded_at)->toBeNull();
+    expect(Definition::query()->where('word_id', $fixture['word']->id)->count())->toBe(0);
+
+    // The user re-asks via the icon: the failed gate passes, the retry
+    // dispatches, and the job finalizes succeeded on the first success —
+    // each attempt produced its rows exactly once.
     $this->actingAs($fixture['user'])
         ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
         ->assertOk();
+    Queue::assertPushed(FetchWordAiEnrichment::class, fn (FetchWordAiEnrichment $job) => $job->wordId === $fixture['word']->id);
+    expect(WordAiFetch::query()->where('word_id', $fixture['word']->id)->value('attempts'))->toBe(2);
 
-    $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->firstOrFail();
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
+
+    $ledger = $ledger->fresh();
     expect($ledger->status)->toBe('succeeded');
     expect($ledger->attempts)->toBe(2);
     expect($ledger->error)->toBeNull();
-
-    // One retried attempt produced each row exactly once.
     expect(Definition::query()->where('word_id', $fixture['word']->id)->count())->toBe(2);
 });
 
+it('surfaces a missing provider key inside the job as a failed ledger row, and a keyless user gets the choose-model guidance at dispatch', function () {
+    Http::fake();
+    Queue::fake();
+    $fixture = createEnrichFixture();
+
+    // At dispatch a keyless user resolves NO model (the provider gate
+    // filters unkeyed providers out): the existing 400 guidance answers and
+    // nothing is dispatched — no ledger row, no mint, no job.
+    $mock = mock(AIModelResolver::class);
+    $mock->shouldReceive('resolveExplanationModel')->once()->withNoArgs()->andReturnNull();
+    $mock->shouldReceive('ask')->never();
+    app()->instance(AIModelResolver::class, $mock);
+
+    $this->actingAs($fixture['user'])
+        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
+        ->assertStatus(400)
+        ->assertJsonPath('error', 'Choose an AI model in your profile settings.');
+    Queue::assertNothingPushed();
+    expect(WordAiFetch::query()->where('word_id', $fixture['word']->id)->exists())->toBeFalse();
+
+    // The job-side 403 guidance (keys vanished between dispatch and run):
+    // the ask's own error finalizes the ledger failed — silently, the user
+    // just sees the icon retryable again.
+    seedPendingEnrichLedger($fixture['word']->id);
+    $mock = mock(AIModelResolver::class);
+    $mock->shouldReceive('resolveExplanationModel')->andReturn(AI_ENRICH_MODEL_MOCK);
+    $mock->shouldReceive('parseModelString')->andReturnUsing(enrichModelSplit());
+    $mock->shouldReceive('ask')->once()->andThrow(
+        new AiProviderException('You have not added an API key for this provider.', 403),
+    );
+    app()->instance(AIModelResolver::class, $mock);
+
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
+
+    $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->firstOrFail();
+    expect($ledger->status)->toBe('failed');
+    expect($ledger->attempts)->toBe(1);
+    expect($ledger->error)->toBe('You have not added an API key for this provider.');
+    expect($ledger->succeeded_at)->toBeNull();
+    expect(Definition::query()->where('word_id', $fixture['word']->id)->count())->toBe(0);
+});
+
 it('answers 400 guidance and records no attempt when no AI model is usable', function () {
+    Queue::fake();
     $fixture = createEnrichFixture();
 
     $mock = mock(AIModelResolver::class);
-    $mock->shouldReceive('resolveExplanationModel')->once()->andReturnNull();
+    $mock->shouldReceive('resolveExplanationModel')->once()->withNoArgs()->andReturnNull();
     $mock->shouldReceive('ask')->never();
     app()->instance(AIModelResolver::class, $mock);
 
@@ -320,26 +464,29 @@ it('answers 400 guidance and records no attempt when no AI model is usable', fun
         ->assertStatus(400)
         ->assertJsonPath('error', 'Choose an AI model in your profile settings.');
 
+    Queue::assertNothingPushed();
     expect(WordAiFetch::query()->where('word_id', $fixture['word']->id)->exists())->toBeFalse();
 });
 
 it('finalizes an unparseable reply as a retryable failure', function () {
+    Http::fake();
     $fixture = createEnrichFixture();
-    mockResolverForEnrich('I am sorry, I cannot help with that.');
+    seedPendingEnrichLedger($fixture['word']->id);
+    mockResolverForEnrichJob('I am sorry, I cannot help with that.');
 
-    $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
-        ->assertStatus(502)
-        ->assertJsonPath('error', 'The AI reply could not be parsed as strict JSON.');
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
 
     $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->firstOrFail();
     expect($ledger->status)->toBe('failed');
     expect($ledger->attempts)->toBe(1);
+    expect($ledger->error)->toBe('The AI reply could not be parsed as strict JSON.');
     expect(Definition::query()->where('word_id', $fixture['word']->id)->count())->toBe(0);
 });
 
 it('finalizes SUCCEEDED when a parsed reply dedupes to nothing new — the ask itself succeeded', function () {
+    Http::fake();
     $fixture = createEnrichFixture();
+    seedPendingEnrichLedger($fixture['word']->id);
     Definition::query()->create(['word_id' => $fixture['word']->id, 'definition' => 'A financial institution.']);
     WordTranslation::link($fixture['word']->id, $fixture['ruWord']->id);
 
@@ -347,17 +494,13 @@ it('finalizes SUCCEEDED when a parsed reply dedupes to nothing new — the ask i
         'translations' => ['банк'],
         'definitions' => ['A financial institution.'],
     ]);
-    mockResolverForEnrich($dupReply);
+    mockResolverForEnrichJob($dupReply);
 
-    $response = $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id]);
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
 
     // The dedupe landing nothing new is still a finished ask: the ledger
     // finalizes SUCCEEDED — that succeeded_at is what the payload's
     // ai_asked (and the toolbar's re-ask variant) reports.
-    $response->assertOk();
-    expect($response->json('data.ai_asked'))->toBeTrue();
-
     expect(Definition::query()->where('word_id', $fixture['word']->id)->count())->toBe(1);
     $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->firstOrFail();
     expect($ledger->status)->toBe('succeeded');
@@ -365,30 +508,37 @@ it('finalizes SUCCEEDED when a parsed reply dedupes to nothing new — the ask i
     expect($ledger->error)->toBeNull();
 });
 
-it('takes over a stale pending row past the grace window and proceeds with the ask', function () {
+it('takes over a stale pending row past the grace window, lets the retry dispatch, and the job finalizes succeeded', function () {
+    Queue::fake();
     $fixture = createEnrichFixture();
     // A fatal/timeout between the pending save and the finalize strands a
     // pending row forever — pending is not a lock (spec decision 4: locked
-    // by success only). This one is minutes past the grace window.
+    // by success only). This one is minutes past the grace window: a
+    // crashed queue worker is exactly the failure mode the window nets.
     WordAiFetch::query()->create([
         'word_id' => $fixture['word']->id,
         'status' => WordAiFetch::STATUS_PENDING,
         'provider' => 'openrouter',
         'model' => 'google/gemini-3-flash-preview',
         'attempts' => 1,
-        'asked_at' => now()->subMinutes(ReadingAiController::PENDING_STALE_AFTER_MINUTES + 5),
+        'asked_at' => now()->subMinutes(30),
     ]);
 
     $captured = null;
-    mockResolverForEnrich(null, $captured);
+    mockResolverForEnrichJob(null, $captured);
 
     $response = $this->actingAs($fixture['user'])
         ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id]);
 
+    // The retry took the SAME row over: attempts advanced, the ask
+    // dispatches.
     $response->assertOk();
-    expect($response->json('data.ai_asked'))->toBeTrue();
+    expect($response->json('queued'))->toBeTrue();
+    Queue::assertPushed(FetchWordAiEnrichment::class, fn (FetchWordAiEnrichment $job) => $job->wordId === $fixture['word']->id);
+    expect(WordAiFetch::query()->where('word_id', $fixture['word']->id)->value('attempts'))->toBe(2);
 
-    // The retry took the SAME row over: attempts advanced, the ask ran.
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
+
     $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->sole();
     expect($ledger->status)->toBe('succeeded');
     expect($ledger->attempts)->toBe(2);
@@ -396,49 +546,15 @@ it('takes over a stale pending row past the grace window and proceeds with the a
     expect(Definition::query()->where('word_id', $fixture['word']->id)->count())->toBe(2);
 });
 
-it('builds the enrich payload from the clicked surface: is_form and form_of survive the live swap', function () {
-    createWordClasses();
-    $go = createWord('en', 'go', 'verb');
-    $wend = createWord('en', 'wend', 'verb');
-    // The forms table maps «went» onto both verbs — the popup's family
-    // resolves from the CLICKED surface, and the enrich response must agree
-    // with the initial GET (it passed l_word before, so the
-    // "«went» — form of «go»" line vanished on the live swap).
-    Form::query()->create(['word_id' => $go->id, 'form' => 'went', 'l_word' => 'went']);
-    Form::query()->create(['word_id' => $wend->id, 'form' => 'went', 'l_word' => 'went']);
-    $user = nativeRuUser();
-
-    $captured = null;
-    mockResolverForEnrich(null, $captured);
-
-    $response = $this->actingAs($user)
-        ->postJson('/ai/word-enrich', ['word_id' => $go->id, 'surface' => 'Went']);
-
-    $response->assertOk();
-    // The surface normalizes like the word-show endpoint's (lowercase +
-    // combining marks stripped) before it compares against the bound
-    // headword's key: an inflected surface stays a form on the swap-in.
-    expect($response->json('data.is_form'))->toBeTrue();
-    expect($response->json('data.form_of'))->toBe(['wend']);
-    expect($response->json('data.word'))->toBe('go');
-
-    // No surface, no drift: the payload falls back to the word's own key.
-    $bare = $this->actingAs($user)
-        ->postJson('/ai/word-enrich', ['word_id' => createWord('en', 'jump', 'verb')->id]);
-    $bare->assertOk();
-    expect($bare->json('data.is_form'))->toBeFalse();
-});
-
 it('dedupes exact text: existing rows keep their imported provenance, only new rows carry source=ai', function () {
+    Http::fake();
     $fixture = createEnrichFixture();
+    seedPendingEnrichLedger($fixture['word']->id);
     Definition::query()->create(['word_id' => $fixture['word']->id, 'definition' => 'A financial institution.']);
 
-    mockResolverForEnrich();
+    mockResolverForEnrichJob();
 
-    $response = $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id]);
-
-    $response->assertOk();
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
 
     $definitions = Definition::query()->where('word_id', $fixture['word']->id)->orderBy('id')->get();
     expect($definitions)->toHaveCount(2);
@@ -447,8 +563,10 @@ it('dedupes exact text: existing rows keep their imported provenance, only new r
     expect($definitions[1]->source)->toBe('ai');
 });
 
-it('caps and truncates what it persists: 8 definitions, 4 of the rest, 500-char definitions', function () {
+it('caps and truncates what it persists: 8 definitions, 4 of the rest, 1000-char etymologies', function () {
+    Http::fake();
     $fixture = createEnrichFixture();
+    seedPendingEnrichLedger($fixture['word']->id);
 
     $greedy = json_encode([
         'definitions' => array_map(fn (int $i): string => "Definition {$i}.", range(1, 15)),
@@ -457,11 +575,9 @@ it('caps and truncates what it persists: 8 definitions, 4 of the rest, 500-char 
         // truncation is measured.
         'etymologies' => array_map(fn (int $i): string => "Root {$i}: ".str_repeat('e', 1200), range(1, 9)),
     ]);
-    mockResolverForEnrich($greedy);
+    mockResolverForEnrichJob($greedy);
 
-    $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
-        ->assertOk();
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
 
     expect(Definition::query()->where('word_id', $fixture['word']->id)->count())->toBe(8);
     expect(Example::query()->where('word_id', $fixture['word']->id)->count())->toBe(4);
@@ -471,32 +587,32 @@ it('caps and truncates what it persists: 8 definitions, 4 of the rest, 500-char 
         ->each(fn (Etymology $etymology) => expect($etymology->etymology)->toHaveLength(1000));
 });
 
-it('assembles the instruction from the admin-edited word-enrichment template', function () {
+it('assembles the instruction from the admin-edited word-enrichment template inside the job', function () {
+    Http::fake();
     $fixture = createEnrichFixture();
+    seedPendingEnrichLedger($fixture['word']->id);
     PromptTemplate::query()->updateOrCreate(
         ['key' => PromptTemplates::ENRICHMENT_KEY],
         ['text' => 'Enrich the :language word :word for a :native speaker with strict JSON.'],
     );
 
     $captured = null;
-    mockResolverForEnrich(null, $captured);
+    mockResolverForEnrichJob(null, $captured);
 
-    $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
-        ->assertOk();
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
 
     expect($captured['instruction'])
         ->toBe('Enrich the English word bank for a Russian speaker with strict JSON.');
 });
 
 it('falls back to the monolingual code word-enrichment template when no admin row exists', function () {
+    Http::fake();
     $fixture = createEnrichFixture();
+    seedPendingEnrichLedger($fixture['word']->id);
     $captured = null;
-    mockResolverForEnrich(null, $captured);
+    mockResolverForEnrichJob(null, $captured);
 
-    $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
-        ->assertOk();
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
 
     // The monolingual dictionary contract (ticket 08): strict JSON, with
     // definitions / etymology notes / examples in the word's OWN language
@@ -519,20 +635,18 @@ it('falls back to the monolingual code word-enrichment template when no admin ro
 it('drops AI definitions in a foreign script at the merge — the import guard holds for AI content', function () {
     Http::fake();
     $fixture = createEnrichFixture();
+    seedPendingEnrichLedger($fixture['word']->id);
     // The disobedient-model case the monolingual prompt exists for: an en
     // word answered with Cyrillic definitions. Only the own-script (Latin)
     // definition survives the merge; the Cyrillic etymology note lands —
     // etymologies stay unguarded, the import's deliberate parity.
-    mockResolverForEnrich(json_encode([
+    mockResolverForEnrichJob(json_encode([
         'translations' => ['банк'],
         'definitions' => ['домашнее животное семейства псовых', 'A financial institution.'],
         'etymologies' => ['От итальянского banca.'],
     ]));
 
-    $response = $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id]);
-
-    $response->assertOk();
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
 
     $definitions = Definition::query()->where('word_id', $fixture['word']->id)->orderBy('id')->get();
     expect($definitions)->toHaveCount(1);
@@ -547,19 +661,16 @@ it('drops AI definitions in a foreign script at the merge — the import guard h
 it('still finalizes the word SUCCEEDED when every AI definition dropped the script guard', function () {
     Http::fake();
     $fixture = createEnrichFixture();
+    seedPendingEnrichLedger($fixture['word']->id);
     // All-Cyrillic definitions for the en word: the merge stores none of
     // them (the translations still link/stage), but the ask itself
-    // succeeded — 200 and a succeeded ledger, never a 502.
-    mockResolverForEnrich(json_encode([
+    // succeeded — a succeeded ledger, never a failed one.
+    mockResolverForEnrichJob(json_encode([
         'translations' => ['банк', 'прибанок'],
         'definitions' => ['домашнее животное семейства псовых', 'иностранный банк'],
     ]));
 
-    $response = $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id]);
-
-    $response->assertOk();
-    expect($response->json('data.ai_asked'))->toBeTrue();
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
 
     expect(Definition::query()->where('word_id', $fixture['word']->id)->count())->toBe(0);
     $ledger = WordAiFetch::query()->where('word_id', $fixture['word']->id)->firstOrFail();
@@ -568,12 +679,13 @@ it('still finalizes the word SUCCEEDED when every AI definition dropped the scri
     expect($ledger->error)->toBeNull();
 });
 
-it('persists a labelled {text, labels} definition on the source=ai row, the payload staying plain strings', function () {
+it('persists a labelled {text, labels} definition on the source=ai row, the payload shipping the labels', function () {
     Http::fake();
     $fixture = createEnrichFixture();
+    seedPendingEnrichLedger($fixture['word']->id);
     // Mixed shapes: a plain-string entry (unlabelled) and an object entry
     // whose closed-set labels survive; the unknown slug drops.
-    mockResolverForEnrich(json_encode([
+    mockResolverForEnrichJob(json_encode([
         'translations' => ['банк'],
         'definitions' => [
             'A financial institution.',
@@ -581,10 +693,7 @@ it('persists a labelled {text, labels} definition on the source=ai row, the payl
         ],
     ]));
 
-    $response = $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id]);
-
-    $response->assertOk();
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
 
     $definitions = Definition::query()->where('word_id', $fixture['word']->id)->orderBy('id')->get();
     expect($definitions)->toHaveCount(2);
@@ -595,10 +704,12 @@ it('persists a labelled {text, labels} definition on the source=ai row, the payl
         ->and($definitions[1]->source)->toBe('ai')
         ->and($definitions[1]->labels)->toBe(['dated']);
 
-    // The popup payload ships {text, labels} objects — the stored labels
-    // ride beside the text for the popup's chips (popup-usage-labels
-    // ticket 01); a null column lands as [].
-    expect($response->json('data.entries.0.definitions'))->toBe([
+    // The next open's payload ships {text, labels} objects — the stored
+    // labels ride beside the text for the popup's chips
+    // (popup-usage-labels ticket 01); a null column lands as [].
+    $show = $this->actingAs($fixture['user'])
+        ->getJson('/words/'.$fixture['word']->id)->json('data');
+    expect($show['entries'][0]['definitions'])->toBe([
         ['text' => 'A financial institution.', 'labels' => []],
         ['text' => 'The land alongside a river.', 'labels' => ['dated']],
     ]);
@@ -607,18 +718,17 @@ it('persists a labelled {text, labels} definition on the source=ai row, the payl
 it('drops a {text, labels} definition entirely when its text fails the script guard', function () {
     Http::fake();
     $fixture = createEnrichFixture();
+    seedPendingEnrichLedger($fixture['word']->id);
     // The ticket-08 guard still reads the TEXT: a labelled foreign-script
     // entry drops labels and all, while the own-script labelled one lands.
-    mockResolverForEnrich(json_encode([
+    mockResolverForEnrichJob(json_encode([
         'definitions' => [
             ['text' => 'домашнее животное семейства псовых', 'labels' => ['colloquial']],
             ['text' => 'A financial institution.', 'labels' => ['archaic']],
         ],
     ]));
 
-    $this->actingAs($fixture['user'])
-        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
-        ->assertOk();
+    (new FetchWordAiEnrichment($fixture['word']->id, $fixture['user']->id))->handle(app(AIModelResolver::class), app(WordAiEnrichmentService::class));
 
     $definitions = Definition::query()->where('word_id', $fixture['word']->id)->get();
     expect($definitions)->toHaveCount(1)
@@ -627,8 +737,9 @@ it('drops a {text, labels} definition entirely when its text fails the script gu
 });
 
 it('validates the word id and requires authentication', function () {
+    Queue::fake();
     $fixture = createEnrichFixture();
-    mockResolverForEnrich();
+    mockResolverForEnrichDispatch();
 
     $this->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])->assertUnauthorized();
 
@@ -639,33 +750,34 @@ it('validates the word id and requires authentication', function () {
     $this->actingAs($fixture['user'])
         ->postJson('/ai/word-enrich', ['word_id' => 999999])
         ->assertJsonValidationErrors(['word_id']);
+
+    Queue::assertNothingPushed();
 });
 
-it('rate-limits the word enrich endpoint after 20 requests per minute', function () {
+it('rate-limits the word enrich endpoint after 20 requests per minute — the queued flow still burns its hits', function () {
+    Queue::fake();
     $fixture = createEnrichFixture();
-    WordAiFetch::query()->create([
-        'word_id' => $fixture['word']->id,
-        'status' => WordAiFetch::STATUS_FAILED,
-        'attempts' => 1,
-    ]);
+    mockResolverForEnrichDispatch();
 
-    $mock = mock(AIModelResolver::class);
-    $mock->shouldReceive('resolveExplanationModel')->andReturn(AI_ENRICH_MODEL_MOCK);
-    $mock->shouldReceive('parseModelString')->andReturnUsing(enrichModelSplit());
-    // Every attempt fails with the provider's own 429 (finalized failed, so
-    // the lock never engages) and the first 20 requests really do reach the
-    // resolver; the 21st is blocked by the limiter before it.
-    $mock->shouldReceive('ask')->andThrow(
-        new AiProviderException('The AI service is busy. Please try again in a moment.', 429),
-    );
-    app()->instance(AIModelResolver::class, $mock);
+    // Request 1 passes the ledger gate and dispatches (pending row left
+    // behind); requests 2..20 run into the in-progress gate's clean 409 —
+    // every one of them still burns a limiter hit, the throttle middleware
+    // runs before the controller.
+    $this->actingAs($fixture['user'])
+        ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
+        ->assertOk();
 
-    for ($i = 1; $i <= 20; $i++) {
+    for ($i = 2; $i <= 20; $i++) {
         $this->actingAs($fixture['user'])
             ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
-            ->assertTooManyRequests();
+            ->assertStatus(409);
     }
 
+    // Exactly one ask ever dispatched for the word — the 409s dispatched
+    // nothing.
+    Queue::assertPushedTimes(FetchWordAiEnrichment::class, 1);
+
+    // Request 21: blocked by the limiter before the controller.
     $this->actingAs($fixture['user'])
         ->postJson('/ai/word-enrich', ['word_id' => $fixture['word']->id])
         ->assertTooManyRequests();

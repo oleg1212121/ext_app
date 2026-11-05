@@ -5,17 +5,15 @@ namespace App\Http\Controllers;
 use App\Classes\AIModelResolver;
 use App\Classes\EntityAccessService;
 use App\Classes\WordAiEnrichmentService;
-use App\Classes\WordFamily;
-use App\Classes\WordPopupPayload;
 use App\Exceptions\AiProviderException;
 use App\Http\Requests\AiQuestionRequest;
 use App\Http\Requests\AiWordEnrichRequest;
 use App\Http\Requests\AiWordExplainRequest;
+use App\Jobs\FetchWordAiEnrichment;
 use App\Models\EntitySentence;
 use App\Models\Language;
 use App\Models\Word;
 use App\Models\WordAiFetch;
-use App\Support\EnrichmentReply;
 use App\Support\PromptTemplates;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -202,15 +200,26 @@ class ReadingAiController extends Controller
     }
 
     /**
-     * Ask-AI enrichment (popup-ai-enrich tickets 04 + 05): the user's
-     * explanation model answers a strict-JSON prompt through the same
-     * BYO-key seam as explainWord, and the leniently-parsed reply merges
-     * straight into the word's dictionary content — definitions,
-     * transcriptions, examples, etymologies (new rows `source = 'ai'`),
-     * translations link-only per ADR 0078. The word_ai_fetches ledger locks
-     * the word on the first success; failed attempts stay retryable. The
-     * response is the word-show payload (assembled by the same
-     * WordPopupPayload presenter), so the popup swaps it in live.
+     * Ask-AI enrichment (popup-ai-enrich tickets 04 + 05; word-popup-overhaul
+     * ticket 06 made it admin-only, queued and fire-and-forget): the click
+     * still validates, resolves the model + key cheaply (no HTTP), and
+     * adopts/mints the word synchronously — so repeat clicks and races keep
+     * hitting the clean in-progress 409 through the dispatch-time ledger
+     * gate — then records the pending ledger row and DISPATCHES the queued
+     * job, answering immediately with the minimal `{queued: true}` payload.
+     * No AI call runs inside the HTTP request anymore: the job carries the
+     * asking user and runs the prompt ask, the lenient parse, the
+     * transactional merge, the succeeded finalize and the word touch — any
+     * failure finalizes the ledger failed (silently client-side). Model
+     * + key resolve TWICE by design: here against the session user (a
+     * no-model/no-key user gets the existing 400/403 guidance at dispatch
+     * and dispatches nothing), and again inside the job against the carried
+     * user via AIModelResolver's explicit-user seam.
+     *
+     * Admin-only (approved admins; ticket 06): the ask spends the asker's
+     * own API-key tokens, so the endpoint refuses everyone else — in the
+     * reading-surfaces JSON shape, before any gate, mint or ledger row —
+     * matching the sparkles icon the UI hides for them.
      *
      * Two request modes: the known-word path binds the word by id (ticket
      * 04); the missing-word adoption path (ticket 05) resolves it from the
@@ -221,17 +230,18 @@ class ReadingAiController extends Controller
      * mints nothing; the ledger gate runs once per path after the word is
      * known (409 precedence over the model 400 is ticket 04's documented
      * order on the known path).
-     *
-     * The optional `surface` (legal on both paths) is the clicked surface
-     * the popup resolves its payload from: it normalizes exactly like the
-     * word-show endpoint's (lowercase + combining marks stripped) and
-     * defaults to the word's own key when absent — so `is_form` /
-     * `form_of` survive the live swap on an inflected surface instead of
-     * vanishing because the payload rebuilt itself from `l_word`.
      */
     public function enrichWord(AiWordEnrichRequest $request): JsonResponse
     {
         $validated = $request->validated();
+
+        // Approved admins only: hidden, not disabled, in the UI; the gate
+        // sits first so a non-admin learns nothing about words or ledger
+        // state from this endpoint.
+        $user = $request->user();
+        if (! $user->isAdmin() || ! $user->is_approved) {
+            return $this->aiError('Only approved admins can ask the AI to enrich a word.', 403);
+        }
 
         /** @var Word|null $word */
         $word = array_key_exists('word_id', $validated)
@@ -295,62 +305,14 @@ class ReadingAiController extends Controller
             throw $e;
         }
 
-        $nativeLanguage = $request->user()->nativeLanguage();
-        $instruction = PromptTemplates::enrichment(
-            $word->word,
-            $word->language?->name ?? 'the word\'s language',
-            $nativeLanguage?->name ?? 'English',
-        );
+        // Fire-and-forget: the queued job (carrying the asking user's id
+        // and the word's) resolves model + key against that user again and
+        // runs the ask → parse → merge → finalize → touch. The pending row
+        // this save just recorded is what the job finalizes — and what the
+        // fresh-pending gate reports as "already in progress" until it does.
+        FetchWordAiEnrichment::dispatch($word->id, (int) $user->id);
 
-        // The adopted word's class is unknown until real data says
-        // otherwise (ADR 0059 spirit) — the placeholder class never
-        // travels into the prompt.
-        $classTitle = $word->wordClass?->title;
-        $question = 'Word to enrich: «'.$word->word.'»'
-            .($classTitle !== null && $word->wordClass->slug !== 'unknown' ? ' — '.$classTitle : '');
-
-        try {
-            $answer = $this->modelResolver->ask($model['key'], $instruction, $question);
-        } catch (InvalidArgumentException) {
-            return $this->failLedger($ledger, 'Invalid model selection.', 400);
-        } catch (AiProviderException $e) {
-            return $this->failLedger($ledger, $e->getMessage(), $e->getStatusCode());
-        }
-
-        $parsed = EnrichmentReply::parse((string) $answer);
-
-        if ($parsed === null) {
-            return $this->failLedger($ledger, 'The AI reply could not be parsed as strict JSON.', 502);
-        }
-
-        // A successfully parsed reply finalizes the ask even when the merge
-        // dedupes to nothing new: the ask itself succeeded and the content
-        // is present. The succeeded finalize is what the payload's
-        // `ai_asked` reports — the toolbar's plain icon turns into the
-        // re-ask variant (ADR 0082 amendment) on the next payload build.
-        $this->enrichment->applyParsed($word, $parsed, $nativeLanguage);
-
-        $ledger->forceFill([
-            'status' => WordAiFetch::STATUS_SUCCEEDED,
-            'succeeded_at' => now(),
-            'error' => null,
-        ])->save();
-
-        // The word is touched so ticket 02's lazy completeness recalc sees
-        // a stale score (the payload build below then recalculates over the
-        // replaced content). Note the finalize never clears `succeeded_at`
-        // afterwards: a later FAILED re-ask keeps it, so `ai_asked` —
-        // reported on `succeeded_at` — stays true and the re-ask icon
-        // survives a failed retry.
-        $word->touch();
-
-        $surface = array_key_exists('surface', $validated)
-            ? WordFamily::lookupKey((string) $validated['surface'])
-            : ($word->l_word ?: $word->word);
-
-        return response()->json([
-            'data' => WordPopupPayload::build($word, $surface, $request->user()),
-        ], 200);
+        return response()->json(['queued' => true], 200);
     }
 
     /**
@@ -361,11 +323,14 @@ class ReadingAiController extends Controller
      * the toolbar's re-ask icon, a re-ask replaces the previous AI rows),
      * and so do failed rows (retryable at any count) and a pending row
      * older than the grace window: pending is not a lock — a
-     * fatal/timeout/OOM between the pending save and the finalize would
-     * otherwise strand the word as "in progress" forever. The retrying
-     * flow's pending save then takes the stale row over (attempts++,
-     * asked_at refreshed). The window sits far above the provider layer's
-     * own cURL timeouts, so a genuinely live ask never reaches it.
+     * fatal/timeout/OOM between the pending save and the queued job's
+     * finalize would otherwise strand the word as "in progress" forever.
+     * The retrying flow's pending save then takes the stale row over
+     * (attempts++, asked_at refreshed). The window sits far above the
+     * provider layer's own cURL timeouts — and above the queued job's —
+     * so a genuinely live ask never reaches it: crossing it is a crashed
+     * (or timeout-killed) worker's orphan, exactly the failure mode the
+     * queued flow added.
      */
     private function ledgerBlock(Word $word): ?JsonResponse
     {
@@ -382,28 +347,15 @@ class ReadingAiController extends Controller
     }
 
     /**
-     * The concurrent double-ask's loser: the winner's ask is mid-flight, so
-     * a retry a moment later either re-asks (winner failed, or the word was
-     * already succeeded and this was a re-ask) or replaces the freshly
-     * merged content (winner succeeded) — never a lost attempt.
+     * The concurrent double-ask's loser: the winner's ask is mid-flight
+     * (now as a queued job), so a retry a moment later either re-asks
+     * (winner failed, or the word was already succeeded and this was a
+     * re-ask) or takes the takeover path past the stale window — never a
+     * lost attempt.
      */
     private function aiInProgress(): JsonResponse
     {
         return $this->aiError('An AI ask for this word is already in progress. Try again in a moment.', 409);
-    }
-
-    /**
-     * Finalize a failed attempt (the lock never engages) and surface the
-     * error in the reading-surface JSON shape.
-     */
-    private function failLedger(WordAiFetch $ledger, string $message, int $status): JsonResponse
-    {
-        $ledger->forceFill([
-            'status' => WordAiFetch::STATUS_FAILED,
-            'error' => mb_substr($message, 0, 500),
-        ])->save();
-
-        return $this->aiError($message, $status);
     }
 
     /**

@@ -6,6 +6,7 @@ use App\Contracts\AiProviderInterface;
 use App\Exceptions\AiProviderException;
 use App\Models\AiModel;
 use App\Models\AiProvider as AiProviderRecord;
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use InvalidArgumentException;
 
@@ -38,6 +39,14 @@ class AIModelResolver
      * @var array<string, list<array{id: int, key: string, label: string}>>|null
      */
     protected ?array $groupedChoicesCache = null;
+
+    /**
+     * The user id the grouped-choices memo was resolved for — the cache is
+     * keyed per user so the queued-job seam (an explicit user against a
+     * resolver instance that may have served the session user first) can
+     * never read another user's choices.
+     */
+    protected ?int $groupedChoicesCacheUserId = null;
 
     /**
      * The registered provider keys.
@@ -191,23 +200,45 @@ class AIModelResolver
      * rules as getGroupedModels() (admin-enabled provider + user's key),
      * identified by ai_models.id so a pick survives as a stored FK.
      *
+     * Without an explicit user the choices resolve against the
+     * AUTHENTICATED user and memoize for the request; the explicit-user
+     * form is the queued-job seam (word-popup-overhaul ticket 06) — the
+     * ask-AI enrichment's job resolves the asking user's model inside the
+     * worker, where no auth session exists.
+     *
      * Format: ['Provider Name' => [['id' => int, 'key' => 'provider:model',
      * 'label' => string], ...], ...] — groups ordered cheapest-first.
      *
      * @return array<string, list<array{id: int, key: string, label: string}>>
      */
-    public function getGroupedModelChoices(): array
+    public function getGroupedModelChoices(?User $user = null): array
     {
-        if ($this->groupedChoicesCache !== null) {
+        $user ??= Auth::user();
+
+        if ($user === null) {
+            return [];
+        }
+
+        if ($this->groupedChoicesCache !== null && $this->groupedChoicesCacheUserId === $user->id) {
             return $this->groupedChoicesCache;
         }
 
-        $user = Auth::user();
+        $grouped = $this->groupedChoicesFor($user);
 
-        if ($user === null) {
-            return $this->groupedChoicesCache = [];
-        }
+        $this->groupedChoicesCache = $grouped;
+        $this->groupedChoicesCacheUserId = $user->id;
 
+        return $grouped;
+    }
+
+    /**
+     * The un-memoized body of getGroupedModelChoices() for one concrete
+     * user.
+     *
+     * @return array<string, list<array{id: int, key: string, label: string}>>
+     */
+    protected function groupedChoicesFor(User $user): array
+    {
         $keyedProviderIds = []; // ai_provider_id => providerKey
         $providerNames = [];    // ai_provider_id => display name
 
@@ -227,7 +258,7 @@ class AIModelResolver
         }
 
         if (empty($keyedProviderIds)) {
-            return $this->groupedChoicesCache = [];
+            return [];
         }
 
         $models = AiModel::query()
@@ -239,7 +270,7 @@ class AIModelResolver
             ->get();
 
         if ($models->isEmpty()) {
-            return $this->groupedChoicesCache = [];
+            return [];
         }
 
         $byProvider = [];
@@ -257,34 +288,42 @@ class AIModelResolver
             $grouped[$providerNames[$providerId]] = $byProvider[$providerId] ?? [];
         }
 
-        return $this->groupedChoicesCache = $grouped;
+        return $grouped;
     }
 
     /**
      * The user's effective answer model: the stored pick when it is still
      * available, otherwise the globally cheapest available model (a pick that
      * stopped being available falls back silently), or null when nothing is
-     * stored — an unset pick deliberately blocks AI usage.
+     * stored — an unset pick deliberately blocks AI usage. Resolves against
+     * the authenticated user unless an explicit one is passed (the
+     * queued-job seam).
      *
      * @return null|array{id: int, key: string, label: string}
      */
-    public function resolveAnswerModel(): ?array
+    public function resolveAnswerModel(?User $user = null): ?array
     {
-        return $this->pickStoredChoice(Auth::user()?->settings?->ai_model_id, fallbackToCheapest: true);
+        $user ??= Auth::user();
+
+        return $this->pickStoredChoice($user?->settings?->ai_model_id, fallbackToCheapest: true, user: $user);
     }
 
     /**
      * The user's effective explanation model: the stored pick when still
      * available, otherwise it follows the effective answer model (which may
      * itself fall back to the cheapest). Null only when no explanation model
-     * applies at all.
+     * applies at all. Resolves against the authenticated user unless an
+     * explicit one is passed (the queued-job seam — the ask-AI enrichment's
+     * job resolves the carried asking user's model inside the worker).
      *
      * @return null|array{id: int, key: string, label: string}
      */
-    public function resolveExplanationModel(): ?array
+    public function resolveExplanationModel(?User $user = null): ?array
     {
-        return $this->pickStoredChoice(Auth::user()?->settings?->explanation_model_id, fallbackToCheapest: false)
-            ?? $this->resolveAnswerModel();
+        $user ??= Auth::user();
+
+        return $this->pickStoredChoice($user?->settings?->explanation_model_id, fallbackToCheapest: false, user: $user)
+            ?? $this->resolveAnswerModel($user);
     }
 
     /**
@@ -325,13 +364,13 @@ class AIModelResolver
      *
      * @return null|array{id: int, key: string, label: string}
      */
-    protected function pickStoredChoice(?int $storedId, bool $fallbackToCheapest): ?array
+    protected function pickStoredChoice(?int $storedId, bool $fallbackToCheapest, ?User $user = null): ?array
     {
         if ($storedId === null) {
             return null;
         }
 
-        foreach ($this->getGroupedModelChoices() as $choices) {
+        foreach ($this->getGroupedModelChoices($user) as $choices) {
             foreach ($choices as $choice) {
                 if ($choice['id'] === $storedId) {
                     return $choice;
@@ -345,7 +384,7 @@ class AIModelResolver
 
         // Groups are ordered cheapest-first, so the first group's first
         // choice is the globally cheapest available model.
-        foreach ($this->getGroupedModelChoices() as $choices) {
+        foreach ($this->getGroupedModelChoices($user) as $choices) {
             if ($choices !== []) {
                 return $choices[0];
             }
@@ -386,17 +425,23 @@ class AIModelResolver
     }
 
     /**
-     * Ask AI using the specified provider:model, keyed with the user's own key.
+     * Ask AI using the specified provider:model, keyed with the user's own
+     * key. The key resolves against the user this ask is FOR — the
+     * authenticated session by default, the ask-AI enrichment job's carried
+     * asking user through the explicit seam (word-popup-overhaul ticket
+     * 06): a queue worker has no session, and the ask must spend the
+     * asker's own key whatever worker picks the job up.
      */
     public function ask(
         string $modelString,
         string $instruction,
-        string $question
+        string $question,
+        ?User $user = null
     ): ?string {
         $parsed = $this->parseModelString($modelString);
         $provider = $this->getProvider($parsed['provider']);
 
-        $user = Auth::user();
+        $user ??= Auth::user();
         $userKey = $user?->apiKeyForProvider($parsed['provider']);
 
         if ($userKey === null) {

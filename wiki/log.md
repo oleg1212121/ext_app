@@ -6,6 +6,47 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-05 (word-popup-overhaul ticket 06 — Ask-AI is admin-only, queued, fire-and-forget)
+
+The word popup's Ask-AI enrichment no longer runs its provider call inside
+the HTTP request. The sparkles icon (plain and re-ask variants, dictionary
+and missing cards alike) now renders for **approved admins only** — hidden,
+not disabled, for everyone else, read off the shared `auth.user`'s
+`role`/`is_approved` (the profile Popups-tab preview passes the same gate);
+`POST /ai/word-enrich` answers a non-admin **403** in the reading-surfaces
+JSON shape before any gate, mint or ledger row. The click still validates,
+resolves model + key cheaply against the session user (the existing
+400/403 guidance answers at dispatch and dispatches nothing), adopts/mints
+the word synchronously, records the pending ledger row, then dispatches
+**`App\Jobs\FetchWordAiEnrichment`** (`#[Queue(QueueLane::DEFAULT)]`,
+`$tries = 1` — no auto-retry double-spend against the asker's own key —
+`$timeout = 300`, above the 120s cURL cap; deliberately NOT
+`ShouldBeUnique`: the unique ledger constraint + the fresh-pending 409
+gate are the race net and uniqueness would fight the stale-pending
+takeover) and answers the minimal **`{queued: true}`** — the word-show
+payload swap is GONE. The job carries scalar ids (word + asking user) and
+resolves model AND BYO key inside the worker against that user through
+**`AIModelResolver`'s new explicit-user seam** (optional `?User` params on
+`resolveExplanationModel`/`resolveAnswerModel`/`getGroupedModelChoices`/
+`ask`, defaulting to `Auth::user()`; the grouped-choices memo is keyed per
+user id), then runs ask → lenient parse → merge → succeeded finalize →
+word touch; every failure (provider, unparseable, no-model, vanished
+word/asker) finalizes the ledger failed and the job stays silent
+client-side. The popup floats a transient
+`word.ask_ai_started` notice ("AI enrichment started — open the word
+again to see the result", new ui-string en/ru/be) in the info popup
+(auto-dismissed through the ticket 04 `ANKI_NOTICE_LIFETIME_MS` gate,
+cleared on word change); the 409 refetch paths are byte-identical. Docs
+updated: `wiki/domains/interactive-words.md` (ask-AI section rewritten —
+admin-only/queued/`{queued: true}`/silent failure + a "The job" bullet —
+toolbar + missing-card + adopt-on-ask passages, new `enrich-job` source,
+generated.at) and `wiki/domains/ai-providers.md` (resolver bullets name
+the seam, the consumer bullet un-locks the ledger, generated.at). Tests:
+`AiWordEnrichEndpointTest` / `AiWordEnrichAdoptTest` restructured to the
+Queue::fake dispatch + direct `handle()` split (30 tests), the vitest
+source pins updated for the notice + admin gates (409 tests green,
+`npm run build` green).
+
 ## 2026-11-05 (word-popup-overhaul ticket 05 — the missing card's full toolbar; the AI answer's popup can adopt)
 
 The missing-word card's ask-AI-only toolbar strip became the real card's

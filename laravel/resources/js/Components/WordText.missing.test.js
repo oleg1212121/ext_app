@@ -175,17 +175,18 @@ describe('WordPopup: missing mode', () => {
         // descriptor never gains an id, so its zero-fetch contract holds.
         expect(fetchEffectSource).toMatch(/const fetchId = wordId \?\? lookedUpId;/);
         // The early return still clears the previous word's loading/error/
-        // data — the missing branch keys on data == null, so a popup that
-        // moves here from a loaded token without unmounting shows the
-        // missing card, never the stale dictionary.
+        // data (and the queued ask's started notice) — the missing branch
+        // keys on data == null, so a popup that moves here from a loaded
+        // token without unmounting shows the missing card, never the stale
+        // dictionary.
         expect(fetchEffectSource).toMatch(
-            /if \(fetchId == null\) \{\s*setLoading\(false\);\s*setError\(null\);\s*setData\(null\);\s*return;\s*\}/,
+            /if \(fetchId == null\) \{\s*setLoading\(false\);\s*setError\(null\);\s*setData\(null\);\s*setAiStarted\(false\);\s*return;\s*\}/,
         );
         // The mapped path's fetch itself is untouched.
         expect(popupSource).toContain('fetch(`/words/${fetchId}?surface=${encodeURIComponent(surface)}`');
     });
 
-    it('renders the missing card until the adoption ask swaps a payload in', () => {
+    it('renders the missing card until the on-open lookup resolves the adopted word (ticket 07)', () => {
         const ternaryAt = popupRenderSource.indexOf(') : (');
         expect(popupRenderSource).toMatch(/wordId == null && lookedUpId == null && data == null \? \(/);
         expect(ternaryAt).toBeGreaterThan(-1);
@@ -202,16 +203,18 @@ describe('WordPopup: missing mode', () => {
         // (no explainKey — the pane never mounts on the missing card, its
         // toggle can never enable); the progress and Anki handlers do NOT —
         // their structural absence is what disables those icons until the
-        // ask swaps the real card in.
+        // adopted payload loads in. (The queued ask itself swaps nothing —
+        // word-popup-overhaul ticket 06.)
         expect(missingBranch).toContain('sections={effectiveSections}');
         expect(missingBranch).toContain('explainProps={explainProps}');
         expect(missingBranch).toContain('modelsOpen={modelsOpen}');
         expect(missingBranch).toContain('onModelsOpenChange={setModelsOpen}');
+        expect(missingBranch).toContain('canAskAi={canAskAi}');
         expect(missingBranch).not.toContain('onProgressAction=');
         expect(missingBranch).not.toContain('onAnkiSend=');
         // …and PopupContent (toolbar, header, dictionary, Anki, explain)
-        // renders the adopted payload — the transition to the full
-        // dictionary view is the same setData swap the known-word ask uses.
+        // renders the adopted payload once the on-open lookup resolved the
+        // minted/adopted word and the fetch effect loaded it.
         expect(popupRenderSource.slice(ternaryAt)).toContain('<PopupContent');
     });
 
@@ -245,7 +248,8 @@ describe('MissingPopupContent', () => {
         // dictionary card's row — know, remove mark, then pushed right:
         // Anki, Explanation toggle, Ask-AI, robot — every icon disabled,
         // never hidden, while no word exists behind the card (except the
-        // two live ones pinned below).
+        // two live ones pinned below; Ask-AI additionally hides for
+        // non-admins per word-popup-overhaul ticket 06).
         const order = [
             'word-popup-progress-known',
             'word-popup-progress-reset',
@@ -307,7 +311,7 @@ describe('MissingPopupContent', () => {
         expect(missingContentSource).toContain('onClose={() => onModelsOpenChange?.(false)}');
     });
 
-    it('keeps Ask-AI live on its existing gating', () => {
+    it('keeps Ask-AI live on its existing gating — for approved admins only (ticket 06)', () => {
         const askAi = missingButtonIn('word-popup-ask-ai');
         expect(askAi).toContain('onClick={onAskAi}');
         expect(askAi).toMatch(/disabled=\{onAskAi == null \|\| aiBusy\}/);
@@ -319,6 +323,20 @@ describe('MissingPopupContent', () => {
         // Plain sparkles — the re-ask variant needs a payload's ai_asked,
         // which the missing card never has.
         expect(askAi).toContain('<Icon name="sparkles"');
+        // Admin-only (word-popup-overhaul ticket 06): the icon renders for
+        // approved admins only — hidden, not disabled, for everyone else,
+        // matching the endpoint's 403. The handler gating above still
+        // holds under the render gate.
+        expect(missingToolbar).toMatch(/\{canAskAi && \(\s*<button[^>]*word-popup-ask-ai/s);
+        expect(missingContentSource).toContain('canAskAi = false');
+    });
+
+    it('floats the queued ask’s started notice above the card (ticket 06)', () => {
+        // The queued ask dispatches a job and answers {queued: true} — the
+        // missing card stays missing; the transient notice (auto-dismissed
+        // by the outer WordPopup) says the result arrives on the next open.
+        expect(missingContentSource).toContain('aiStarted = false');
+        expect(missingContentSource).toContain('aiStarted={aiStarted}');
     });
 
     it('still carries no header lines and fetches nothing', () => {

@@ -19,7 +19,9 @@ import {describe, expect, it} from 'vitest';
 // `explanation: false` removes the toggle (and the robot) entirely (ADR 0046
 // keys keep their meaning). All icons disable rather than disappear when
 // inapplicable (the `progress_actions` gate covers only the two progress
-// icons), tooltips and aria-labels come from the word.* / ai.* ui-strings,
+// icons) — the one exception being Ask-AI, which word-popup-overhaul
+// ticket 06 hides for everyone but approved admins — tooltips and
+// aria-labels come from the word.* / ai.* ui-strings,
 // and the glyphs come from the shared line-art set in Components/icons.jsx
 // (currentColor, no own color) — their colors ride the shared
 // toolbarButtonClass color tokens (popup-provenance ticket 01): the know
@@ -227,9 +229,11 @@ describe('WordPopup action toolbar', () => {
         expect(labelConstSource()).toContain("ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send')");
     });
 
-    it('asks live — the ticket 04 icon never hides and only disables per state; an asked word stays clickable', () => {
+    it('asks live for approved admins only — hidden elsewhere, still disables per state; an asked word stays clickable', () => {
         // The live enrichment (popup-ai-enrich ticket 04, re-ask per the
-        // ADR 0082 amendment): the icon renders always and disables when
+        // ADR 0082 amendment): the icon renders for approved admins ONLY
+        // (word-popup-overhaul ticket 06 — hidden, not disabled, for
+        // everyone else, matching the endpoint's 403) and disables when
         // inapplicable — no handler (the profile preview's inertness) or a
         // send in flight. A word already asked is NOT disabled: it shows
         // the re-ask variant and the click re-asks.
@@ -237,6 +241,14 @@ describe('WordPopup action toolbar', () => {
         expect(askAi).toContain('onClick={onAskAi}');
         expect(askAi).toMatch(/disabled=\{onAskAi == null \|\| aiBusy\}/);
         expect(askAi).not.toMatch(/\n\s+disabled\n/);
+        // The hide gate wraps the whole button — both icon variants (plain
+        // sparkles + re-ask) live inside it, so one gate covers both.
+        expect(toolbar).toMatch(/\{canAskAi && \(\s*<button[^>]*word-popup-ask-ai/s);
+        expect(buttonIn('word-popup-ask-ai')).toContain("data.ai_asked ? 'sparklesRefresh' : 'sparkles'");
+        // The gate reads the shared auth user (role + is_approved),
+        // computed once in the outer WordPopup and threaded to both cards.
+        expect(popupBodySource).toMatch(/props\.auth\?\.user\?\.role === 'admin' && props\.auth\?\.user\?\.is_approved === true/);
+        expect(popupBodySource.match(/canAskAi=\{canAskAi\}/g)).toHaveLength(2);
     });
 
     it('swaps the ask icon label between ask / ask again / sending', () => {
@@ -424,12 +436,24 @@ describe('The live ask-AI request (popup-ai-enrich tickets 04 + 05)', () => {
         expect(askMissing).toMatch(/if \(data != null \|\| aiBusy \|\| language\?\.code == null\)/);
     });
 
-    it('swaps the response payload in like the initial fetch does — no reopen', () => {
+    it('answers the queued dispatch with the started notice — never a live swap (ticket 06)', () => {
+        // The success path floats the transient "AI enrichment started"
+        // notice and keeps the card's current content: the provider call
+        // runs in the queue, the enriched content appears the next time
+        // the popup opens (ai_asked picks the re-ask icon then).
+        const successThen = runEnrich.slice(
+            runEnrich.indexOf('.then((json) => {'),
+            runEnrich.indexOf('.catch((e) => {'),
+        );
+        expect(successThen).toContain('setAiStarted(true)');
+        expect(successThen).not.toContain('setData(');
+        // The 409 sync is byte-identical: the refetch path still swaps a
+        // fresh payload in.
         expect(runEnrich).toContain('setData(json.data)');
-        // The render branch: the missing card holds until a payload exists,
-        // then PopupContent renders it — the transition to the dictionary
-        // view. (Ticket 07's lookedUpId leaves the branch the same way: a
-        // resolved id loads the payload through the fetch effect.)
+        // The render branch: the missing card holds until the on-open
+        // lookup resolves the adopted word — the queued ask itself swaps
+        // nothing. (Ticket 07's lookedUpId leaves the branch the same way:
+        // a resolved id loads the payload through the fetch effect.)
         expect(popupBody).toMatch(/wordId == null && lookedUpId == null && data == null \? \(/);
     });
 
@@ -448,7 +472,9 @@ describe('The live ask-AI request (popup-ai-enrich tickets 04 + 05)', () => {
 
     it('resets the ask state when the popup moves to another word', () => {
         // The fetch effect's reset block clears the in-flight flag, the
-        // error line and its status for the new word.
+        // error line, its status and the queued ask's started notice for
+        // the new word (the missing-mode early return clears the notice
+        // too — an ask on a missing token must not leak onto the next).
         const reset = popupBody.slice(
             popupBody.indexOf("setAnkiExisting('checking');"),
             popupBody.indexOf('fetch(`/words/${fetchId}'),
@@ -456,6 +482,12 @@ describe('The live ask-AI request (popup-ai-enrich tickets 04 + 05)', () => {
         expect(reset).toContain('setAiBusy(false)');
         expect(reset).toContain('setAiError(null)');
         expect(reset).toContain('setAiErrorStatus(null)');
+        expect(reset).toContain('setAiStarted(false)');
+        const earlyReturn = popupBody.slice(
+            popupBody.indexOf('if (fetchId == null) {'),
+            popupBody.indexOf('let cancelled = false;'),
+        );
+        expect(earlyReturn).toContain('setAiStarted(false)');
     });
 
     it('handlers act on the adopted word id, not the null missing-mode prop', () => {
@@ -558,6 +590,7 @@ describe('The info popup layer (word-popup-overhaul ticket 04)', () => {
             'word-popup-anki-duplicate',
             'word-popup-anki-error',
             '<AskAiError',
+            'word-popup-ai-started',
             '{explainSlot && (',
         ];
         const at = order.map((hook) => infoLayer.indexOf(hook));
@@ -574,7 +607,7 @@ describe('The info popup layer (word-popup-overhaul ticket 04)', () => {
         // all; and the layer is absolutely positioned, so while it shows it
         // can never push the card's content around.
         expect(infoLayer).toMatch(/return null;/);
-        expect(infoLayer).toMatch(/explainSlot && aiError == null\s*\n\s*&& ankiSend\?\.status !== 'added'/);
+        expect(infoLayer).toMatch(/explainSlot && aiError == null && !aiStarted\s*\n\s*&& ankiSend\?\.status !== 'added'/);
     });
 
     it('auto-dismisses the success notices after ~4s — errors stay sticky', () => {
@@ -592,6 +625,9 @@ describe('The info popup layer (word-popup-overhaul ticket 04)', () => {
         // The error status is deliberately absent from the gate: errors are
         // sticky until their dismiss control (or word change / close).
         expect(noticeTimer).not.toContain("'error'");
+        // The queued ask's "started" notice (word-popup-overhaul ticket 06)
+        // rides the same gate + timer: transient like the Anki successes.
+        expect(noticeTimer).toContain('setTimeout(() => setAiStarted(false), ANKI_NOTICE_LIFETIME_MS)');
     });
 
     it('sticky items each carry a dismiss control — wired to the owning state', () => {
@@ -636,6 +672,24 @@ describe('The info popup layer (word-popup-overhaul ticket 04)', () => {
         expect(missingSource).toContain('<InfoPopup');
         expect(missingSource).toContain('onRetryAskAi={onAskAi}');
         expect(missingSource).toContain('onDismissAskAi={onDismissAskAi}');
+        // The queued ask's started notice floats above the missing card as
+        // well (word-popup-overhaul ticket 06) — the card stays missing
+        // after an ask; the minted word appears on the next open.
+        expect(missingSource).toContain('aiStarted={aiStarted}');
+    });
+
+    it('floats the queued ask’s started notice — transient, verdigris, no dismiss control (ticket 06)', () => {
+        expect(infoLayer).toContain('word-popup-ai-started');
+        expect(infoLayer).toContain("t('word.ask_ai_started')");
+        // Transient: the Anki-success treatment (the verdigris tokens), no
+        // dismiss button — the auto-dismiss timer owns it.
+        const line = infoLayer.slice(
+            infoLayer.indexOf('word-popup-ai-started'),
+            infoLayer.indexOf('</p>', infoLayer.indexOf('word-popup-ai-started')),
+        );
+        expect(line).not.toContain('InfoDismissButton');
+        expect(line).toContain('var(--color-verdigris)]');
+        expect(line).toContain('var(--color-verdigris-night)]');
     });
 });
 

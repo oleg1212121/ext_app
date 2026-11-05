@@ -4,7 +4,7 @@ title: AI Providers
 description: Multi-provider AI abstraction used wherever the app asks an LLM a question.
 tags: [ai, providers, service]
 status: stable
-generated: { by: agent:zcode, at: 2026-10-25T12:30:00+03:00 }
+generated: { by: agent:zcode, at: 2026-11-05T15:05:00+0000 }
 verified: { by: human:alex, at: 2026-08-23T18:00:00Z }
 sources:
   - id: base
@@ -117,22 +117,30 @@ OpenRouter model ids containing `/` are fine), e.g.
   first.
 * `getGroupedModelChoices()` — the same availability rules and ordering, but
   entries carry `ai_models.id` (`{id, key, label}`), feeding the Profile's
-  AI Models tab where the stored value is a model id, not a string.
-* `resolveAnswerModel()` — the user's effective answer model: the stored
+  AI Models tab where the stored value is a model id, not a string. Without
+  an explicit user it resolves against (and memoizes for) the authenticated
+  user; an explicit `?User` argument is the queued-job seam
+  (word-popup-overhaul ticket 06) — the ask-AI enrichment's job resolves
+  the asking user's model inside the worker, where no auth session exists
+  (the grouped-choices memo is keyed per user id so the two paths can
+  never cross).
+* `resolveAnswerModel(?User)` — the user's effective answer model: the stored
   `ai_model_id` when still available, else the globally cheapest available
   (silent fallback); `null` when nothing is stored (blocked) or nothing is
   available. Memoized per instance alongside `getGroupedModelChoices()`.
-* `resolveExplanationModel()` — the stored `explanation_model_id` when
+* `resolveExplanationModel(?User)` — the stored `explanation_model_id` when
   available, else the effective answer model; `null` only when no model
-  applies at all.
+  applies at all. Resolves against the authenticated user unless an
+  explicit one is passed (the queued-job seam).
 * `firstModelKey()` — the first model key from `getGroupedModels()` (globally
   cheapest), or `null` when the user has no usable providers.
 * `getAllModelKeys()` — flat list for validation.
-* `ask($modelString, $instruction, $question)` — resolves the provider, reads
-  the authenticated user's **User key** for it, and calls `askForContext(...)`
-  on a key-stamped clone (`AiProvider::withApiKey()`); throws a 403
-  `AiProviderException` if the user has no key for the provider. Returns
-  `?string`.
+* `ask($modelString, $instruction, $question, ?User $user = null)` — resolves
+  the provider, reads the user's **User key** for it (the authenticated
+  user by default, the explicit one through the queued-job seam) and calls
+  `askForContext(...)` on a key-stamped clone (`AiProvider::withApiKey()`);
+  throws a 403 `AiProviderException` if the user has no key for the
+  provider. Returns `?string`.
 * `isValidModel($modelString)` — catalog-only check (does this model exist?);
   authorization (does this user have a key?) is enforced in `ask()`.
 
@@ -251,11 +259,15 @@ baseline migration creates the column NOT NULL with cascade delete
 * `Test::askAI` (`/word/ask-ai`) — word-level AI questions.
 * [Interactive Words](/domains/interactive-words.md) — the word popup's
   Context explanation (`/ai/word-explain`) and its ask-AI enrichment
-  (`/ai/word-enrich`, one ledger-locked ask per word, merged inline under
-  per-row `source='ai'` provenance, ADR 0082; the missing card's adoption
-  ask resolves-or-mints the word first, the mint stamped
-  `words.source = 'ai'` (ADR 0084), ticket 05) — both resolve the
-  **explanation model**. The enrichment prompt is the admin-editable
+  (`/ai/word-enrich`, admin-only and queued since word-popup-overhaul
+  ticket 06: the dispatch records the pending ledger row and
+  `FetchWordAiEnrichment` runs the ask inside the worker, resolving model
+  AND key against the carried asking user through the explicit-user seam;
+  the reply merges inline under per-row `source='ai'` provenance, ADR
+  0082; the missing card's adoption ask resolves-or-mints the word first,
+  the mint stamped `words.source = 'ai'` (ADR 0084), ticket 05) — both
+  resolve the **explanation model**. The enrichment prompt is the
+  admin-editable
   `word.enrichment` template (`:word`/`:language`/`:native`,
   `PromptTemplates::enrichment`, code fallback seeded as the row)
   demanding strict JSON, **monolingual** (ticket 08, 2026-10-20):

@@ -122,7 +122,7 @@ describe('WordPopup: the on-open lookup (ticket 07)', () => {
         // card, not the previous token's stale dictionary — and none of its
         // loading/error state.
         expect(fetchEffectSource).toMatch(
-            /if \(fetchId == null\) \{\s*setLoading\(false\);\s*setError\(null\);\s*setData\(null\);\s*return;\s*\}/,
+            /if \(fetchId == null\) \{\s*setLoading\(false\);\s*setError\(null\);\s*setData\(null\);\s*setAiStarted\(false\);\s*return;\s*\}/,
         );
     });
 
@@ -137,7 +137,7 @@ describe('WordPopup: the on-open lookup (ticket 07)', () => {
             popupRenderSource.indexOf('wordId == null && lookedUpId == null && data == null ? ('),
             popupRenderSource.indexOf(') : ('),
         );
-        expect(missingBranch).toContain('onAskAi={language?.code != null && !lookupBusy ? askAiMissing : null}');
+        expect(missingBranch).toContain('onAskAi={canAskAi && language?.code != null && !lookupBusy ? askAiMissing : null}');
     });
 
     it('drops stale answers — popup closed or surface moved — like the fetch effect', () => {

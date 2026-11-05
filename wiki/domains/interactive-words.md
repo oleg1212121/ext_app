@@ -1,11 +1,11 @@
 ---
 type: Feature
 title: Interactive Words
-description: Interactive words on the reader and bilinguals simulator — every tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (ADR 0030); dictionary-linked tokens open a word popup aggregating the word family (ADR 0045 + 0047, stable-sorted live-before-demoted then completeness-descending, ADR 0083) with an action toolbar — per-word Anki send (ADR 0077), an on-demand AI Context explanation, and the ledger-tracked, re-askable Ask-AI enrichment (ADR 0082) — per-user block visibility (ADR 0046) and typography following the host page's font (ADR 0031). Unmapped tokens open a missing-word card — the full toolbar with every wordless icon disabled, the robot and Ask-AI live — whose Ask-AI icon adopts onto the existing row or mints one word through the ADR 0081 lookup key (the card re-resolves on open so an adopt stays found, ADR 0079). The simulator's streamed AI answer is a third interactive surface (ADR 0096): its tokens open the same popup missing-first, ordered learning→base over the ask's language snapshot, map-less — and since word-popup-overhaul ticket 05 adoptable, asking minting into the snapshot's learning-first language (ADR 0096's adopt-less rule reversed for this surface; the ADR amendment itself is pending in the closure ticket). Segmentation is render-time (ADR 0027), sentence-reveal reads are ledger-deduped (ADR 0028) while every popup open of a mapped word costs −5 (native language free, no dedupe), and missing translations auto-fetch in the background (Yandex→Google, link-only, ledger-deduped with a permanent exclusions list).
+description: Interactive words on the reader and bilinguals simulator — every tokenizer word token (≥2 letters, hyphens/apostrophes intra-word) is Ctrl+clickable (ADR 0030); dictionary-linked tokens open a word popup aggregating the word family (ADR 0045 + 0047, stable-sorted live-before-demoted then completeness-descending, ADR 0083) with an action toolbar — per-word Anki send (ADR 0077), an on-demand AI Context explanation, and the admin-only, queued, fire-and-forget Ask-AI enrichment (ADR 0082; queued per word-popup-overhaul ticket 06) — per-user block visibility (ADR 0046) and typography following the host page's font (ADR 0031). Unmapped tokens open a missing-word card — the full toolbar with every wordless icon disabled, the robot and the admins-only Ask-AI live — whose Ask-AI icon adopts onto the existing row or mints one word through the ADR 0081 lookup key (the card re-resolves on open so an adopt stays found, ADR 0079). The simulator's streamed AI answer is a third interactive surface (ADR 0096): its tokens open the same popup missing-first, ordered learning→base over the ask's language snapshot, map-less — and since word-popup-overhaul ticket 05 adoptable, asking minting into the snapshot's learning-first language (ADR 0096's adopt-less rule reversed for this surface; the ADR amendment itself is pending in the closure ticket). Segmentation is render-time (ADR 0027), sentence-reveal reads are ledger-deduped (ADR 0028) while every popup open of a mapped word costs −5 (native language free, no dedupe), and missing translations auto-fetch in the background (Yandex→Google, link-only, ledger-deduped with a permanent exclusions list).
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-05T13:05:00+0000 }
+generated: { by: agent:zcode, at: 2026-11-05T15:05:00+0000 }
 verified: { by: agent:zcode, at: 2026-10-20T13:45:00+03:00 }
 sources:
   - id: word-controller
@@ -26,6 +26,9 @@ sources:
   - id: enrich-reply
     resource: laravel/app/Support/EnrichmentReply.php
     title: EnrichmentReply (lenient strict-JSON parser — fences, coercion, caps, truncation)
+  - id: enrich-job
+    resource: laravel/app/Jobs/FetchWordAiEnrichment.php
+    title: FetchWordAiEnrichment (the queued ask-AI job — model+key resolve against the carried user via the resolver's explicit-user seam; ask → parse → merge → succeeded finalize → touch, failures finalize the ledger failed)
   - id: usage-labels
     resource: laravel/app/Support/UsageLabels.php
     title: UsageLabels (the closed usage-label set — parser + AI labels, ticket 10 demotion subset)
@@ -138,15 +141,19 @@ first) plus the word's staged raw candidates as their own muted amber
 **action toolbar as the popup's
 first row** — "I know this word" and "Remove mark" icons on the left;
 pushed right, in order: the always-visible Anki send icon, the on-demand
-Explanation toggle, the Ask-AI icon (a ledger-tracked, re-askable BYO-key
-enrichment per word, merged inline — below), and the robot (Models-used)
+Explanation toggle, the Ask-AI icon (admin-only since word-popup-overhaul
+ticket 06 — a ledger-tracked, re-askable BYO-key enrichment per word, now
+queued and fire-and-forget, merged inline by the job — below), and the
+robot (Models-used)
 icon rightmost — and the strip is ICONS ONLY: everything the icons trigger
 (the Anki status lines, the ask-AI error, the AI Context explanation)
 floats in the **info popup** above the card instead (word-popup-overhaul
 ticket 04; the two progress icons are the
 only toolbar elements
 the `progress_actions` visibility opt-out still hides; inapplicable
-toolbar icons disable rather than disappear, and the Explanation toggle +
+toolbar icons disable rather than disappear — the one exception being
+Ask-AI, which HIDES for everyone but approved admins, matching the
+endpoint's 403 — and the Explanation toggle +
 robot additionally require an explain payload and answer to the ADR 0046
 `explanation` key — a payload without a sentence id, the AI-answer mount's
 (ADR 0096 amendment), renders the toggle disabled for toolbar parity while
@@ -445,13 +452,17 @@ word to attach the pane to; it is a plain disabled, never-pressed button —
 the working pane lives on the real card the ask swaps in). Two icons stay
 live: the **robot** (the Models used popup reads its models off the explain
 payload — no word needed) and the **Ask-AI icon** (below) — the only path
-from missing to populated; the moment a word exists (resolved on open or
-adopted by an ask) this card is replaced by the real dictionary view
-through the existing swap, and the icons go live there. Each column's
+from missing to populated, and admin-only like everywhere else
+(word-popup-overhaul ticket 06: hidden, not disabled, for everyone but
+approved admins); the moment a word exists (resolved on open, or found on
+the reopen after an ask — the queued ask itself swaps nothing) this card
+is replaced by the real dictionary view through the existing fetch, and
+the icons go live there. Each column's
 language (`{code, name}|null` — the reader's display-column descriptors
 carry it as `language`, the simulator's too) is plumbed `WordText` →
 `WordPopup` as the `language` prop; a mount without a code keeps the icon
-disabled (there is nothing valid to ask with). The structure mirrors the
+disabled for admins (there is nothing valid to ask with) and hidden for
+everyone else. The structure mirrors the
 real card (same toolbar / header / dictionary blocks, hairlines and stable
 `word-popup-*` hooks, `-title` on the surface, `-missing` on the note). The
 old unclickable phrasal-hit span branch merged into the interactive path: an
@@ -484,15 +495,22 @@ class invented from the reply's translations (ADR 0059 spirit; the merge
 writes no class either) — carrying itself as its lemma form through the
 shared `LemmaForms` rows (the ё е-alias included). The mint's firstOrCreate
 on the unique (l_word, language, class) triple is the race net. The model
-gate precedes the mint (a no-model user mints nothing); then the identical
-enrichment flow runs, ledger keyed on the resolved word. A failed ask keeps
-the minted word (it was the point) and a retryable failed ledger. On success
-the popup swaps the response payload in — the same setData move as ticket 04
-— and the missing card becomes the full dictionary view: the progress /
-Anki / Explanation icons act on the adopted `data.id` (through the popup's
-`resolvedWordId`), while the page's word map learns the new word only on its
-next refresh (until then the token re-opens as missing, and re-asking
-resolves the same row and re-enriches it in place). A failed ask floats the server's
+gate precedes the mint (a no-model user mints nothing — and since
+word-popup-overhaul ticket 06 a non-admin never even reaches it: 403, no
+mint); then the identical enqueue flow runs, the pending ledger keyed on
+the resolved word (word-popup-overhaul ticket 06). A failed JOB keeps the
+minted word (it was the point) and a retryable failed ledger — silently:
+nothing surfaces client-side. The dispatch answers the minimal
+`{queued: true}` — **no payload comes back to swap**: the card stays
+missing, a transient "AI enrichment started" notice
+(`word.ask_ai_started`, en/ru/be) floats in the info popup above it, and
+the minted word appears on the NEXT open — the on-open resolve (ticket 07)
+finds it and the detail fetch loads its payload, whose progress /
+Anki / Explanation icons then act on the adopted `data.id` (through the
+popup's `resolvedWordId`), while the page's word map learns the new word
+only on its next refresh (until then the token re-opens as missing — or,
+post-resolve, as the found word — and re-asking resolves the same row and
+re-enriches it in place). A failed dispatch floats the server's
 guidance verbatim in the info popup above the card through the shared `AskAiError`
 render (word-popup-overhaul ticket 04; sticky until its dismiss control —
 `word.info_dismiss`): the no-model (400) and no-key (403)
@@ -757,67 +775,105 @@ outside-click closing — the word popup underneath stays put.
   provider-error mapping, throttle; `AIModelResolver` mocked at the
   container — provider calls are raw cURL and invisible to `Http::fake`).
 
-# Ask-AI enrichment (ledger-tracked, re-askable)
+# Ask-AI enrichment (admin-only, queued, fire-and-forget)
 
 The toolbar's **Ask-AI icon** (sparkles, after the Explanation toggle) is
-the sparse word's on-demand fill (popup-ai-enrich ticket 04, ADR 0082): a
-Ctrl+click asks the user's **explanation model** (the same BYO-key seam as
-the Context explanation — `AIModelResolver::resolveExplanationModel` +
-`ask`, no client-sent model) to enrich the dictionary entry, and the reply
-merges **straight into the dictionary tables** — no AI block, no popup
-marker. A word the AI already enriched once keeps the icon live as the
-**re-ask variant** (the same sparkles inside the chasing-arrows refresh
-ring, the "Ask AI again (already enriched)" hint; the 2026-10-20 ADR 0082
-amendment lifted the original forever lock): the re-ask runs the same flow
-and **replaces** the word's previous AI rows.
+the sparse word's on-demand fill (popup-ai-enrich ticket 04, ADR 0082;
+word-popup-overhaul ticket 06 made it **admin-only, queued and
+fire-and-forget**): the icon renders for **approved admins only** —
+hidden, not disabled, for everyone else, matching the endpoint's 403
+(readers fund nothing they cannot trigger; the ask spends the asker's own
+BYO-key tokens). A Ctrl+click asks the user's **explanation model** (the
+same BYO-key seam as the Context explanation —
+`AIModelResolver::resolveExplanationModel` + `ask`, no client-sent model)
+to enrich the dictionary entry, and the reply merges **straight into the
+dictionary tables** — no AI block, no popup marker — **from the queue**:
+the HTTP request dispatches `FetchWordAiEnrichment` and answers at once,
+the AI call's duration never occupies an HTTP worker. A word the AI
+already enriched once keeps the icon live as the **re-ask variant** (the
+same sparkles inside the chasing-arrows refresh ring, the "Ask AI again
+(already enriched)" hint; the 2026-10-20 ADR 0082 amendment lifted the
+original forever lock): the re-ask runs the same flow and **replaces** the
+word's previous AI rows.
 
 * **The contract.** `POST /ai/word-enrich` takes two modes
   (`AiWordEnrichRequest`): `{word_id}` — the popup's bound word (ticket 04)
   — or `{surface, language_code}` — the missing card's adoption (ticket 05,
   resolved through the ADR 0081 lookup key; see the missing-word card's
-  adopt-on-ask above), auth+approved, CSRF, throttled 20/min like the other
-  AI routes. An optional `surface` is legal on BOTH paths: the known-word
-  ask carries the popup's clicked surface, and the response's payload
-  resolves from it normalized exactly like the word-show endpoint's
-  (lowercase + combining marks stripped, `WordFamily::lookupKey`) —
-  otherwise the payload would rebuild itself from `l_word` and the
-  "«went» — form of «go»" line would vanish on the live swap; absent, it
-  defaults to the word's own key. The response is the **word-show payload
-  itself** — both
-  endpoints assemble it through the one `WordPopupPayload` presenter, so
-  the popup swaps it in with a plain `setData` and the shapes can never
-  drift — with `ai_asked: true` riding along once a first ask succeeded. The
-  word is touched on success, so the stored completeness goes stale and
-  the swap-in payload (built through `WordFamily::resolve`) recalculates
-  and re-orders by it in the same request.
+  adopt-on-ask above), auth+approved (an unapproved or plain user is
+  bounced by the middleware or the controller's admin gate — the
+  reading-surfaces JSON shape, ADR 0069), CSRF, throttled 20/min like the
+  other AI routes (a rapid double-ask's loser hits the in-progress 409
+  below, and 409s burn limiter hits too — the middleware runs first).
+  The click **validates, resolves the model + key cheaply (no HTTP) and
+  adopts/mints the word synchronously**, records the pending ledger row,
+  **dispatches the job** and answers immediately with the minimal
+  `{queued: true}` payload — nothing else rides it, and no payload swap
+  happens client-side anymore: the enriched content appears the next time
+  the popup opens (`ai_asked` picks the re-ask icon then, from the fresh
+  payload), a transient `word.ask_ai_started` notice ("AI enrichment
+  started — open the word again to see the result", en/ru/be) floats in
+  the info popup above the card in the meantime, and **a failed job is
+  silent** — nothing surfaces on the next open, the icon simply stays
+  retryable. Model + key resolve TWICE by design: cheaply at dispatch
+  against the session user (a no-model/no-key user gets the existing
+  400 "Choose an AI model in your profile settings." / the keyless
+  guidance at dispatch and dispatches nothing), and again inside the job
+  against the carried user (below).
+* **The job.** `App\Jobs\FetchWordAiEnrichment` (`#[Queue(QueueLane::DEFAULT)]`)
+  carries scalar ids only — the word's and the ASKING user's — and runs
+  the whole ask → lenient parse → transactional merge → succeeded finalize
+  → word touch (the completeness recalc's staleness marker). It resolves
+  model AND BYO key **inside the job against the carried user** through
+  `AIModelResolver`'s explicit-user seam (optional `?User` parameters on
+  `resolveExplanationModel`/`ask`/`getGroupedModelChoices` defaulting to
+  `Auth::user()`; the grouped-choices memo is keyed per user id) — never
+  the authenticated session, which a worker does not have. It is
+  deliberately NOT `ShouldBeUnique`: the per-word unique ledger constraint
+  plus the dispatch-time fresh-pending 409 gate are the race net, and a
+  uniqueness lock would fight the stale-pending takeover.
+  `$tries = 1` — no auto-retry: a failed run finalizes the ledger failed
+  once and the user re-asks via the still-retryable icon (queue-level
+  retries would double-spend tokens against the asker's own key; the dev
+  worker even runs `queue:listen --tries=1`); `$timeout = 300` sits
+  comfortably above the provider layer's 120s cURL cap (one provider call
+  per run), and a run the timeout kills finalizes nothing — the ledger's
+  stale window is exactly the net for that orphan. Every failure mode
+  finalizes the ledger failed (provider errors, unparseable replies, a
+  no-model resolution, even a vanished word/asker) — the known ones
+  quietly, unexpected ones after a `failed_jobs` rethrow.
 * **The ledger.** One `word_ai_fetches` row per word: provider,
   model, status pending/succeeded/failed, attempts, error, `asked_at`,
   `succeeded_at`. Statuses track the LAST ask; there is **no lock** (the
   original succeeded-is-forever-lock ruling was superseded by the
   2026-10-20 ADR 0082 re-ask amendment). A **fresh pending row means another
-  ask is mid-flight**: the concurrent double-ask's visible loser gets a
+  ask is mid-flight** (now: queued and not yet finalized): the concurrent
+  double-ask's visible loser gets a
   clean retryable-later 409 ("An AI ask for this word is already in
   progress. Try again in a moment.") — and a truly simultaneous loser,
   whose ledger insert bounces off the unique word constraint, gets the
   same answer instead of a 500. Pending is a grace, not a lock: a row
   pending longer than 15 minutes
-  (`ReadingAiController::PENDING_STALE_AFTER_MINUTES` — the provider
-  layer's cURL timeouts cap at 120s, so only a crashed worker's orphan
-  crosses it) is stale, and the retry takes it over (attempts++,
-  `asked_at` refreshed) instead of stranding the word "in progress"
-  forever. **Failed attempts stay retryable**
+  (`ReadingAiController::PENDING_STALE_AFTER_MINUTES` — far above the
+  provider layer's 120s cURL timeouts and the job's 300s one, so crossing
+  it is a crashed (or timeout-killed) worker's orphan, exactly the failure
+  mode the queued flow added) is stale, and the retry takes it over
+  (attempts++, `asked_at` refreshed) instead of stranding the word "in
+  progress" forever. **Failed attempts stay retryable**
   at any count (each retry bumps `attempts`; the row materializes only
-  when an ask is actually attempted — a no-model request records nothing,
+  when an ask is actually dispatched — a no-model request records nothing,
   and on the adoption path the model gate precedes the mint): no chosen
-  model → 400 "Choose an AI model in your profile settings."; no usable
-  key → the resolver's 403; provider errors map through with their own
-  status; an unparseable reply (502 "The AI reply could not be parsed as
-  strict JSON.") finalizes failed too — and a successfully parsed reply
-  that dedupes to nothing new finalizes **succeeded** (the ask itself
-  succeeded; the finalize is what `ai_asked` reports). The payload's
+  model → 400 "Choose an AI model in your profile settings." at dispatch;
+  no usable key → the same dispatch-time null (the provider gate filters
+  unkeyed providers out); provider errors, the keyless 403 and an
+  unparseable reply ("The AI reply could not be parsed as strict JSON.")
+  finalize the ledger FAILED inside the job — silently client-side — and
+  a successfully parsed reply that dedupes to nothing new finalizes
+  **succeeded** (the ask itself succeeded; the finalize is what
+  `ai_asked` reports). The payload's
   `ai_asked` reads **`succeeded_at` (not the current status)**: a FAILED
   re-ask keeps the first success's timestamp, so the toolbar keeps the
-  re-ask variant after a failed retry. Errors land verbatim
+  re-ask variant after a failed retry. Dispatch-time errors land verbatim
   in the info popup above the card (`word-popup-ask-ai-error`; both popup bodies mount
   the shared render — the missing card and the dictionary card alike —
   with the go-to-settings link for 400/403 and the four-state contract's
@@ -825,7 +881,7 @@ and **replaces** the word's previous AI rows.
   info-popup item carries the shared `word-popup-info-dismiss` control,
   word.info_dismiss — word-popup-overhaul ticket 04); the ui-strings are `word.ask_ai` /
   `word.ask_ai_again` / `word.ask_ai_sending` / `word.ask_ai_failed` /
-  `word.ask_ai_retry` (en/ru/be).
+  `word.ask_ai_retry` / `word.ask_ai_started` (en/ru/be).
 * **The prompt.** `PromptTemplates::enrichment` — admin-editable
   `prompt_templates` key `word.enrichment` (seeded `firstOrCreate` from
   the code fallback, so the row is admin-visible/editable like the
@@ -886,24 +942,39 @@ and **replaces** the word's previous AI rows.
   one `runEnrich`; the missing card posts the raw surface + the column
   language code) with the CSRF header, guards both completion paths with
   the mirrored data ref (a late response for a moved popup is dropped),
-  resets the in-flight/error state on word change, and disables the icon
-  while in flight. The profile's Popups-tab preview keeps the icon inert
-  (no handler reaches it).
-* Tests: `tests/Feature/AiWordEnrichEndpointTest.php` (end-to-end
-  enrichment with the resolver mocked at the container — content rows +
-  provenance, link + stage + zero word rows, ledger retry/403/400 +
-  the stale-pending takeover, the nothing-new finalize, the re-ask
-  replace + the failed-re-ask keeps-`ai_asked` pin, the surface
-  payload, dedup, caps/truncation, template + fallback + the monolingual
+  resets the in-flight/error/notice state on word change, and disables
+  the icon while the dispatch POST is in flight. The queued success path
+  NEVER swaps the payload: it floats the transient started notice
+  (auto-dismissed after ~4s through the same `ANKI_NOTICE_LIFETIME_MS`
+  gate as the Anki success notices); the 409 refetch sync keeps its
+  payload swap. The sparkles icon renders only behind the `canAskAi` gate
+  (shared `auth.user.role === 'admin' && is_approved`, computed once in
+  the outer `WordPopup`, threaded to both popup bodies) — and the
+  profile's Popups-tab preview passes the same gate, so an admin still
+  sees the inert icon there. Non-admin direct POSTs answer 403 in the
+  reading-surfaces shape.
+* Tests: `tests/Feature/AiWordEnrichEndpointTest.php` (queued dispatch:
+  `{queued: true}` minimal shape, pending ledger, `Queue::assertPushed`
+  with the carried ids, the dispatch mock pinning `withNoArgs` +
+  `ask->never` — no AI call in HTTP — plus the non-admin/lapsed 403, the
+  no-model/nothing-dispatched 400, validation, the throttle pin (1×200 +
+  19×409 then the limiter's 429, one dispatch total), and the JOB's
+  behavior via direct `handle()` with the resolver mocked at the
+  container (house pattern): merge + provenance, link + stage + zero word
+  rows, succeeded ledger, word touch + `ai_asked` on the next open, the
+  re-ask replace + the failed-re-ask keeps-`ai_asked` pin, provider /
+  keyless / unparseable failures finalize failed, the nothing-new
+  finalize, the stale-pending takeover + retry dispatch, dedup,
+  caps/truncation, template + fallback + the monolingual
   script-guard pins (foreign-script definitions dropped, own-script kept,
   all-dropped still succeeded) + the labelled `{text, labels}` pins
   (labels persisted on `source='ai'` rows, a dropped text dropping its
-  labels, the ask response and a fresh show pinned shape-identical),
-  validation, throttle),
-  `tests/Feature/AiWordEnrichAdoptTest.php` (the ticket 05 adoption path:
-  mint + lemma form + unknown class, ё/case/stress adoption onto the
-  existing row, the pending double-ask 409, no-model mints nothing,
-  failed-ask retry, validation),
+  labels)),
+  `tests/Feature/AiWordEnrichAdoptTest.php` (the ticket 05 adoption path,
+  same dispatch/job split: mint + lemma form + unknown class at dispatch,
+  ё/case/stress adoption onto the existing row, the pending double-ask
+  409 dispatching nothing, no-model mints nothing, failed-ask retry
+  enriches the same row, the non-admin adoption 403, validation),
   `tests/Unit/EnrichmentReplyTest.php` (parser: fences, coercion, caps,
   truncation, null), `tests/Feature/WordEndpointTest.php` (`ai_asked`
   true only for a succeeded row), and the vitest source pins in
