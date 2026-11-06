@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-11-06T18:41:00+0300 }
+generated: { by: agent:zcode, at: 2026-11-06T19:10:00+0300 }
 verified: { by: agent:zcode, at: 2026-10-29T10:30:00+03:00 }
 sources:
   - id: phpunit
@@ -203,7 +203,11 @@ sources:
     word-card ticket 02: the badge derivation moved into
     `lib/popupModel.js` and is asserted behaviorally in
     `lib/popupModel.test.js`, the stronger form wherever logic can leave
-    the component. Rationale: the "ai · ai" badge
+    the component — and since ADR 0066's 2026-11-06 amendment that is
+    the rule, not a preference: lift-and-evaluate covers only derived
+    logic that MUST stay inside a component (this pin's shell-side copy
+    for the Anki note's Familiarity field); logic that can move to
+    `lib/` moves and gets a behavioral suite. Rationale: the "ai · ai" badge
     bug passed its own original pin — that pin asserted the buggy
     expression byte-for-byte, so red-green was impossible for that logic
     error and only the review pass caught it (fixed 2026-10-20, `cab5280`).

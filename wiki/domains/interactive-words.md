@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — every 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-06T18:41:00+0300 }
+generated: { by: agent:zcode, at: 2026-11-06T19:10:00+0300 }
 verified: { by: agent:zcode, at: 2026-11-05T16:00:00+0000 }
 sources:
   - id: word-controller
@@ -82,10 +82,16 @@ sources:
     title: WordText (segmenting renderer)
   - id: word-popup
     resource: laravel/resources/js/Components/WordPopup.jsx
-    title: WordPopup (lazy detail popup — toolbar + always-rendered dictionary, no tab strip)
+    title: WordPopup (the shell — state, effects, the positioned portal wrapper, the status selector and the one WordCard mount)
   - id: word-card
     resource: laravel/resources/js/Components/WordCard.jsx
     title: WordCard (the one card — every status rendered from lib/popupModel.js's view-model)
+  - id: popup-model
+    resource: laravel/resources/js/lib/popupModel.js
+    title: popupModel.js (buildCardModel — the card's whole derived surface from one state object; the shared sectionLabel)
+  - id: popup-style
+    resource: laravel/resources/js/lib/popupStyle.js
+    title: popupStyle.js (placement, container, font-size helpers; toolbarButtonClass / TOOLBAR_ACCENTS / explainButtonClass literals)
   - id: info-popup
     resource: laravel/resources/js/Components/InfoPopup.jsx
     title: InfoPopup (the info popup layer above the card — Anki notices/error, ask-AI error/started notice, the Explanation slot)
@@ -367,6 +373,59 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    `<ol>` places its markers *inside* the list items
    (`list-style-position: inside`) so wide ("100.") numbers can never spill
    past the card edge.
+   **The popup is a shell, one word card, and a model** (word-card
+   tickets 01–03; the term is the repo-root `GLOSSARY.md`'s **Word card**).
+   `Components/WordPopup.jsx` is the **shell**: the state owner (the
+   detail fetch, the on-open lookup, the popup-open penalty, the Anki
+   probe/send cluster, the ask-AI flow, the explain payload), its
+   effects and handlers, and the positioned portal wrapper (positioning
+   only — `popupStyle`'s box, the dialog semantics, the close handlers'
+   ref). It selects the card's **status** — `loaded` (a payload sits in
+   `data`), `missing` (no word id, no lookup hit, no payload), `error` /
+   `loading` (the bare pre-payload card once an id exists) — and mounts
+   ONE `WordCard` (`Components/WordCard.jsx`) with that state and one
+   handlers object (progress action, Anki send, Anki probe, ask-AI, the
+   two info-popup dismissals, models-open change); the single render
+   between a lookup hit and the fetch effect's start has no status and
+   mounts no card. The **word card** calls the **popup model** —
+   `lib/popupModel.js`'s `buildCardModel(state, t)`, one pure,
+   Node-testable function over the whole state (the card's own
+   `explainShown` toggle flag and the handler set folded in; `t`
+   injected, the `lib/ankiTemplate.js` `uiLabels(t)` precedent) — and
+   maps the result to JSX, deriving nothing itself: the toolbar
+   descriptors in row order (`kind`, `label`/`title`, `color` and `icon`
+   TOKENS, `disabled`, plus `pressed` / `hoverProbe` / `hasPopup` where
+   they apply), the header model (null on the pre-payload card; each
+   line object present exactly when it renders, the provenance badge
+   parts among them), the entry list (per entry its "WORD — pos" label,
+   usage chips and dimming mark), the explain gate, the ask-AI label and
+   availability, the body line (loading / error / the missing verdict)
+   and the info popup's notices (null where the card has no info popup).
+   Buttons bind their handler by `kind` through one lookup and wear the
+   `word-popup-*` hook `HOOK_FOR_KIND` names; the color tokens map to the
+   full Tailwind literals of `lib/popupStyle.js`'s `toolbarButtonClass`
+   (`TOOLBAR_ACCENTS`), kept as literals so the Tailwind scanner sees
+   them. A handler the shell does not pass is a capability the model
+   reads as absent — a disabled icon — which is how the profile preview's
+   toolbar stays inert without special markup; the shell itself passes
+   every handler on every status, and the missing card's wordless icons
+   are disabled by the model's no-payload rule instead. The toolbar,
+   header, card chrome (`-card`), dictionary and the Models-used mount
+   render once, for every status — the pre-payload card is the same
+   chrome minus toolbar, header and dictionary, which the model returns
+   none of. The panes are flat siblings in `Components/`: `InfoPopup.jsx`
+   (the info popup layer), `AskAiError.jsx` (the ask-AI error and the
+   per-item dismiss control it and the layer both mount), `ExplainPane.jsx` (the
+   Context explanation pane, its guidance states, the page-lifetime
+   explain cache; the shell builds the pane as an inert element the card
+   mounts behind its toggle). `lib/popupStyle.js` also carries the
+   placement (`popupStyle`), the container class and the font-size
+   helpers the pages read (`popupFontSizeFor`, `DEFAULT_POPUP_FONT_SIZE`)
+   — pages import helpers from `lib/`, never from a component file, and
+   no popup component file exports a helper. The model's derived states
+   are tested behaviorally in `lib/popupModel.test.js`; the vitest source
+   pins over the component files assert wiring and structure only (ADR
+   0066, amended 2026-11-06).
    **Every element inside the card carries a stable `word-popup-*` class**
    (the positioned wrapper — portal and preview alike — keeps `word-popup`;
    since word-popup-overhaul ticket 04 the wrapper is positioning-only and
@@ -404,8 +463,8 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    (the ask failure) and `-explain-row` (the mounted pane's wrapper) — CSS
    hooks keeping the card's structure addressable from outside styles
    without coupling them
-   to utility-class churn (no test pins them; the profile preview reuses
-   the component itself).
+   to utility-class churn (the vitest wiring pins assert the hooks'
+   presence; the profile preview reuses the `WordCard` itself).
    **Every block below the headword is individually hideable per user**
    (ADR 0046): the `popupVisibility` Inertia prop shared to every page
    (`App\Support\PopupVisibility::for()` — the saved `ui_settings.popup`
@@ -414,9 +473,11 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    base-word sections (`word_family`), each satellite, the progress
    actions (the `progress_actions` opt-out hides the toolbar's two
    progress icons entirely), or the Explanation toggle together with the
-   robot and the Models-used popup (`explanation`); the popup
-   body is the one `WordCard` (`Components/WordCard.jsx`, word-card
-   ticket 02), which the profile tab reuses for a live preview.
+   robot and the Models-used popup (`explanation`); the toolbar and
+   header keys are the popup model's verdicts (above), while the five
+   dictionary-block keys are pass-through wiring the `WordCard` reads off
+   the same map; the profile tab mounts the same `WordCard` for a live
+   preview.
    It always fits the viewport: it opens below the word, flips above it when
    there is more room above, its height is capped to the larger side, the
    body scrolls internally. The **info popup** above the card
@@ -444,8 +505,10 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
 
 Since popup-ai-enrich ticket 03 every tokenizer word token is interactive,
 mapped or not. A token with no word-map entry opens the popup in **missing
-mode** (`WordCard`'s `missing` status, rendered
-while `wordId` is null and no payload sits in `data`): the **raw clicked
+mode** (the word card's `missing` status, which the shell selects
+while `wordId` and the on-open lookup's id are both null and no payload
+sits in `data`; the same `WordCard` renders it from the same model,
+nothing is written per variant): the **raw clicked
 surface** as the title — the folded `l_word` key would show ё-folded,
 mark-stripped text — and one honest note, `word.not_in_dictionary` ("This
 word isn't in the dictionary yet."). **Almost nothing runs on open**: the
@@ -462,9 +525,12 @@ and no familiarity / frequency / form-of lines. The toolbar mirrors the
 real card's row IN FULL (word-popup-overhaul ticket 05) — know / remove
 mark on the left, then pushed right: Anki, the Explanation toggle, Ask-AI,
 the robot — with every wordless icon **disabled, never hidden**: the
-progress and Anki icons render inert through the same null-handler gates
-the real card reads (the outer `WordPopup` passes no handlers — there is
-nothing to act on yet), and the Explanation toggle can never enable (no
+progress and Anki icons render inert through the popup model's
+**no-payload rule** — `buildCardModel` disables them for the `missing`
+status whatever handlers arrive (the shell passes its one handlers object
+on every status; there is nothing to act on yet, so the model, not a
+missing prop, says so — the Anki descriptor is the plain add form, always
+neutral, no hover probe), and the Explanation toggle can never enable (no
 word to attach the pane to; it is a plain disabled, never-pressed button —
 the working pane lives on the real card the ask swaps in). Two icons stay
 live: the **robot** (the Models used popup reads its models off the explain
@@ -479,9 +545,11 @@ language (`{code, name}|null` — the reader's display-column descriptors
 carry it as `language`, the simulator's too) is plumbed `WordText` →
 `WordPopup` as the `language` prop; a mount without a code keeps the icon
 disabled for admins (there is nothing valid to ask with) and hidden for
-everyone else. The structure mirrors the
-real card (same toolbar / header / dictionary blocks, hairlines and stable
-`word-popup-*` hooks, `-title` on the surface, `-missing` on the note). The
+everyone else. It is the same word card as the
+real one (the same toolbar / header / dictionary chrome rendered once,
+hairlines and stable `word-popup-*` hooks, `-title` on the surface,
+`-missing` on the note; the header is title-only and the entry list
+empty because the model returns no lines and no sections for it). The
 old unclickable phrasal-hit span branch merged into the interactive path: an
 unmapped phrasal-verb hit keeps its dotted underline + headword tooltip and
 now also opens the missing card on Ctrl+click. Mapped-token behavior is
@@ -899,10 +967,11 @@ word's previous AI rows.
   `ai_asked` reads **`succeeded_at` (not the current status)**: a FAILED
   re-ask keeps the first success's timestamp, so the toolbar keeps the
   re-ask variant after a failed retry. Dispatch-time errors land verbatim
-  in the info popup above the card (`word-popup-ask-ai-error`; both popup bodies mount
-  the shared render — the missing card and the dictionary card alike —
-  with the go-to-settings link for 400/403 and the four-state contract's
-  Retry control re-sending the ask; sticky until dismissed — each sticky
+  in the info popup above the card (`word-popup-ask-ai-error`; the one
+  word card mounts the shared `AskAiError` render on the missing and the
+  dictionary status alike — the model's `notices` carry `aiError` for
+  both — with the go-to-settings link for 400/403 and the four-state contract's
+  Retry control re-sending the ask (bound to the model's `askAi.available`); sticky until dismissed — each sticky
   info-popup item carries the shared `word-popup-info-dismiss` control,
   word.info_dismiss — word-popup-overhaul ticket 04); the ui-strings are `word.ask_ai` /
   `word.ask_ai_again` / `word.ask_ai_sending` / `word.ask_ai_failed` /
@@ -974,7 +1043,10 @@ word's previous AI rows.
   gate as the Anki success notices); the 409 refetch sync keeps its
   payload swap. The sparkles icon renders only behind the `canAskAi` gate
   (shared `auth.user.role === 'admin' && is_approved`, computed once in
-  the outer `WordPopup`, threaded to both popup bodies) — and the
+  the outer `WordPopup` and handed to the card as `canAskAi` state — the
+  popup model renders the descriptor for admins only, and reads the
+  icon's availability from the handler's presence plus, on the missing
+  card, a column language and the settled on-open resolve) — and the
   profile's Popups-tab preview passes the same gate, so an admin still
   sees the inert icon there. Non-admin direct POSTs answer 403 in the
   reading-surfaces shape.
@@ -1002,8 +1074,11 @@ word's previous AI rows.
   enriches the same row, the non-admin adoption 403, validation),
   `tests/Unit/EnrichmentReplyTest.php` (parser: fences, coercion, caps,
   truncation, null), `tests/Feature/WordEndpointTest.php` (`ai_asked`
-  true only for a succeeded row), and the vitest source pins in
-  `resources/js/Components/WordPopup.toolbar.test.js` +
+  true only for a succeeded row), the behavioral popup-model suite
+  `resources/js/lib/popupModel.test.js` (the Ask-AI describes — the
+  label chain, the admin-only descriptor, availability, and the missing
+  card's ask gate as outputs of `data: null`) and the vitest wiring pins
+  in `resources/js/Components/WordPopup.toolbar.test.js` +
   `resources/js/Components/WordText.missing.test.js`.
 
 # Anki send from the popup toolbar (per-word send)
@@ -1064,8 +1139,10 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   opens a thousand popups at **zero** refused requests (the earlier
   one-per-30s-window price is gone too). A real resolve paints the
   icon's **amber token**
-  (`--color-amber`/`--color-amber-night` — the staged/raw token, via
-  `toolbarButtonClass(ankiReachable ? 'amber' : 'neutral')`); a null
+  (`--color-amber`/`--color-amber-night` — the staged/raw token: the
+  popup model puts `color: ankiReachable ? 'amber' : 'neutral'` on the
+  Anki descriptor and `lib/popupStyle.js`'s `toolbarButtonClass` maps
+  the token to its literal); a null
   answer (quiet), a rejection (Anki off, CORS, HTTP/non-JSON — also
   memoized 30s), a probe still in flight, and a popup
   without Anki settings all keep the neutral grey — but grey is **color
@@ -1168,8 +1245,10 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   per-item dismiss control. The icon's
   tooltip/aria swaps to "Saving…" (`word.anki_sending`) while the send is
   in flight, the button disabled.
-* The profile's Popups-tab preview renders the toolbar's icons disabled
-  (no handlers in preview mode), so the preview cannot drift from the
+* The profile's Popups-tab preview mounts the same `WordCard` with canned
+  state and a handlers object holding only the models-open change, so
+  the popup model reads every other capability as absent and the
+  toolbar's icons render disabled — the preview cannot drift from the
   real popup's first row — and it stays inert there too: the reachability
   probe lives in the outer `WordPopup` (which owns `ankiSettings` and the
   loaded payload), the card only reads the outcome through the
@@ -1178,7 +1257,8 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   preview renders the same info popup above its card (its wrapper carries
   the portal's positioning minus absolute/z-50 — `relative` is the
   layer's anchor), showing only the canned `word.explain_preview`
-  explanation through it.
+  explanation through it (an `ExplainPane` element in preview mode,
+  imported from its own file).
 
 # Familiarity events (ADR 0028)
 

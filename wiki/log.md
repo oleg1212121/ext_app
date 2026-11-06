@@ -6,6 +6,41 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-06 (word-card ticket 04 — knowledge base closure: the Word card term, the ADR 0066 exemplar swap, the concepts rewritten)
+
+The knowledge base catches up with the deepened word card. The repo-root
+`GLOSSARY.md` gains **Word card** under Interactive words — the popup's one
+rendered card (dictionary view, missing placeholder, the bare pre-payload
+loading / error states) whose toolbar, header and chrome render once with
+every disabled / label / color state derived by the popup model
+(`lib/popupModel.js`), _Avoid_ card body / popup content — and the
+**Missing word** and **Info popup** entries re-anchor onto it (the missing
+card is the word card's missing state; the info popup floats above the
+word card and floats what the model's notices say). ADR 0066 gains its
+2026-11-06 amendment: the lift-and-evaluate clause narrows to derived
+logic that must stay inside a component, logic that can move to `lib/`
+moves and gets behavioral tests, the exemplar swaps from the retired
+`WordPopup.sourceBadge.test.js` badge lift to `lib/popupModel.test.js`'s
+"the provenance badge" describe (the `effectiveFamiliarity` lift in
+`WordPopup.lookup.test.js` is the surviving lift exemplar), and the
+wiring/structure verbatim-contains pins stay exactly as written.
+
+`domains/interactive-words.md` now describes the shell / word card / popup
+model structure and the four statuses (`loaded`, `missing`, `loading`,
+`error`) in `# How it works`, fixes the passages that still named deleted
+code — the `toolbarButtonClass(ankiReachable ? …)` expression, "both popup
+bodies", the missing card's "the outer `WordPopup` passes no handlers" (the
+shell passes its one handlers object on every status; the model's
+no-payload rule disables the wordless icons) — and lists
+`lib/popupModel.js` + `lib/popupStyle.js` as sources.
+`architecture/frontend.md`'s lib layering names the popup model and the
+style helpers and states that pages import pure helpers from `lib/`, never
+from a component file (additive — no divergence note existed to drop);
+its vitest paragraph carries the narrowed split and the new exemplar.
+`playbooks/running-tests.md`'s pin-split passage points at the amendment.
+`generated.at` bumped on the three concepts and the playbook. No routes,
+models or commands changed (no `wiki:sync`).
+
 ## 2026-11-06 (word-card ticket 03 — flat siblings, WordPopup.jsx shrinks to the shell)
 
 `Components/WordPopup.jsx` now holds only the shell (state, effects, the

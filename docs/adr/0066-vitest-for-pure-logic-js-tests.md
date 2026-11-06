@@ -91,3 +91,55 @@ behaviorally. The derivation moved to `lib/aiAnswerTokens.mjs`
 (`answerLanguagesFromPayload`, Node-tested) and the hook imports it; the
 hook pin is deleted. Hooks are untested React wiring again, exactly as
 Decision 1 has always said.
+
+## Amended 2026-11-06 (lift-and-evaluate narrows to logic that must stay in a component; the badge exemplar goes behavioral)
+
+The 2026-10-23 amendment's lift-and-evaluate clause narrows. It covers
+only derived logic that **must** remain inside a component because it is
+inseparable from React state, effects or wiring. Derived logic that
+**can** move to `lib/` moves there and is tested behaviorally — the
+2026-10-23 closing rule ("logic that CAN be imported from `lib/` is still
+tested behaviorally") is now the requirement, and the lift-and-evaluate
+form is the fallback for the remainder, not a peer choice. The word-card
+tickets (01–03) are the case that forced the reading: the word card's
+whole derived surface — the provenance badge, the effective familiarity,
+the Anki label chain and color token, the explain gating, the ask-AI
+label and availability, the missing card's wordless icons — left
+`Components/WordPopup.jsx` for one pure function, `lib/popupModel.js`'s
+`buildCardModel`, which takes the card's state object plus `t` and
+returns toolbar descriptors, the header model, the entry list, the body
+line and the info popup's notices. The component (`Components/WordCard.jsx`)
+maps descriptors to JSX and derives nothing, so there is nothing left in
+it to lift.
+
+The exemplar changes accordingly. The 2026-10-23 exemplar,
+`Components/WordPopup.sourceBadge.test.js`'s regex-lifted badge
+derivation evaluated via `new Function`, retired with word-card ticket
+02: the derivation lives in `lib/popupModel.js` and is asserted
+behaviorally in `lib/popupModel.test.js` ("the provenance badge" — the
+importer verbatim, the trailing "ai" part, "ai" alone, the adopt-on-ask
+dedupe that keeps "ai · ai" out, the foreign importer kept honest, the
+empty badge, and the missing card never badged). That suite is the
+behavioral exemplar now — the same "ai · ai" regression that motivated
+the 2026-10-23 split is the test a lift could only approximate. What
+`WordPopup.sourceBadge.test.js` holds today is structure only: the card
+renders the model's badge (`card.header.sourceBadge.map(`), one chip per
+part, at one site inside a section label. The one lift-and-evaluate pin
+that remains, `Components/WordPopup.lookup.test.js`'s
+`effectiveFamiliarity` lift, is the pattern's surviving exemplar
+precisely because it fits the narrowed clause: the shell keeps its own
+copy of that derivation for the Anki note's Familiarity field, inside
+the send cluster the model does not read, and the pin covers live code
+the behavioral suite cannot reach.
+
+Everything else stays as written. Decision 1 is unchanged: vitest runs
+pure-logic tests in Node, no jsdom, no component rendering. Decision 2 is
+unchanged and, if anything, sharpened: pure logic lives in `lib/`, and a
+view-model with an injected `t` (the `lib/ankiTemplate.js` `uiLabels(t)`
+precedent) is pure logic. The two-kind rule itself is unchanged —
+verbatim-contains pins stay allowed for **wiring/structure** only
+(pass-throughs, class hooks, presence/absence; exemplar still
+`Components/WordPopup.ankiSend.test.js`), and a verbatim pin over a
+derivation is still the failure mode the 2026-10-23 incident named. The
+2026-11-02 clarifications (page-local components under the same rule;
+hooks never pinned) are unchanged.
