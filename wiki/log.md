@@ -6,6 +6,29 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-06 (word-card ticket 03 — flat siblings, WordPopup.jsx shrinks to the shell)
+
+`Components/WordPopup.jsx` now holds only the shell (state, effects, the
+positioned portal wrapper, the `WordCard` mount). The card's panes moved
+into flat siblings beside it: `InfoPopup.jsx` (the info popup layer),
+`AskAiError.jsx` (the ask-AI error plus the per-item `InfoDismissButton`
+it and the layer both mount — kept beside it so the imports run one way)
+and `ExplainPane.jsx` (the pane, `ExplainGuidance`, the page-lifetime
+explain cache); `CollapsibleLine` stays in `WordCard.jsx`. The temporary
+WordCard ↔ WordPopup import cycle is gone. The class helpers
+`toolbarButtonClass` (with its accent map) and `explainButtonClass` moved
+into `lib/popupStyle.js`, so no component file exports a helper and the
+profile preview imports `ExplainPane` from its own file. `lib/ankiTemplate.js`
+drops its commented twin of the section label: it imports `sectionLabel`
+from `lib/popupModel.js` (now exported with `entryMatchesHeadword`) and
+escapes the result, so one definition of the "WORD — pos" heading feeds the
+card and the note (the ankiTemplate suite passes unchanged). Vitest source
+pins re-targeted to the file each pinned piece now lives in, pinned strings
+unchanged. No visible change. Frontmatter only (rewrites are ticket 04):
+interactive-words gains the three siblings as sources, anki-export gains
+`InfoPopup.jsx` and `lib/popupModel.js`; `generated.at` bumped on those two,
+profile and playbooks/running-tests.
+
 ## 2026-11-06 (word-card ticket 02 — one WordCard renders every status through the model)
 
 The word popup now renders exactly one card: `Components/WordCard.jsx`

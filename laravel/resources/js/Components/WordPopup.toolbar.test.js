@@ -37,6 +37,17 @@ const previewSource = readFileSync(new URL('../Pages/Profile/PopupsSettings.jsx'
 // WordCard: the one card the real portal and the profile preview share.
 const contentSource = readFileSync(new URL('./WordCard.jsx', import.meta.url), 'utf8');
 
+// word-card ticket 03: the card's panes live in flat sibling files beside
+// the shell — the info popup layer, the ask-AI error (with the shared
+// per-item dismiss control it and the layer both mount), the Explanation
+// pane (with its page-lifetime cache) — and the shared button class helpers
+// in lib/popupStyle.js. The pins below read the file each pinned piece
+// lives in now; the pinned strings are unchanged.
+const infoPopupSource = readFileSync(new URL('./InfoPopup.jsx', import.meta.url), 'utf8');
+const askAiErrorSource = readFileSync(new URL('./AskAiError.jsx', import.meta.url), 'utf8');
+const explainPaneSource = readFileSync(new URL('./ExplainPane.jsx', import.meta.url), 'utf8');
+const styleSource = readFileSync(new URL('../lib/popupStyle.js', import.meta.url), 'utf8');
+
 // The toolbar block: from the strip's own class hook to the word header
 // that follows it — everything between is the first-row JSX.
 const toolbarStart = contentSource.indexOf('className="word-popup-actions');
@@ -53,19 +64,19 @@ const dictionary = contentSource.slice(dictionaryStart);
 const popupBodySource = popupSource.slice(popupSource.indexOf('export default function WordPopup'));
 
 // The info popup layer (word-popup-overhaul ticket 04): the shared render
-// every transient message floats in — defined after the ask-AI error
-// component and before the shell, so this slice captures the dismiss
-// button + the layer itself.
-const infoLayer = popupSource.slice(
-    popupSource.indexOf('function InfoDismissButton'),
-    popupSource.indexOf('export default function WordPopup'),
-);
+// every transient message floats in — its own file since word-card ticket
+// 03, from the layer component to the end of the file.
+const infoLayer = infoPopupSource.slice(infoPopupSource.indexOf('export function InfoPopup'));
+
+// The shared per-item dismiss control: co-located with the ask-AI error,
+// which mounts it (the layer imports it from there for the Anki error).
+const dismissButton = askAiErrorSource.slice(askAiErrorSource.indexOf('function InfoDismissButton'));
 
 // The ask-AI error render proper — mounted inside the info popup, so the
 // component is pinned on its own slice.
-const askAiErrorComponent = popupSource.slice(
-    popupSource.indexOf('function AskAiError'),
-    popupSource.indexOf('function InfoDismissButton'),
+const askAiErrorComponent = askAiErrorSource.slice(
+    askAiErrorSource.indexOf('function AskAiError'),
+    askAiErrorSource.indexOf('function InfoDismissButton'),
 );
 
 // The auto-dismiss timer for the Anki success notices: an effect of the
@@ -244,7 +255,7 @@ describe('WordPopup action toolbar', () => {
         // pressed branch (verdigris accent + persistent tint, whatever token
         // the button passes — the toggle rests neutral).
         expect(mappedButton()).toContain('toolbarButtonClass(b.color, b.pressed)');
-        const helper = contentSource.slice(contentSource.indexOf('const toolbarButtonClass'));
+        const helper = styleSource.slice(styleSource.indexOf('const toolbarButtonClass'));
         const pressedBranch = helper.slice(helper.indexOf("pressed = false"), helper.indexOf("'disabled:opacity-40"));
         expect(pressedBranch).toContain('TOOLBAR_ACCENTS.verdigris');
         expect(pressedBranch).toContain('bg-[var(--color-verdigris)]/10');
@@ -257,7 +268,7 @@ describe('WordPopup action toolbar', () => {
         // literals — Tailwind's scanner reads this file's text, so
         // concatenation-built names would never compile. Which icon wears
         // which token is the model's (lib/popupModel.test.js).
-        const map = contentSource.slice(contentSource.indexOf('const TOOLBAR_ACCENTS'));
+        const map = styleSource.slice(styleSource.indexOf('const TOOLBAR_ACCENTS'));
         expect(map).toContain('opacity-80 hover:opacity-100');
         for (const [token, variable] of [
             ['verdigris', '--color-verdigris'],
@@ -270,7 +281,7 @@ describe('WordPopup action toolbar', () => {
             expect(map).toContain(`dark:text-[var(${variable}-night)]`);
         }
         // Neutral is the signature's default.
-        expect(contentSource).toContain("toolbarButtonClass = (color = 'neutral', pressed = false)");
+        expect(styleSource).toContain("toolbarButtonClass = (color = 'neutral', pressed = false)");
     });
 
     it('floats the Anki status lines in the info popup above the card', () => {
@@ -490,8 +501,8 @@ describe('The Context explanation lives in the info popup (word-popup-overhaul t
         // The cache module stays page-lifetime; nothing in the toggle path
         // clears it, so re-showing a hidden pane renders the memoized state
         // instead of refetching (ExplainPane reads cachedExplanation on mount).
-        expect(popupSource).toContain('cachedExplanation(explainKey)');
-        expect(popupSource).not.toContain('explainCache.clear()');
+        expect(explainPaneSource).toContain('cachedExplanation(explainKey)');
+        expect(explainPaneSource).not.toContain('explainCache.clear()');
         expect(contentSource).not.toContain('explainCache');
     });
 
@@ -600,7 +611,7 @@ describe('The info popup layer (word-popup-overhaul ticket 04)', () => {
         // One small shared dismiss button; the successes take none (they
         // auto-dismiss).
         expect(iconsSource).toMatch(/^ {4}xMark: '/m);
-        expect(infoLayer).toContain('word-popup-info-dismiss');
+        expect(dismissButton).toContain('word-popup-info-dismiss');
         expect(infoLayer).toContain('{onDismissAnki != null && (');
         expect(askAiErrorComponent).toContain('<InfoDismissButton');
         for (const hook of ['word-popup-anki-added', 'word-popup-anki-updated', 'word-popup-anki-duplicate']) {
@@ -699,5 +710,68 @@ describe('Popups tab preview', () => {
         // handlers threaded into the preview.
         expect(previewSource).not.toContain('onDismissAnki');
         expect(previewSource).not.toContain('onDismissAskAi');
+    });
+});
+
+describe('Flat siblings — WordPopup.jsx is the shell (word-card ticket 03)', () => {
+    // The card and its panes live in flat sibling files beside the shell;
+    // the tiny helpers live with the component that mounts them.
+    it('keeps no pane, helper or explain cache in the shell file', () => {
+        for (const moved of [
+            'function InfoPopup',
+            'function AskAiError',
+            'function InfoDismissButton',
+            'function ExplainPane',
+            'function ExplainGuidance',
+            'function CollapsibleLine',
+            'explainCache',
+            'MIN_INFO_HEIGHT',
+        ]) {
+            expect(popupSource, moved).not.toContain(moved);
+        }
+        expect(popupSource).toContain("import {ExplainPane} from './ExplainPane.jsx';");
+    });
+
+    it('homes each pane in its own sibling, the helpers beside their consumer', () => {
+        expect(infoPopupSource).toContain('export function InfoPopup(');
+        expect(askAiErrorSource).toContain('export function AskAiError(');
+        expect(askAiErrorSource).toContain('export function InfoDismissButton(');
+        expect(explainPaneSource).toContain('export function ExplainPane(');
+        expect(explainPaneSource).toContain('function ExplainGuidance(');
+        expect(explainPaneSource).toContain('const explainCache = new Map();');
+        expect(contentSource).toContain('function CollapsibleLine(');
+    });
+
+    it('imports one way — no sibling reads back from the shell, no cycle between panes', () => {
+        for (const [name, source] of [
+            ['WordCard.jsx', contentSource],
+            ['InfoPopup.jsx', infoPopupSource],
+            ['AskAiError.jsx', askAiErrorSource],
+            ['ExplainPane.jsx', explainPaneSource],
+        ]) {
+            expect(source, name).not.toContain("from './WordPopup.jsx'");
+        }
+        expect(contentSource).toContain("import {InfoPopup} from './InfoPopup.jsx';");
+        expect(infoPopupSource).toContain("import {AskAiError, InfoDismissButton} from './AskAiError.jsx';");
+        expect(askAiErrorSource).not.toContain("from './InfoPopup.jsx'");
+    });
+
+    it('exports no class helper from a component file — the button styles come from lib', () => {
+        for (const [name, source] of [
+            ['WordCard.jsx', contentSource],
+            ['InfoPopup.jsx', infoPopupSource],
+            ['AskAiError.jsx', askAiErrorSource],
+            ['ExplainPane.jsx', explainPaneSource],
+            ['WordPopup.jsx', popupSource],
+        ]) {
+            expect(source, name).not.toMatch(/^export const /m);
+        }
+        expect(styleSource).toMatch(/^export const toolbarButtonClass = /m);
+        expect(styleSource).toMatch(/^export const explainButtonClass = /m);
+    });
+
+    it('lets the profile preview import the pane from its own file', () => {
+        expect(previewSource).toContain("import {ExplainPane} from '../../Components/ExplainPane.jsx'");
+        expect(previewSource).not.toContain("from '../../Components/WordPopup.jsx'");
     });
 });

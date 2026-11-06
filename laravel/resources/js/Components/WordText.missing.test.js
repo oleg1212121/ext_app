@@ -289,10 +289,11 @@ describe('The missing card (WordCard\'s missing status)', () => {
         // The shared render carries the stable hook, the Retry control
         // (the four-state contract's error state) and the go-to-settings
         // link for the no-model (400) / no-key (403) answers — the
-        // ExplainGuidance treatment.
-        const errorComponent = popupSource.slice(
-            popupSource.indexOf('function AskAiError'),
-            popupSource.indexOf('function InfoDismissButton'),
+        // ExplainGuidance treatment. Its own file since word-card ticket 03.
+        const errorSource = readFileSync(new URL('./AskAiError.jsx', import.meta.url), 'utf8');
+        const errorComponent = errorSource.slice(
+            errorSource.indexOf('function AskAiError'),
+            errorSource.indexOf('function InfoDismissButton'),
         );
         expect(errorComponent).toContain('word-popup-ask-ai-error');
         expect(errorComponent).toContain('word-popup-ask-ai-retry');

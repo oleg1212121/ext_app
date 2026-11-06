@@ -12,17 +12,18 @@ import {FAMILIARITY_MAX} from './wordFamiliarity';
 
 // A payload entry belongs to the popup's own headword when its word matches
 // it (case-insensitively) or is absent; everything else is a base-word
-// section of the word family (ADR 0045). Expand phase: the component's twin
-// (WordPopup.jsx) and the Anki note's escaped twin (lib/ankiTemplate.js)
-// stay until word-card tickets 02/03 single-source them here.
-function entryMatchesHeadword(entry, headword) {
+// section of the word family (ADR 0045). The ONE definition (word-card
+// ticket 03): the card's entry list below and the Anki note builder
+// (lib/ankiTemplate.js) both read it.
+export function entryMatchesHeadword(entry, headword) {
     return !entry.word || entry.word.toLowerCase() === String(headword ?? '').toLowerCase();
 }
 
 // Section heading, one per popup section: "MELTED — verb" for the popup's
 // own headword sections, "MELT — verb" for base-word sections (ADR 0045) —
-// headword uppercase, POS lowercase, em dash.
-function sectionLabel(entry, headword) {
+// headword uppercase, POS lowercase, em dash. Raw text: React escapes it at
+// render, and the Anki note builder HTML-escapes it for its field values.
+export function sectionLabel(entry, headword) {
     const word = entryMatchesHeadword(entry, headword) ? headword : entry.word;
 
     return [String(word ?? '').toUpperCase(), entry.word_class?.toLowerCase()]

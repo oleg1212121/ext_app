@@ -3,9 +3,11 @@ import {
     DEFAULT_POPUP_FONT_SIZE,
     POPUP_MARGIN,
     VIEWPORT_MARGIN,
+    explainButtonClass,
     popupContainerClass,
     popupFontSizeFor,
     popupStyle,
+    toolbarButtonClass,
 } from './popupStyle';
 
 // word-card ticket 01 — the popup's pure style helpers move out of
@@ -131,5 +133,34 @@ describe('the shared constants', () => {
 
     it('keep the card surface class byte-identical (the portal and the profile preview share it)', () => {
         expect(popupContainerClass).toBe('flex flex-col overflow-hidden rounded-md border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[#FDFBF5] dark:bg-[#1C1915] shadow-lg shadow-black/20 font-sans text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]');
+    });
+});
+
+// word-card ticket 03: the card's sibling files (WordCard's toolbar, the info
+// popup's dismiss control, the explain pane's and the ask-AI error's retry
+// buttons) share these class helpers from lib — no helper is exported from a
+// component file.
+describe('toolbarButtonClass — the toolbar icon button style', () => {
+    const BASE = 'rounded-sm p-1 transition-[opacity,background-color]';
+    const TAIL = 'disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]';
+
+    it('rests neutral by default — the dismiss control\'s plain grey', () => {
+        expect(toolbarButtonClass()).toBe(`${BASE} opacity-80 hover:opacity-100 ${TAIL}`);
+    });
+
+    it('maps a color token to its full-literal accent classes', () => {
+        expect(toolbarButtonClass('amber')).toBe(`${BASE} text-[var(--color-amber)] hover:bg-[var(--color-amber)]/10 dark:text-[var(--color-amber-night)] dark:hover:bg-[var(--color-amber-night)]/10 ${TAIL}`);
+    });
+
+    it('presses verdigris with a persistent tint, whatever token is passed', () => {
+        const pressed = `${BASE} text-[var(--color-verdigris)] hover:bg-[var(--color-verdigris)]/10 dark:text-[var(--color-verdigris-night)] dark:hover:bg-[var(--color-verdigris-night)]/10 bg-[var(--color-verdigris)]/10 dark:bg-[var(--color-verdigris-night)]/10 ${TAIL}`;
+        expect(toolbarButtonClass('neutral', true)).toBe(pressed);
+        expect(toolbarButtonClass('amber', true)).toBe(pressed);
+    });
+});
+
+describe('explainButtonClass — the verdigris outline retry button', () => {
+    it('keeps the class string byte-identical (the explain pane and the ask-AI error share it)', () => {
+        expect(explainButtonClass).toBe('rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-[0.857em] hover:bg-[var(--color-verdigris)]/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]');
     });
 });

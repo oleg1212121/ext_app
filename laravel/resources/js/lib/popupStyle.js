@@ -6,8 +6,8 @@
 // browser global at import time.
 
 // The popup's distance from the clicked word, and the gap it keeps from
-// every viewport edge. The info popup's viewport clamp (WordPopup.jsx)
-// reads the same two values.
+// every viewport edge. The info popup's viewport clamp
+// (Components/InfoPopup.jsx) reads the same two values.
 export const POPUP_MARGIN = 8;
 export const VIEWPORT_MARGIN = 12;
 const MIN_POPUP_HEIGHT = 160;
@@ -18,6 +18,39 @@ const MIN_POPUP_HEIGHT = 160;
 // this file's text (resources/js/** is a @source), so concatenated names
 // would never compile.
 export const popupContainerClass = 'flex flex-col overflow-hidden rounded-md border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[#FDFBF5] dark:bg-[#1C1915] shadow-lg shadow-black/20 font-sans text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]';
+
+// Action-toolbar icon buttons (the card's first row; word-card ticket 03
+// moved them here so the card's sibling files share them without exporting
+// a helper from a component file). The glyphs carry no color of their own —
+// these text classes drive the resting and hover states: each toolbar
+// descriptor carries a color token (verdigris / vermilion / amber / info, or
+// the neutral default), mapped here to its full literal class strings — full
+// literals on purpose, Tailwind's scanner reads this file's text, so names
+// built by concatenation would never compile.
+const TOOLBAR_ACCENTS = {
+    verdigris: 'text-[var(--color-verdigris)] hover:bg-[var(--color-verdigris)]/10 dark:text-[var(--color-verdigris-night)] dark:hover:bg-[var(--color-verdigris-night)]/10',
+    vermilion: 'text-[var(--color-vermilion)] hover:bg-[var(--color-vermilion)]/10 dark:text-[var(--color-vermilion-night)] dark:hover:bg-[var(--color-vermilion-night)]/10',
+    amber: 'text-[var(--color-amber)] hover:bg-[var(--color-amber)]/10 dark:text-[var(--color-amber-night)] dark:hover:bg-[var(--color-amber-night)]/10',
+    info: 'text-[var(--color-info)] hover:bg-[var(--color-info)]/10 dark:text-[var(--color-info-night)] dark:hover:bg-[var(--color-info-night)]/10',
+    neutral: 'opacity-80 hover:opacity-100',
+};
+// `pressed` is the Explanation toggle's shown state: the verdigris accent
+// plus a persistent tint, so the icon reads as active while its pane is
+// mounted — verdigris whatever the passed token (only the toggle presses,
+// and it passes neutral). The info popup's per-item dismiss control
+// (InfoDismissButton, Components/AskAiError.jsx) wears the neutral default.
+export const toolbarButtonClass = (color = 'neutral', pressed = false) => [
+    'rounded-sm p-1 transition-[opacity,background-color]',
+    pressed
+        ? `${TOOLBAR_ACCENTS.verdigris} bg-[var(--color-verdigris)]/10 dark:bg-[var(--color-verdigris-night)]/10`
+        : TOOLBAR_ACCENTS[color],
+    'disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
+].join(' ');
+
+// The verdigris outline button the Explanation pane's error Retry and the
+// ask-AI error's Retry share (Components/ExplainPane.jsx,
+// Components/AskAiError.jsx).
+export const explainButtonClass = 'rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-[0.857em] hover:bg-[var(--color-verdigris)]/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]';
 
 // Popup typography derives from the host page's font-size setting (ADR 0031):
 // the page passes the size it computed with popupFontSizeFor(); this default

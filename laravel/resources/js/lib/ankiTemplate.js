@@ -33,6 +33,11 @@
 // The usage-label closed set (the six slugs a definition may carry) — the
 // Anki prefix drops unknown strays exactly like the popup's chips do.
 import {isKnownLabel} from './usageLabelDisplay';
+// The per-entry "WORD — pos" section label is the word card's own
+// (lib/popupModel.js, ADR 0045 — one definition feeds the card and the note
+// since word-card ticket 03). It returns raw text; the note escapes it like
+// every payload value.
+import {sectionLabel} from './popupModel';
 
 // Settings key → Anki note-type field name, in the note type's fixed field
 // order (must stay in lockstep with App\Support\AnkiSettings::FIELDS).
@@ -391,19 +396,6 @@ export function uiLabels(t) {
     }
 }
 
-// The popup's per-entry section label (WordPopup's sectionLabel, ADR 0045):
-// headword uppercase, POS lowercase, em dash — "MELT — verb" for a
-// base-word entry, the headword's own form for its matching entry. An
-// entry belongs to the headword when its word matches (case-insensitively)
-// or is absent. Data-derived text, so it is escaped like every payload value.
-const entryMatchesHeadword = (entry, headword) =>
-    !entry.word || entry.word.toLowerCase() === String(headword ?? '').toLowerCase()
-
-const entryLabel = (entry, headword) => [
-    String(entryMatchesHeadword(entry, headword) ? headword : entry.word ?? '').toUpperCase(),
-    entry.word_class?.toLowerCase(),
-].filter(Boolean).map(escapeHtml).join(' — ')
-
 // One tap-to-open counted section, the popup's <details> summary.
 const countedSection = (summary, content) =>
     `<details class="ef-details"><summary class="ef-summary">${summary}</summary>${content}</details>`
@@ -469,7 +461,7 @@ const entrySections = (entries, headword, labeled, render) => entries
         if (section === null) {
             return null
         }
-        const label = labeled ? entryLabel(entry, headword) : null
+        const label = labeled ? escapeHtml(sectionLabel(entry, headword)) : null
         return label
             ? `<div class="ef-entry"><span class="ef-entry-label">${label}</span>${section}</div>`
             : section
@@ -503,7 +495,7 @@ const isOn = (fields, key) => fields?.[key] !== false
 const entryBody = (entry, headword, wording, fields) => {
     const parts = []
 
-    const label = entryLabel(entry, headword)
+    const label = escapeHtml(sectionLabel(entry, headword))
     if (label !== '') {
         parts.push(`<span class="ef-entry-label">${label}</span>`)
     }

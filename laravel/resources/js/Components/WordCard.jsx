@@ -2,43 +2,14 @@ import React, {useEffect, useState} from 'react';
 import ModelsUsedPopup, {RobotHelpIcon} from './ModelsUsedPopup.jsx';
 import {useI18n} from '../i18n';
 import {buildCardModel} from '../lib/popupModel';
-import {popupContainerClass} from '../lib/popupStyle';
+import {popupContainerClass, toolbarButtonClass} from '../lib/popupStyle';
 import {dimsDefinition, usageLabelChips} from '../lib/usageLabelDisplay';
 import {Icon} from './icons.jsx';
-// The info popup layer still lives beside the shell (Components/WordPopup.jsx)
-// until word-card ticket 03 moves it into its own sibling file. The import is
-// render-time only (InfoPopup is used inside the component body), so the
-// temporary shell <-> card module cycle never reads an uninitialized binding.
-import {InfoPopup} from './WordPopup.jsx';
+// The info popup layer above the card (word-card ticket 03: a flat sibling).
+import {InfoPopup} from './InfoPopup.jsx';
 
 const TRANSLATIONS_PREVIEW = 8;
 const TRANSCRIPTIONS_PREVIEW = 1;
-
-// Action-toolbar icon buttons (the card's first row). The glyphs carry no
-// color of their own — these text classes drive the resting and hover states:
-// each descriptor carries a color token (verdigris / vermilion / amber /
-// info, or the neutral default), and the card maps the token to its full
-// literal class strings — full literals on purpose, Tailwind's scanner reads
-// this file's text, so names built by concatenation would never compile.
-const TOOLBAR_ACCENTS = {
-    verdigris: 'text-[var(--color-verdigris)] hover:bg-[var(--color-verdigris)]/10 dark:text-[var(--color-verdigris-night)] dark:hover:bg-[var(--color-verdigris-night)]/10',
-    vermilion: 'text-[var(--color-vermilion)] hover:bg-[var(--color-vermilion)]/10 dark:text-[var(--color-vermilion-night)] dark:hover:bg-[var(--color-vermilion-night)]/10',
-    amber: 'text-[var(--color-amber)] hover:bg-[var(--color-amber)]/10 dark:text-[var(--color-amber-night)] dark:hover:bg-[var(--color-amber-night)]/10',
-    info: 'text-[var(--color-info)] hover:bg-[var(--color-info)]/10 dark:text-[var(--color-info-night)] dark:hover:bg-[var(--color-info-night)]/10',
-    neutral: 'opacity-80 hover:opacity-100',
-};
-// `pressed` is the Explanation toggle's shown state: the verdigris accent
-// plus a persistent tint, so the icon reads as active while its pane is
-// mounted — verdigris whatever the passed token (only the toggle presses,
-// and it passes neutral). Exported for the info popup's dismiss control
-// (InfoDismissButton, Components/WordPopup.jsx), which wears the same style.
-export const toolbarButtonClass = (color = 'neutral', pressed = false) => [
-    'rounded-sm p-1 transition-[opacity,background-color]',
-    pressed
-        ? `${TOOLBAR_ACCENTS.verdigris} bg-[var(--color-verdigris)]/10 dark:bg-[var(--color-verdigris-night)]/10`
-        : TOOLBAR_ACCENTS[color],
-    'disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
-].join(' ');
 
 // The toolbar descriptor's `kind` maps to the button's stable word-popup-*
 // class hook — the card's structure stays addressable from outside CSS

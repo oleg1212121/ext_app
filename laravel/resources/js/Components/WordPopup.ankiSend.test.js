@@ -76,7 +76,10 @@ describe('WordPopup sendToAnki', () => {
         // Per-language types can mismatch too, so the popup string
         // interpolates the error's modelName instead of the hardcoded base
         // name (the profile tab's mismatch copy has done so since ticket 04).
-        expect(popupSource).toContain("t('word.anki_mismatch', {model: ankiSend.error.modelName})");
+        // The error line renders in the info popup layer (its own file since
+        // word-card ticket 03).
+        const infoPopupSource = readFileSync(new URL('./InfoPopup.jsx', import.meta.url), 'utf8');
+        expect(infoPopupSource).toContain("t('word.anki_mismatch', {model: ankiSend.error.modelName})");
     });
 });
 

@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — every 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-06T18:17:00+0300 }
+generated: { by: agent:zcode, at: 2026-11-06T18:41:00+0300 }
 verified: { by: agent:zcode, at: 2026-11-05T16:00:00+0000 }
 sources:
   - id: word-controller
@@ -86,6 +86,15 @@ sources:
   - id: word-card
     resource: laravel/resources/js/Components/WordCard.jsx
     title: WordCard (the one card — every status rendered from lib/popupModel.js's view-model)
+  - id: info-popup
+    resource: laravel/resources/js/Components/InfoPopup.jsx
+    title: InfoPopup (the info popup layer above the card — Anki notices/error, ask-AI error/started notice, the Explanation slot)
+  - id: ask-ai-error
+    resource: laravel/resources/js/Components/AskAiError.jsx
+    title: AskAiError (the shared ask-AI error render + the info popup's per-item dismiss control)
+  - id: explain-pane
+    resource: laravel/resources/js/Components/ExplainPane.jsx
+    title: ExplainPane (the on-demand Context explanation pane, its guidance states and page-lifetime explain cache)
   - id: word-lookup-lib
     resource: laravel/resources/js/lib/wordLookup.js
     title: wordLookup.js (the popup's lookup POST — the ordered resolver; a single-code list is the old single-code contract)

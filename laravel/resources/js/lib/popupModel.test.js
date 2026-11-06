@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {buildCardModel} from './popupModel';
+import {buildCardModel, entryMatchesHeadword, sectionLabel} from './popupModel';
 
 // word-card ticket 01 — the word card's derived logic, behaviorally. Every
 // derivation here used to live inside Components/WordPopup.jsx, where vitest
@@ -179,6 +179,28 @@ describe('the entry list (ADR 0045 sections)', () => {
 
     it('lists no sections on the missing card', () => {
         expect(missing().entries).toEqual([]);
+    });
+});
+
+// word-card ticket 03: the section label is ONE definition — the card's
+// entry list and the Anki note builder (lib/ankiTemplate.js, which escapes
+// the result for its HTML field values) both read these two exports.
+describe('sectionLabel / entryMatchesHeadword — the shared "WORD — pos" heading', () => {
+    it('reads an entry as the headword\'s own when its word matches case-insensitively or is absent', () => {
+        expect(entryMatchesHeadword({word: 'MELTED'}, 'melted')).toBe(true);
+        expect(entryMatchesHeadword({word: null}, 'melted')).toBe(true);
+        expect(entryMatchesHeadword({}, 'melted')).toBe(true);
+        expect(entryMatchesHeadword({word: 'melt'}, 'melted')).toBe(false);
+    });
+
+    it('labels the headword\'s own entry with the headword, a base-word entry with its own word', () => {
+        expect(sectionLabel({word: null, word_class: 'Noun'}, 'melted')).toBe('MELTED — noun');
+        expect(sectionLabel({word: 'melt', word_class: 'Verb'}, 'melted')).toBe('MELT — verb');
+        expect(sectionLabel({word: 'melted'}, 'melted')).toBe('MELTED');
+    });
+
+    it('returns the raw text — escaping is the HTML consumer\'s job, React escapes at render', () => {
+        expect(sectionLabel({word: '<i>melt</i>', word_class: 'Verb'}, 'melted')).toBe('<I>MELT</I> — verb');
     });
 });
 
