@@ -4,7 +4,7 @@ import {usePage} from '@inertiajs/react';
 import {useI18n} from '../i18n';
 import {isApprovedAdmin} from '../lib/authUser';
 import {getCsrfToken} from '../lib/http';
-import {FAMILIARITY_MAX, recordWordOpens} from '../lib/wordFamiliarity';
+import {FAMILIARITY_MAX, effectiveFamiliarity, recordWordOpens} from '../lib/wordFamiliarity';
 import {resolveWordId} from '../lib/wordLookup';
 import {AnkiConnectError, markAnkiReachable, probeReachable, unmarkAnkiReachable} from '../lib/ankiConnect';
 import {buildNoteFields, uiLabels} from '../lib/ankiTemplate';
@@ -13,6 +13,7 @@ import {ankiWordSyncConfig} from '../lib/ankiWordConfig';
 // The pure style helpers live in lib (word-card ticket 01) — the portal
 // positions with popupStyle.
 import {DEFAULT_POPUP_FONT_SIZE, popupStyle} from '../lib/popupStyle';
+import {cardStatus} from '../lib/popupModel';
 // The shell only (word-card ticket 03): the one word card renders every
 // status (ticket 02), and the card's panes are flat siblings beside this
 // file — the info popup layer (InfoPopup.jsx), the ask-AI error
@@ -384,10 +385,10 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
     // caller's open-time value, overridden by the popup-open penalty's
     // response once it lands — the same slot the columns patch through their
     // own response handling (WordText). The card's header resolves the same
-    // two values itself (lib/popupModel.js, which receives both), so header
-    // and note can never disagree; this copy feeds the Anki send, whose
-    // cluster stays in the shell (word-card ticket 02 scope).
-    const effectiveFamiliarity = resolvedFamiliarity ?? familiarity ?? null;
+    // two values through the same lib helper (lib/popupModel.js receives
+    // both), so header and note can never disagree; this call feeds the Anki
+    // send, whose cluster stays in the shell (word-card ticket 02 scope).
+    const noteFamiliarity = effectiveFamiliarity(resolvedFamiliarity, familiarity);
 
     // On-open duplicate detection (anki-popup-refresh): the popup silently
     // asks Anki whether this word is already saved — scoped to the word's
@@ -594,7 +595,7 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         setAnkiSend({status: 'sending'});
         const tags = data.tags ?? [];
         const noteFields = buildNoteFields(data, {
-            familiarity: effectiveFamiliarity,
+            familiarity: noteFamiliarity,
             tags,
             nativeLanguage,
             labels: uiLabels(t),
@@ -788,28 +789,22 @@ export default function WordPopup({wordId, surface, familiarity, rect, onClose, 
         : null;
 
     // The card's status (word-card ticket 02) — the old three-branch render,
-    // now one selector feeding the one WordCard. Missing mode (popup-ai-enrich
-    // ticket 03) holds until the on-open lookup resolves the adopted word a
-    // queued ask minted (ticket 05's ask dispatches the job — no payload
-    // comes back to swap — and ticket 07's resolve links it on the next
-    // open). Once an id exists, the pre-payload card shows the loading line
-    // or the load error until the payload lands. The one render between a
-    // lookup hit and the fetch effect's start (an id, nothing loading yet)
-    // has no status and mounts no card — exactly as the old branches drew
-    // an empty wrapper there.
-    const status = data != null
-        ? 'loaded'
-        : (wordId == null && lookedUpId == null && data == null ? 'missing' : (error ? 'error' : (loading ? 'loading' : null)));
+    // now one lib selector (lib/popupModel.js's cardStatus, table-tested in
+    // lib/popupModel.test.js) feeding the one WordCard: loaded, missing
+    // until an id exists (bound or looked up), then the pre-payload error or
+    // loading card. The one render between a lookup hit and the fetch
+    // effect's start reads null, and the guard below mounts no card —
+    // exactly as the old branches drew an empty wrapper there.
+    const status = cardStatus({data, wordId, lookedUpId, error, loading});
 
     // The card's ask dispatch, one handler for both asking statuses: the
     // loaded card asks (or re-asks) on the bound word id; the missing card
-    // adopts-on-ask from its raw surface — gated as it always was: admin
-    // only, a column language to ask in, and the on-open resolve settled.
-    // A null handler is an absent capability the model reads as a disabled
-    // (or, without the admin gate, hidden) icon.
-    const askAiAction = data != null
-        ? (canAskAi ? askAi : null)
-        : (canAskAi && language?.code != null && !lookupBusy ? askAiMissing : null);
+    // adopts-on-ask from its raw surface. The shell only picks which — the
+    // gate (admin only; on the missing card also a column language to ask
+    // in and the on-open resolve settled) is the model's askAi.available
+    // verdict, which both consumers (the icon, the info popup's Retry)
+    // already read.
+    const askAiAction = data != null ? askAi : askAiMissing;
 
     return createPortal(
         // The POSITIONED WRAPPER (word-popup-overhaul ticket 04): positioning

@@ -335,7 +335,12 @@ describe('The shell hands the one card its state and handlers (word-card ticket 
         expect(popupSource.match(/<WordCard/g)).toHaveLength(1);
         expect(popupSource).not.toContain('PopupContent');
         expect(popupSource).not.toContain('word-popup-card');
-        expect(popupBodySource).toMatch(/const status = data != null\s*\? 'loaded'/);
+        // The status selector is lib/popupModel.js's cardStatus (its
+        // statuses table-tested in lib/popupModel.test.js); the shell only
+        // calls it on its fetch state and mounts no card on the null gap.
+        expect(popupSource).toContain("import {cardStatus} from '../lib/popupModel';");
+        expect(popupBodySource).toContain('const status = cardStatus({data, wordId, lookedUpId, error, loading});');
+        expect(popupBodySource).toContain('{status != null && (');
     });
 
     it('passes ONE handlers object — progress, Anki send + probe, ask, both dismissals, models', () => {
@@ -426,8 +431,10 @@ describe('The live ask-AI request (popup-ai-enrich tickets 04 + 05)', () => {
         // lookup resolves the adopted word — the queued ask itself swaps
         // nothing. (Ticket 07's lookedUpId leaves the missing status the
         // same way: a resolved id loads the payload through the fetch
-        // effect.)
-        expect(popupBody).toMatch(/wordId == null && lookedUpId == null && data == null \? 'missing'/);
+        // effect.) The selector's statuses are table-tested on
+        // lib/popupModel.js's cardStatus; here: the shell feeds it the
+        // looked-up id alongside the bound one.
+        expect(popupBody).toContain('const status = cardStatus({data, wordId, lookedUpId, error, loading});');
     });
 
     it('guards against stale responses landing on a moved popup', () => {
@@ -481,7 +488,7 @@ describe('The Context explanation lives in the info popup (word-popup-overhaul t
         // `word-popup-explain-row` hook above the card. The pane element
         // itself is built inert by the mount site (the shell from its
         // explain payload, the profile preview with its canned flag).
-        expect(contentSource).toMatch(/explainSlot=\{showExplain && explainShown && \(\s*explainPane\s*\)\}/);
+        expect(contentSource).toMatch(/explainSlot=\{showExplain && card\.explain\.pressed && \(\s*explainPane\s*\)\}/);
         expect(popupBodySource).toContain('<ExplainPane explain={explainProps} explainKey={explainKey}/>');
         expect(infoLayer).toContain('word-popup-explain-row');
         // The dictionary view holds only the word family's sections now.
@@ -491,10 +498,13 @@ describe('The Context explanation lives in the info popup (word-popup-overhaul t
 
     it('loads nothing before the first click — the pane mounts only behind the toggle', () => {
         // Pane mount == the auto-ask effect's fire (ExplainPane), so the
-        // `explainShown` guard is the whole "no fetch before the click"
-        // contract: the flag starts false and only the icon's click flips it.
+        // `explainShown` flag is the whole "no fetch before the click"
+        // contract: it starts false and only the icon's click flips it; the
+        // pane gate reads it through the model's pressed verdict
+        // (explain.pressed — lib/popupModel.test.js).
         expect(contentSource).toMatch(/const \[explainShown, setExplainShown\] = useState\(false\)/);
-        expect(contentSource).toContain('explainSlot={showExplain && explainShown && (');
+        expect(contentSource).toContain('buildCardModel({...state, explainShown, handlers}, t)');
+        expect(contentSource).toContain('explainSlot={showExplain && card.explain.pressed && (');
     });
 
     it('reuses the page-lifetime cache on re-show — hide never discards', () => {
@@ -686,8 +696,10 @@ describe('Popups tab preview', () => {
         expect(previewSource).not.toContain('onAnkiSend');
         expect(previewSource).not.toContain('ankiSend');
         // The preview keeps the explain payload + canned-answer flag that
-        // make the Explanation toggle render its pane without any request.
-        expect(previewSource).toContain('preview: true');
+        // make the Explanation toggle render its pane without any request
+        // (the canned flag is the pane's own `preview` prop — the card
+        // model carries no preview field).
+        expect(previewSource).not.toContain('preview: true');
         expect(previewSource).toContain('<ExplainPane explain={previewExplain} explainKey="preview" preview/>');
     });
 

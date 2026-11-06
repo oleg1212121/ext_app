@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — every 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-06T19:10:00+0300 }
+generated: { by: agent:zcode, at: 2026-11-06T21:30:00+0300 }
 verified: { by: agent:zcode, at: 2026-11-05T16:00:00+0000 }
 sources:
   - id: word-controller
@@ -380,7 +380,8 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    probe/send cluster, the ask-AI flow, the explain payload), its
    effects and handlers, and the positioned portal wrapper (positioning
    only — `popupStyle`'s box, the dialog semantics, the close handlers'
-   ref). It selects the card's **status** — `loaded` (a payload sits in
+   ref). It selects the card's **status** through `lib/popupModel.js`'s
+   `cardStatus` (pure, table-tested) — `loaded` (a payload sits in
    `data`), `missing` (no word id, no lookup hit, no payload), `error` /
    `loading` (the bare pre-payload card once an id exists) — and mounts
    ONE `WordCard` (`Components/WordCard.jsx`) with that state and one
@@ -398,9 +399,15 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    they apply), the header model (null on the pre-payload card; each
    line object present exactly when it renders, the provenance badge
    parts among them), the entry list (per entry its "WORD — pos" label,
-   usage chips and dimming mark), the explain gate, the ask-AI label and
-   availability, the body line (loading / error / the missing verdict)
-   and the info popup's notices (null where the card has no info popup).
+   usage chips, dimming mark and senses — each sense's text, usage chips
+   and own dim, never stacked inside an already-dimmed section), the
+   explain gate (its `pressed` verdict also gates the Explanation pane's
+   mount), the ask-AI availability, the Models used popup's props (null
+   where the robot does not render), the body line (loading / error / the
+   missing verdict) and the info popup's notices (null where the card has
+   no info popup). The effective familiarity the header reads is
+   `lib/wordFamiliarity.js`'s `effectiveFamiliarity` — the same helper the
+   shell's Anki send feeds the note's Familiarity field from.
    Buttons bind their handler by `kind` through one lookup and wear the
    `word-popup-*` hook `HOOK_FOR_KIND` names; the color tokens map to the
    full Tailwind literals of `lib/popupStyle.js`'s `toolbarButtonClass`

@@ -16,16 +16,14 @@ import {describe, expect, it} from 'vitest';
 // Since word-card ticket 02 the dictionary — and CollapsibleLine, its sole
 // consumer's helper — live in Components/WordCard.jsx.
 
-const popupSource = readFileSync(new URL('./WordCard.jsx', import.meta.url), 'utf8');
-const ankiTemplateSource = readFileSync(new URL('../lib/ankiTemplate.js', import.meta.url), 'utf8');
-
 // WordCard: the one card the real portal and the profile preview share.
-const contentSource = popupSource;
+const cardSource = readFileSync(new URL('./WordCard.jsx', import.meta.url), 'utf8');
+const ankiTemplateSource = readFileSync(new URL('../lib/ankiTemplate.js', import.meta.url), 'utf8');
 
 // The dictionary view: from its class hook to the end of the card — every
 // POS section lives inside it.
-const dictionaryStart = contentSource.indexOf('className="word-popup-dictionary');
-const dictionary = contentSource.slice(dictionaryStart);
+const dictionaryStart = cardSource.indexOf('className="word-popup-dictionary');
+const dictionary = cardSource.slice(dictionaryStart);
 
 // The translations section: from the linked line's CollapsibleLine open to
 // the transcriptions line that follows it — both translations lines and the
@@ -37,7 +35,7 @@ const translationsSection = dictionary.slice(linkedStart, transcriptionsStart);
 // The raw line's JSX, located by its stable class-giving label prop. The
 // slice runs to the translations section's fragment close — the decorate
 // body carries its own `</>` and `className=`, so neither can bound it.
-const rawLine = (source = popupSource) => {
+const rawLine = (source = cardSource) => {
     const at = source.indexOf('label="raw-translations"');
     expect(at, 'the staged raw translations line renders').toBeGreaterThan(-1);
     const start = source.lastIndexOf('<CollapsibleLine', at);
@@ -69,9 +67,9 @@ describe('The linked translations line', () => {
         // CollapsibleLine's contract: an empty items list returns `empty`
         // verbatim — null included — so the linked line disappears entirely
         // when the raw line takes over.
-        const component = popupSource.slice(
-            popupSource.indexOf('function CollapsibleLine'),
-            popupSource.indexOf('export function WordCard'),
+        const component = cardSource.slice(
+            cardSource.indexOf('function CollapsibleLine'),
+            cardSource.indexOf('export function WordCard'),
         );
         expect(component).toMatch(/if \(items\.length === 0\) \{\s*\n\s*return empty;\s*\n\s*\}/);
     });
@@ -84,7 +82,7 @@ describe('The staged raw translations line', () => {
         // word-popup-raw-translations-more classes — the raw line and its
         // own "+N more…" expander hook.
         expect(raw).toContain('label="raw-translations"');
-        expect(popupSource).toContain('word-popup-${label}');
+        expect(cardSource).toContain('word-popup-${label}');
         expect(raw).toContain('previewCount={TRANSLATIONS_PREVIEW}');
         expect(raw).toContain('separator=", "');
     });
@@ -102,7 +100,7 @@ describe('The staged raw translations line', () => {
     it('hides entirely when the entry has no staged strings', () => {
         // The raw line's own mount gate: no staged strings, no line — not
         // even an empty shell.
-        expect(popupSource).toMatch(/\(entry\.staged_translations\?\.length \?\? 0\) > 0 && \(/);
+        expect(cardSource).toMatch(/\(entry\.staged_translations\?\.length \?\? 0\) > 0 && \(/);
     });
 
     it('is amber — the staged/raw token, day and night', () => {
@@ -132,7 +130,7 @@ describe('The popup-only boundary', () => {
         // The card builder reads the LINKED translations only (the flat
         // Translations field maps language_code-bearing objects; the staged
         // strings are plain strings and stay out of the note).
-        expect(popupSource).toContain('staged_translations');
+        expect(cardSource).toContain('staged_translations');
         expect(ankiTemplateSource).not.toContain('staged_translations');
     });
 });

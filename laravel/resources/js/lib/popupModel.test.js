@@ -1,13 +1,14 @@
 import {describe, expect, it} from 'vitest';
-import {buildCardModel, entryMatchesHeadword, sectionLabel} from './popupModel';
+import {buildCardModel, cardStatus, entryMatchesHeadword, sectionLabel} from './popupModel';
 
 // word-card ticket 01 — the word card's derived logic, behaviorally. Every
 // derivation here used to live inside Components/WordPopup.jsx, where vitest
 // could only lift-and-evaluate a regex-matched expression; buildCardModel
 // takes one state object and `t`, so the states those pins approximated are
-// asserted directly. Expected values come from today's card behavior
-// (WordPopup.jsx PopupContent / MissingPopupContent / the shell's inline
-// loading-error card), not from the model's own code.
+// asserted directly. Expected values come from the card's established
+// behavior (the pre-word-card popup bodies — the loaded card, the missing
+// card and the shell's inline loading / error card — that
+// Components/WordCard.jsx replaced), not from the model's own code.
 
 // A t() stand-in that keeps the key and the interpolation params visible.
 const t = (key, params) => (params ? `t:${key}:${JSON.stringify(params)}` : `t:${key}`);
@@ -64,22 +65,25 @@ describe('the provenance badge (popup-provenance ticket 04)', () => {
     });
 });
 
-describe('effectiveFamiliarity — the popup-open penalty response wins', () => {
+// The fallback order itself is lib/wordFamiliarity.js's effectiveFamiliarity
+// (behavioral in lib/wordFamiliarity.test.js); here: the header line reads it.
+describe('the header familiarity — the popup-open penalty response wins', () => {
+    const line = (value) => ({text: `t:word.familiarity:{"value":${value},"max":100}`});
+
     it('takes the resolved (post-penalty) familiarity over the opening one', () => {
-        expect(loaded({}, {familiarity: 40, resolvedFamiliarity: 35}).familiarity).toBe(35);
+        expect(loaded({}, {familiarity: 40, resolvedFamiliarity: 35}).header.familiarity).toEqual(line(35));
     });
 
     it('falls back to the opening familiarity until the penalty answers', () => {
-        expect(loaded({}, {familiarity: 40, resolvedFamiliarity: null}).familiarity).toBe(40);
+        expect(loaded({}, {familiarity: 40, resolvedFamiliarity: null}).header.familiarity).toEqual(line(40));
     });
 
     it('keeps a resolved 0 — nullish, not falsy, fallback', () => {
-        expect(loaded({}, {familiarity: 40, resolvedFamiliarity: 0}).familiarity).toBe(0);
+        expect(loaded({}, {familiarity: 40, resolvedFamiliarity: 0}).header.familiarity).toEqual(line(0));
     });
 
-    it('is null for an unmarked word', () => {
-        expect(loaded({}, {familiarity: null, resolvedFamiliarity: null}).familiarity).toBeNull();
-        expect(loaded().familiarity).toBeNull();
+    it('reads 0 for an unmarked word', () => {
+        expect(loaded({}, {familiarity: null, resolvedFamiliarity: null}).header.familiarity).toEqual(line(0));
     });
 });
 
@@ -170,6 +174,44 @@ describe('the entry list (ADR 0045 sections)', () => {
         expect(entries[0].dimmed).toBe(false);
         expect(entries[1].chips).toEqual([{text: 't:word.label_archaic', dimming: true}]);
         expect(entries[1].dimmed).toBe(true);
+    });
+
+    // The per-sense rows (popup-usage-labels ticket 01, the model's since the
+    // word-card review pass): text, chips and the sense's own dim.
+    const SENSES = [
+        {text: 'to become liquid', labels: []},
+        {text: 'to soften', labels: ['obsolete', 'colloquial']},
+        {text: 'to disperse', labels: ['dated']},
+        {text: 'to fade', labels: null},
+    ];
+
+    it('carries each sense\'s text and usage chips — dimming tier and register tier', () => {
+        const {entries} = loaded({entries: [{...OWN, definitions: SENSES}]});
+        expect(entries[0].definitions.map((definition) => definition.text))
+            .toEqual(['to become liquid', 'to soften', 'to disperse', 'to fade']);
+        expect(entries[0].definitions.map((definition) => definition.chips)).toEqual([
+            [],
+            [{text: 't:word.label_obsolete', dimming: true}, {text: 't:word.label_colloquial', dimming: false}],
+            [{text: 't:word.label_dated', dimming: false}],
+            [],
+        ]);
+    });
+
+    it('dims a sense carrying any dimming label — never a register-only or unlabelled one', () => {
+        const {entries} = loaded({entries: [{...OWN, definitions: SENSES}]});
+        expect(entries[0].definitions.map((definition) => definition.dimmed)).toEqual([false, true, false, false]);
+    });
+
+    it('never stacks the sense dim inside an already-dimmed section — the section mark wins', () => {
+        const {entries} = loaded({entries: [{...BASE, definitions: SENSES}]});
+        expect(entries[0].dimmed).toBe(true);
+        expect(entries[0].definitions.map((definition) => definition.dimmed)).toEqual([false, false, false, false]);
+        // The chips still render — only the extra opacity is skipped.
+        expect(entries[0].definitions[1].chips).toHaveLength(2);
+    });
+
+    it('lists no senses for an entry without definitions', () => {
+        expect(loaded({entries: [OWN]}).entries[0].definitions).toEqual([]);
     });
 
     it('tolerates a payload without entries', () => {
@@ -430,7 +472,6 @@ describe('the loaded toolbar', () => {
                 icon: 'sparkles',
                 disabled: false,
             });
-            expect(model.askAi.label).toBe('t:word.ask_ai');
         });
 
         it('reads "sending" and disables while an ask is in flight', () => {
@@ -572,22 +613,22 @@ describe('the missing card toolbar (deliberate differences, as outputs of data: 
     });
 });
 
-describe('the card body across the four statuses', () => {
+describe('the card body line across the four statuses', () => {
     // Everything the shell might hold while the payload is in flight: the
     // pre-payload card must ignore all of it.
     const RICH = {handlers: HANDLERS, canAskAi: true, languageCode: 'en', explainProps: EXPLAIN};
 
     it('pronounces the missing verdict once the on-open resolve settled', () => {
-        expect(missing().body).toEqual({kind: 'missing', resolving: false, text: 't:word.not_in_dictionary'});
+        expect(missing().bodyLine).toEqual({kind: 'missing', resolving: false, text: 't:word.not_in_dictionary'});
     });
 
     it('holds the loading line on the missing card while the resolve is in flight', () => {
-        expect(missing({resolving: true}).body).toEqual({kind: 'missing', resolving: true, text: 't:word.loading'});
+        expect(missing({resolving: true}).bodyLine).toEqual({kind: 'missing', resolving: true, text: 't:word.loading'});
     });
 
     it('renders the loading card bare — no toolbar, header, sections, robot or info popup', () => {
         const model = buildCardModel({status: 'loading', surface: 'melted', ...RICH}, t);
-        expect(model.body).toEqual({kind: 'loading', text: 't:word.loading'});
+        expect(model.bodyLine).toEqual({kind: 'loading', text: 't:word.loading'});
         expect(model.toolbar).toEqual([]);
         expect(model.header).toBeNull();
         expect(model.entries).toEqual([]);
@@ -598,7 +639,7 @@ describe('the card body across the four statuses', () => {
 
     it('renders the load-error card bare, carrying the error message verbatim', () => {
         const model = buildCardModel({status: 'error', surface: 'melted', error: 'Request failed (HTTP 500)', ...RICH}, t);
-        expect(model.body).toEqual({kind: 'error', text: 'Request failed (HTTP 500)'});
+        expect(model.bodyLine).toEqual({kind: 'error', text: 'Request failed (HTTP 500)'});
         expect(model.toolbar).toEqual([]);
         expect(model.header).toBeNull();
         expect(model.explain.visible).toBe(false);
@@ -606,7 +647,7 @@ describe('the card body across the four statuses', () => {
     });
 
     it('has no body line on the loaded card — the sections are its body', () => {
-        expect(loaded().body).toBeNull();
+        expect(loaded().bodyLine).toBeNull();
     });
 });
 
@@ -631,9 +672,63 @@ describe('the info popup notices', () => {
     });
 });
 
-describe('the preview flag', () => {
-    it('passes through for the profile preview, off by default', () => {
-        expect(loaded({}, {preview: true}).preview).toBe(true);
-        expect(loaded().preview).toBe(false);
+describe('the Models used popup props — the robot\'s target', () => {
+    const LABELLED = {...EXPLAIN, answerLabel: 'Answer model', modelLabel: 'Explain model', followsAnswer: true};
+
+    it('names both models and the explain toggle state from the explain payload', () => {
+        expect(loaded({}, {explainProps: LABELLED}).modelsUsed).toEqual({
+            enabled: true,
+            answerModel: {label: 'Answer model'},
+            explanationModel: {label: 'Explain model', followsAnswer: true},
+        });
+    });
+
+    it('names no model the payload carries no label for, and reads followsAnswer strictly', () => {
+        expect(loaded({}, {explainProps: {...EXPLAIN, modelLabel: 'Explain model', followsAnswer: 'yes'}}).modelsUsed)
+            .toEqual({enabled: true, answerModel: null, explanationModel: {label: 'Explain model', followsAnswer: false}});
+        expect(loaded({}, {explainProps: EXPLAIN}).modelsUsed)
+            .toEqual({enabled: true, answerModel: null, explanationModel: null});
+    });
+
+    it('reads the explain toggle as on unless explicitly false', () => {
+        expect(loaded({}, {explainProps: {...EXPLAIN, enabled: false}}).modelsUsed.enabled).toBe(false);
+        expect(loaded({}, {explainProps: {...EXPLAIN, enabled: undefined}}).modelsUsed.enabled).toBe(true);
+    });
+
+    it('rides the robot\'s own gate — none without an explain payload, under explanation: false, or on the bare card', () => {
+        expect(loaded({}, {explainProps: null}).modelsUsed).toBeNull();
+        expect(loaded({}, {explainProps: EXPLAIN, sections: {explanation: false}}).modelsUsed).toBeNull();
+        expect(buildCardModel({status: 'loading', explainProps: EXPLAIN}, t).modelsUsed).toBeNull();
+    });
+
+    it('stays on the missing card — the Models used popup needs no word', () => {
+        expect(missing({explainProps: LABELLED}).modelsUsed).toEqual(loaded({}, {explainProps: LABELLED}).modelsUsed);
+    });
+});
+
+// word-card review pass: the shell's status selector, a pure lib function —
+// the shell only calls it and mounts no card on null.
+describe('cardStatus — which status the shell\'s fetch state reads as', () => {
+    const PAYLOAD = {id: 7, word: 'melted'};
+
+    it.each([
+        // A loaded payload beats every other flag.
+        ['loaded beats all', {data: PAYLOAD, wordId: 7, lookedUpId: 9, error: 'boom', loading: true}, 'loaded'],
+        ['loaded without any id (the AI-answer mount)', {data: PAYLOAD}, 'loaded'],
+        // No id at all — bound or looked up — is the missing card, whatever
+        // the stale fetch flags say.
+        ['missing', {data: null, wordId: null, lookedUpId: null}, 'missing'],
+        ['missing ignores stale fetch flags', {wordId: null, lookedUpId: null, error: 'boom', loading: true}, 'missing'],
+        // Once an id exists the pre-payload card shows: the error over a
+        // stale loading flag, else the loading line.
+        ['error over loading', {wordId: 7, error: 'Request failed', loading: true}, 'error'],
+        ['error on a looked-up id', {lookedUpId: 9, error: 'Request failed'}, 'error'],
+        ['loading', {wordId: 7, loading: true}, 'loading'],
+        ['loading on a looked-up id', {lookedUpId: 9, loading: true}, 'loading'],
+        // The one render between a lookup hit and the fetch effect's start.
+        ['null gap: an id, nothing loading, no error', {wordId: null, lookedUpId: 9, error: null, loading: false}, null],
+        ['null gap on a bound id', {wordId: 7}, null],
+    ])('%s', (_name, state, expected) => {
+        expect(cardStatus(state)).toBe(expected);
     });
 });

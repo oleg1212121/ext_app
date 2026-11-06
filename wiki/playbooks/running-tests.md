@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-11-06T19:10:00+0300 }
+generated: { by: agent:zcode, at: 2026-11-06T21:30:00+0300 }
 verified: { by: agent:zcode, at: 2026-10-29T10:30:00+03:00 }
 sources:
   - id: phpunit
@@ -37,9 +37,9 @@ sources:
   - id: wikibaseline
     resource: wiki/validate-baseline.json
     title: Acknowledged-warning baseline (exact-message entries, owner+date; --prune keeps it current)
-  - id: liftevaluatepin
-    resource: laravel/resources/js/Components/WordPopup.lookup.test.js
-    title: The lift-and-evaluate source pin (the shell's effectiveFamiliarity evaluated against score states)
+  - id: behaviorallibsuite
+    resource: laravel/resources/js/lib/popupModel.test.js
+    title: The behavioral lib/ exemplar for derived logic (the word card's view-model; with lib/wordFamiliarity.test.js)
   - id: ankisendpin
     resource: laravel/resources/js/Components/WordPopup.ankiSend.test.js
     title: The contains-only wiring source pin (send-path pass-throughs)
@@ -181,8 +181,7 @@ sources:
   text (ADR 0066's exception to the lib/-only rule; hooks are NOT pinned —
   derived hook logic belongs in `lib/`, see the 2026-11-02 ADR 0066
   addendum). Every source pin obeys one
-  split — **a pin over DERIVED logic lifts the real expression out of the
-  component source and evaluates it against payload states; a
+  split — **DERIVED logic is tested behaviorally in `lib/`; a
   verbatim-contains pin is allowed only for wiring/structure**
   (pass-throughs, class hooks, presence/absence). The split's two
   exemplars, blessed by name:
@@ -194,20 +193,22 @@ sources:
     the resolved `fields` map (the body toggles plus the `body` master must
     shape the Body value at send time). Pass-through wiring:
     byte-for-byte is exactly right here.
-  - `Components/WordPopup.lookup.test.js` — the lift-and-evaluate pin.
-    Regex-lifts the shell's real `effectiveFamiliarity` derivation (the
-    score the Anki note reports) out of `WordPopup.jsx` and evaluates it
-    via `new Function` against the `(resolvedFamiliarity, familiarity)`
-    states — the fallback ORDER is the contract. The pattern's original
-    exemplar, `WordPopup.sourceBadge.test.js`'s badge lift, retired with
-    word-card ticket 02: the badge derivation moved into
-    `lib/popupModel.js` and is asserted behaviorally in
-    `lib/popupModel.test.js`, the stronger form wherever logic can leave
-    the component — and since ADR 0066's 2026-11-06 amendment that is
-    the rule, not a preference: lift-and-evaluate covers only derived
-    logic that MUST stay inside a component (this pin's shell-side copy
-    for the Anki note's Familiarity field); logic that can move to
-    `lib/` moves and gets a behavioral suite. Rationale: the "ai · ai" badge
+  - The behavioral `lib/` suites — `lib/popupModel.test.js` (the word
+    card's whole derived surface, the status selector `cardStatus`
+    table-tested) and `lib/wordFamiliarity.test.js`'s
+    `effectiveFamiliarity` describe (the fallback ORDER is the contract:
+    the penalty response wins, a resolved 0 sticks). Logic that can move
+    to `lib/` moves and gets a behavioral suite — since ADR 0066's
+    2026-11-06 amendment that is the rule, not a preference. The
+    lift-and-evaluate form (regex-lift the real expression out of the
+    component source, evaluate it via `new Function` against payload
+    states) is the fallback only for derived logic that MUST stay inside
+    a component, and **no lift pin remains**: the original badge lift
+    (`WordPopup.sourceBadge.test.js`) retired with word-card ticket 02,
+    and the last one — `WordPopup.lookup.test.js`'s lift over the shell's
+    `effectiveFamiliarity` copy — retired in the word-card review pass
+    when the copy became the one `lib/wordFamiliarity.js` helper the
+    shell and the model both call. Rationale: the "ai · ai" badge
     bug passed its own original pin — that pin asserted the buggy
     expression byte-for-byte, so red-green was impossible for that logic
     error and only the review pass caught it (fixed 2026-10-20, `cab5280`).

@@ -70,7 +70,7 @@ const cardToolbar = cardSource.slice(
 
 // The default portal's render: from the card-status selector to the end of
 // the shell.
-const popupRenderSource = popupSource.slice(popupSource.indexOf('const status = data != null'));
+const popupRenderSource = popupSource.slice(popupSource.indexOf('const status = cardStatus('));
 
 // The missing copy's three interface texts, pulled out of the seeder partial.
 const missingStringMatch = seederSource.match(/'word\.not_in_dictionary' => \[([\s\S]*?)\],/);
@@ -186,15 +186,17 @@ describe('WordPopup: missing mode', () => {
 
     it('renders the missing card until the on-open lookup resolves the adopted word (ticket 07)', () => {
         // The status selector picks 'missing' while no id exists at all —
-        // bound, looked up, or loaded — and the one WordCard mount renders
-        // it (word-card ticket 02: no separate missing component).
-        expect(popupRenderSource).toMatch(/wordId == null && lookedUpId == null && data == null \? 'missing'/);
+        // bound, looked up, or loaded (cardStatus, table-tested in
+        // lib/popupModel.test.js) — and the one WordCard mount renders it
+        // (word-card ticket 02: no separate missing component).
+        expect(popupRenderSource).toContain('const status = cardStatus({data, wordId, lookedUpId, error, loading});');
+        expect(popupRenderSource).toContain('{status != null && (');
         expect(popupSource).not.toContain('MissingPopupContent');
         expect(popupSource.match(/<WordCard/g)).toHaveLength(1);
         // The ticket 05 ask goes live on the missing card only when a
-        // column language exists — the missing branch of the one ask
-        // dispatch.
-        expect(popupRenderSource).toContain('? askAiMissing : null');
+        // column language exists — the model's askAi.available verdict
+        // (lib/popupModel.test.js), fed the column language.
+        expect(popupRenderSource).toContain('languageCode: language?.code ?? null,');
         // The full toolbar's wiring (word-popup-overhaul ticket 05): the
         // raw surface, the section-visibility map, the explain payload the
         // disabled toggle + live robot read, and the Models used popup state
@@ -221,7 +223,7 @@ describe('The missing card (WordCard\'s missing status)', () => {
         expect(cardSource).toContain('word-popup-title');
         expect(cardSource).toContain('{card.header.title}');
         expect(cardSource).toContain('word-popup-missing');
-        expect(cardSource).toContain("card.body?.kind === 'missing'");
+        expect(cardSource).toContain("card.bodyLine?.kind === 'missing'");
     });
 
     it('holds the loading line while the on-open resolve is in flight (ADR 0096 amendment)', () => {
@@ -230,8 +232,8 @@ describe('The missing card (WordCard\'s missing status)', () => {
         // loading line on the word-popup-loading hook instead; the note
         // keeps its own hook and settles back in on a miss. The shell hands
         // the in-flight resolve over as state.
-        const body = cardSource.slice(cardSource.indexOf("card.body?.kind === 'missing'"), cardSource.indexOf('card.entries.map('));
-        expect(body).toContain('card.body.resolving ? (');
+        const body = cardSource.slice(cardSource.indexOf("card.bodyLine?.kind === 'missing'"), cardSource.indexOf('card.entries.map('));
+        expect(body).toContain('card.bodyLine.resolving ? (');
         expect(body).toContain('word-popup-loading');
         expect(body).toContain('word-popup-missing');
         expect(popupRenderSource).toContain('resolving: lookupBusy,');
@@ -304,8 +306,8 @@ describe('The missing card (WordCard\'s missing status)', () => {
 });
 
 describe('word.ask_ai_retry ui-string', () => {
-    // The ask error state's Retry control (both popup bodies mount the
-    // shared AskAiError render) — the explain pane's error state has one,
+    // The ask error state's Retry control (the info popup layer mounts the
+    // shared AskAiError render for every card status) — the explain pane's error state has one,
     // and the four-state contract words the error treatment strictly.
     const retryStringMatch = seederSource.match(/'word\.ask_ai_retry' => \[([\s\S]*?)\],/);
 

@@ -3,12 +3,13 @@
 // logic sits inside vitest's behavioral reach (ADR 0066) instead of inside
 // Components/WordPopup.jsx. `t` is injected (the lib/ankiTemplate.js
 // uiLabels(t) precedent) — the module imports no React and stays Node-safe.
-// Color and icon fields are TOKENS, never class strings: the component maps
-// them to its full-literal Tailwind classes.
+// Color and icon fields are TOKENS, never class strings: lib/popupStyle.js
+// maps the color tokens to full-literal Tailwind classes, and the card maps
+// the icon tokens to its glyphs.
 
 import {ankiConnectEndpoint} from './ankiConnect';
-import {dimsEntry, entryUsageChips} from './usageLabelDisplay';
-import {FAMILIARITY_MAX} from './wordFamiliarity';
+import {dimsDefinition, dimsEntry, entryUsageChips, usageLabelChips} from './usageLabelDisplay';
+import {effectiveFamiliarity, FAMILIARITY_MAX} from './wordFamiliarity';
 
 // A payload entry belongs to the popup's own headword when its word matches
 // it (case-insensitively) or is absent; everything else is a base-word
@@ -32,6 +33,31 @@ export function sectionLabel(entry, headword) {
 }
 
 /**
+ * The card's status selector (word-card ticket 02; a lib function since the
+ * review pass): which of the four statuses the shell's fetch state reads as.
+ * A loaded payload beats everything. Missing mode (popup-ai-enrich ticket
+ * 03) holds while no word id exists at all — none bound, none looked up by
+ * the on-open resolve (ticket 07), so a queued ask's minted word only loads
+ * on the next open's resolve. Once an id exists, the pre-payload card shows
+ * the load error (it wins over a stale loading flag) or the loading line
+ * until the payload lands. The one render between a lookup hit and the
+ * fetch effect's start (an id, nothing loading yet) has no status — null —
+ * and the shell mounts no card.
+ */
+export function cardStatus({data = null, wordId = null, lookedUpId = null, error = null, loading = false}) {
+    if (data != null) {
+        return 'loaded';
+    }
+    if (wordId == null && lookedUpId == null) {
+        return 'missing';
+    }
+    if (error) {
+        return 'error';
+    }
+    return loading ? 'loading' : null;
+}
+
+/**
  * Build the word card's view-model from one state object.
  *
  * State (every field but `status` optional, defaults = the profile
@@ -51,15 +77,17 @@ export function sectionLabel(entry, headword) {
  * - Ask-AI: `canAskAi` (the approved-admin gate), `aiBusy`, `aiStarted`,
  *   `aiError`, `aiErrorStatus`, `languageCode` (the clicked column's).
  * - `progressBusy`, `explainProps`, `explainShown` (the toggle's pane),
- *   `resolving` (the missing card's on-open lookup in flight), `preview`.
+ *   `resolving` (the missing card's on-open lookup in flight).
  *
  * Output: `toolbar` (the descriptors that render, in row order — `kind`,
  * `label`/`title`, `color` and `icon` tokens, `disabled`, plus `pressed`,
  * `hoverProbe` or `hasPopup` where applicable), `header` (null on the
  * pre-payload card; each line object present exactly when it renders),
- * `entries`, `explain`, `askAi`, `body`, `notices` (the info popup's
- * messages, null where the card has no info popup), `familiarity` (the
- * effective value), `status`, `preview`.
+ * `entries` (each with its label, word-level chips, section dim mark and
+ * per-sense `definitions`), `explain`, `askAi` (the availability verdict),
+ * `modelsUsed` (the Models used popup's props, null where the robot does
+ * not render), `bodyLine`, `notices` (the info popup's messages, null where
+ * the card has no info popup), `status`.
  */
 export function buildCardModel(state, t) {
     const {
@@ -86,17 +114,16 @@ export function buildCardModel(state, t) {
         aiErrorStatus = null,
         languageCode = null,
         resolving = false,
-        preview = false,
     } = state;
     const isLoaded = status === 'loaded' && data != null;
     // The missing card mirrors the loaded card's chrome (toolbar, header,
     // info popup); the pre-payload loading / error card is bare.
-    const hasCard = isLoaded || status === 'missing';
+    const hasChrome = isLoaded || status === 'missing';
 
     // The popup-open penalty's response (word-popup-overhaul ticket 01)
-    // replaces the opening familiarity once it answers; nullish, not falsy,
-    // so a resolved 0 sticks.
-    const effectiveFamiliarity = resolvedFamiliarity ?? familiarity ?? null;
+    // replaces the opening familiarity once it answers — the one lib
+    // definition the shell's Anki send reads too.
+    const currentFamiliarity = effectiveFamiliarity(resolvedFamiliarity, familiarity);
 
     // The provenance chips (popup-provenance ticket 04): the importing
     // writer plus the word-level ai marker when a succeeded ask exists. An
@@ -110,11 +137,11 @@ export function buildCardModel(state, t) {
     // The header lines exist on the loaded card only — the missing card's
     // header carries the raw clicked surface alone (there is no word behind
     // it). Each line object is present exactly when the line renders.
-    const header = hasCard
+    const header = hasChrome
         ? {
             title: isLoaded ? data.word : surface,
             familiarity: isLoaded && sections.familiarity !== false
-                ? {text: t('word.familiarity', {value: effectiveFamiliarity ?? 0, max: FAMILIARITY_MAX})}
+                ? {text: t('word.familiarity', {value: currentFamiliarity ?? 0, max: FAMILIARITY_MAX})}
                 : null,
             frequency: isLoaded && sections.frequency !== false && data.frequency != null
                 ? {text: t('word.frequency', {rank: Number(data.frequency).toLocaleString()})}
@@ -132,18 +159,31 @@ export function buildCardModel(state, t) {
 
     // The word family's sections, the ADR 0046 `word_family: false` key
     // keeping only the headword's own; each carries its section label, the
-    // word-level usage chips, and the whole-section dimming mark.
+    // word-level usage chips, the whole-section dimming mark, and its senses
+    // (popup-usage-labels): each sense's text, its usage-label chips, and
+    // its own dim — a sense carrying any dimming label dims whole, EXCEPT
+    // inside an already-dimmed section, where the stacked opacity would read
+    // 0.25 and hover would restore only the sense, not the section.
     const familyEntries = isLoaded
         ? (sections.word_family === false
             ? (data.entries ?? []).filter((entry) => entryMatchesHeadword(entry, data.word))
             : (data.entries ?? []))
         : [];
-    const entries = familyEntries.map((entry) => ({
-        entry,
-        label: sectionLabel(entry, data.word),
-        chips: entryUsageChips(entry, t),
-        dimmed: dimsEntry(entry),
-    }));
+    const entries = familyEntries.map((entry) => {
+        const dimmed = dimsEntry(entry);
+
+        return {
+            entry,
+            label: sectionLabel(entry, data.word),
+            chips: entryUsageChips(entry, t),
+            dimmed,
+            definitions: (entry.definitions ?? []).map((definition) => ({
+                text: definition.text,
+                chips: usageLabelChips(definition.labels, t),
+                dimmed: !dimmed && dimsDefinition(definition.labels),
+            })),
+        };
+    });
 
     // The Anki icon's label, shared by its title and aria-label: a send in
     // flight wins, then the reachability state — reachable picks between
@@ -169,7 +209,7 @@ export function buildCardModel(state, t) {
     // explain — no word to attach the pane to — so it is disabled, never
     // pressed. The pre-payload card has neither.
     const explain = {
-        visible: hasCard && explainProps != null && sections.explanation !== false,
+        visible: hasChrome && explainProps != null && sections.explanation !== false,
         disabled: isLoaded ? explainProps != null && explainProps.sentenceId == null : true,
         pressed: isLoaded ? explainShown : false,
     };
@@ -188,13 +228,13 @@ export function buildCardModel(state, t) {
     // language to ask in (nothing valid to ask with otherwise) and the
     // on-open resolve settled — the icon holds while it is in flight, since
     // a hit swaps in the loaded card (whose ai_asked picks the re-ask form).
-    const askAiAvailable = hasCard
+    const askAiAvailable = hasChrome
         && canAskAi
         && handlers.onAskAi != null
         && (isLoaded || (languageCode != null && !resolving));
 
     const toolbar = [];
-    if (hasCard) {
+    if (hasChrome) {
         // Know / remove mark on the left, behind the progress_actions toggle
         // (the only toolbar icons a visibility key hides). Know is moot once
         // the word is already max; remove mark needs a mark to remove (0 is
@@ -208,7 +248,7 @@ export function buildCardModel(state, t) {
                 color: 'verdigris',
                 icon: 'checkCircle',
                 disabled: isLoaded
-                    ? progressBusy || handlers.onProgressAction == null || effectiveFamiliarity === FAMILIARITY_MAX
+                    ? progressBusy || handlers.onProgressAction == null || currentFamiliarity === FAMILIARITY_MAX
                     : true,
             });
             toolbar.push({
@@ -218,7 +258,7 @@ export function buildCardModel(state, t) {
                 color: 'vermilion',
                 icon: 'minusCircle',
                 disabled: isLoaded
-                    ? progressBusy || handlers.onProgressAction == null || effectiveFamiliarity == null
+                    ? progressBusy || handlers.onProgressAction == null || currentFamiliarity == null
                     : true,
             });
         }
@@ -289,24 +329,38 @@ export function buildCardModel(state, t) {
         }
     }
 
+    // The Models used popup's props — the robot's target, behind the robot's
+    // own gate (the explain verdict): the AI-explain toggle state, the
+    // answer model and the explanation model (which may follow the
+    // answer's), each named only when the explain payload carries its label.
+    const modelsUsed = explain.visible
+        ? {
+            enabled: explainProps.enabled !== false,
+            answerModel: explainProps.answerLabel ? {label: explainProps.answerLabel} : null,
+            explanationModel: explainProps.modelLabel
+                ? {label: explainProps.modelLabel, followsAnswer: explainProps.followsAnswer === true}
+                : null,
+        }
+        : null;
+
     // The body line of a card without sections: the pre-payload card's
     // loading / error line, and the missing card's verdict — held as the
     // loading line while the on-open resolve is in flight (pronouncing "not
     // in the dictionary" before it answers reads as an empty popup that
     // later swaps itself, ADR 0096 amendment).
-    let body = null;
+    let bodyLine = null;
     if (status === 'loading') {
-        body = {kind: 'loading', text: t('word.loading')};
+        bodyLine = {kind: 'loading', text: t('word.loading')};
     } else if (status === 'error') {
-        body = {kind: 'error', text: error};
+        bodyLine = {kind: 'error', text: error};
     } else if (!isLoaded) {
-        body = {kind: 'missing', resolving, text: resolving ? t('word.loading') : t('word.not_in_dictionary')};
+        bodyLine = {kind: 'missing', resolving, text: resolving ? t('word.loading') : t('word.not_in_dictionary')};
     }
 
     // The info popup's transient messages (word-popup-overhaul ticket 04).
     // The missing card can send nothing to Anki, so it floats the ask-AI
     // messages only; the bare pre-payload card has no info popup at all.
-    const notices = hasCard
+    const notices = hasChrome
         ? {
             ankiSend: isLoaded ? ankiSend : null,
             aiStarted,
@@ -317,14 +371,13 @@ export function buildCardModel(state, t) {
 
     return {
         status,
-        preview,
-        familiarity: effectiveFamiliarity,
         toolbar,
         header,
         entries,
         explain,
-        askAi: {label: askAiLabel, available: askAiAvailable},
-        body,
+        askAi: {available: askAiAvailable},
+        modelsUsed,
+        bodyLine,
         notices,
     };
 }

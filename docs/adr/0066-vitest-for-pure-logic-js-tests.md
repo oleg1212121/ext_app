@@ -101,16 +101,22 @@ inseparable from React state, effects or wiring. Derived logic that
 2026-10-23 closing rule ("logic that CAN be imported from `lib/` is still
 tested behaviorally") is now the requirement, and the lift-and-evaluate
 form is the fallback for the remainder, not a peer choice. The word-card
-tickets (01–03) are the case that forced the reading: the word card's
-whole derived surface — the provenance badge, the effective familiarity,
-the Anki label chain and color token, the explain gating, the ask-AI
-label and availability, the missing card's wordless icons — left
-`Components/WordPopup.jsx` for one pure function, `lib/popupModel.js`'s
-`buildCardModel`, which takes the card's state object plus `t` and
-returns toolbar descriptors, the header model, the entry list, the body
-line and the info popup's notices. The component (`Components/WordCard.jsx`)
-maps descriptors to JSX and derives nothing, so there is nothing left in
-it to lift.
+tickets (01–03 and their review pass) are the case that forced the
+reading: the word card's whole derived surface — the provenance badge,
+the effective familiarity, the Anki label chain and color token, the
+explain gating, the ask-AI label and availability, the missing card's
+wordless icons, the per-sense usage chips and dims, the Models used
+popup's props — left `Components/WordPopup.jsx` for one pure function,
+`lib/popupModel.js`'s `buildCardModel`, which takes the card's state
+object plus `t` and returns toolbar descriptors, the header model, the
+entry list (each entry with its senses), the Models used props, the body
+line and the info popup's notices. The shell's card-status selector moved
+beside it (`cardStatus`, table-tested), and the effective familiarity the
+shell's Anki send needs is one helper, `lib/wordFamiliarity.js`'s
+`effectiveFamiliarity`, which the model calls too. The component
+(`Components/WordCard.jsx`) maps descriptors to JSX and derives nothing,
+and the shell holds no copy of a derivation, so there is nothing left in
+either to lift.
 
 The exemplar changes accordingly. The 2026-10-23 exemplar,
 `Components/WordPopup.sourceBadge.test.js`'s regex-lifted badge
@@ -124,13 +130,17 @@ behavioral exemplar now — the same "ai · ai" regression that motivated
 the 2026-10-23 split is the test a lift could only approximate. What
 `WordPopup.sourceBadge.test.js` holds today is structure only: the card
 renders the model's badge (`card.header.sourceBadge.map(`), one chip per
-part, at one site inside a section label. The one lift-and-evaluate pin
-that remains, `Components/WordPopup.lookup.test.js`'s
-`effectiveFamiliarity` lift, is the pattern's surviving exemplar
-precisely because it fits the narrowed clause: the shell keeps its own
-copy of that derivation for the Anki note's Familiarity field, inside
-the send cluster the model does not read, and the pin covers live code
-the behavioral suite cannot reach.
+part, at one site inside a section label. **No lift-and-evaluate pin
+remains in the repo.** The last one, `Components/WordPopup.lookup.test.js`'s
+`effectiveFamiliarity` lift over the shell's send-cluster copy, retired
+in the word-card review pass: the derivation was liftable to `lib/` after
+all, so it moved (`lib/wordFamiliarity.js`, asserted behaviorally in
+`lib/wordFamiliarity.test.js` — the penalty response wins, a resolved 0
+sticks, an unmarked word is null) and both the shell and the model call
+it. The exemplar for derived logic is therefore the behavioral `lib/`
+suites — `lib/popupModel.test.js`, `lib/wordFamiliarity.test.js` —
+and the lift form stays on the books only as the fallback for a future
+derivation that genuinely cannot leave a component.
 
 Everything else stays as written. Decision 1 is unchanged: vitest runs
 pure-logic tests in Node, no jsdom, no component rendering. Decision 2 is

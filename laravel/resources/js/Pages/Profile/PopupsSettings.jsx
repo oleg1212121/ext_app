@@ -126,7 +126,6 @@ export default function PopupsSettings({popupVisibility = null}) {
                                 explainProps: previewExplain,
                                 sections,
                                 canAskAi,
-                                preview: true,
                             }}
                             handlers={{onModelsOpenChange: setModelsOpen}}
                             modelsOpen={modelsOpen}

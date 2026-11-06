@@ -6,6 +6,38 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-06 (word-card review pass — the card derives nothing for real, the status selector and effective familiarity move to lib/, the last lift pin retires)
+
+Review-fix pass over the word-card spec. The view-model now carries what
+`WordCard.jsx` still computed: each entry's senses
+(`entries[].definitions: [{text, chips, dimmed}]`, the never-stack-inside-
+a-dimmed-section rule included) and the Models used popup's props
+(`modelsUsed`), both behavioral in `lib/popupModel.test.js` — so the
+"the card owns no derivations" claim in `GLOSSARY.md`, ADR 0066 and
+`domains/interactive-words.md` is true as written. The shell's status
+selector became `lib/popupModel.js`'s `cardStatus` (table-tested,
+covering the error-over-loading tail and the null gap for the first
+time); the effective familiarity became one helper,
+`lib/wordFamiliarity.js`'s `effectiveFamiliarity`, which the model and
+the shell's Anki send both call — retiring the repo's last
+lift-and-evaluate pin (`WordPopup.lookup.test.js`). The shell's
+duplicate ask gate is gone (the model's `askAi.available` is the one
+gate); the card surface renders as one `<div>` with the status branch
+inside; the Explanation pane mounts on the model's `explain.pressed`;
+the dead model fields (`preview`, `familiarity`, `askAi.label`) are
+dropped; `hasCard` → `hasChrome`, `body` → `bodyLine`. ADR 0066's
+2026-11-06 amendment is corrected in place (no lift pin remains; the
+exemplar is the behavioral `lib/` suites), as are
+`architecture/frontend.md` (the exemplar sentence; the "pages import
+pure helpers from `lib/`" rule scoped to shared `Components/` files) and
+`playbooks/running-tests.md` (the pin-split exemplars).
+`generated.at` bumped on the two concepts and the playbook, and
+re-stamped on `domains/anki-export.md` and `domains/profile.md` after
+their listed sources changed (`WordPopup.jsx` / `lib/popupModel.js`;
+`PopupsSettings.jsx` drops the dead `preview: true` state key,
+`sampleWordData.js` a comment) — their claims checked and still
+accurate. No routes, models or commands changed (no `wiki:sync`).
+
 ## 2026-11-06 (word-card ticket 04 — knowledge base closure: the Word card term, the ADR 0066 exemplar swap, the concepts rewritten)
 
 The knowledge base catches up with the deepened word card. The repo-root
@@ -38,7 +70,7 @@ style helpers and states that pages import pure helpers from `lib/`, never
 from a component file (additive — no divergence note existed to drop);
 its vitest paragraph carries the narrowed split and the new exemplar.
 `playbooks/running-tests.md`'s pin-split passage points at the amendment.
-`generated.at` bumped on the three concepts and the playbook. No routes,
+`generated.at` bumped on the two concepts and the playbook. No routes,
 models or commands changed (no `wiki:sync`).
 
 ## 2026-11-06 (word-card ticket 03 — flat siblings, WordPopup.jsx shrinks to the shell)
