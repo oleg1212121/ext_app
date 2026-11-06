@@ -4,7 +4,7 @@ title: Running Tests
 description: How to run the Pest test suite against the dedicated ext_app_test database, the vitest suite for pure JS logic, and the ESLint static-analysis pass.
 tags: [testing, pest, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-11-02T18:38:10+0300 }
+generated: { by: agent:zcode, at: 2026-11-06T18:17:00+0300 }
 verified: { by: agent:zcode, at: 2026-10-29T10:30:00+03:00 }
 sources:
   - id: phpunit
@@ -37,9 +37,9 @@ sources:
   - id: wikibaseline
     resource: wiki/validate-baseline.json
     title: Acknowledged-warning baseline (exact-message entries, owner+date; --prune keeps it current)
-  - id: sourcebadgepin
-    resource: laravel/resources/js/Components/WordPopup.sourceBadge.test.js
-    title: The lift-and-evaluate source pin (derived logic evaluated against payload states)
+  - id: liftevaluatepin
+    resource: laravel/resources/js/Components/WordPopup.lookup.test.js
+    title: The lift-and-evaluate source pin (the shell's effectiveFamiliarity evaluated against score states)
   - id: ankisendpin
     resource: laravel/resources/js/Components/WordPopup.ankiSend.test.js
     title: The contains-only wiring source pin (send-path pass-throughs)
@@ -194,13 +194,16 @@ sources:
     the resolved `fields` map (the body toggles plus the `body` master must
     shape the Body value at send time). Pass-through wiring:
     byte-for-byte is exactly right here.
-  - `Components/WordPopup.sourceBadge.test.js` — the lift-and-evaluate
-    pin. Regex-lifts the section-label chips' real `sourceBadge`
-    derivation out
-    of `WordPopup.jsx` (an array of source parts since the 2026-10-24
-    per-part chip render — one bordered label each) and evaluates it via
-    `new Function` against the
-    `{source, ai_asked}` payload states. Rationale: the "ai · ai" badge
+  - `Components/WordPopup.lookup.test.js` — the lift-and-evaluate pin.
+    Regex-lifts the shell's real `effectiveFamiliarity` derivation (the
+    score the Anki note reports) out of `WordPopup.jsx` and evaluates it
+    via `new Function` against the `(resolvedFamiliarity, familiarity)`
+    states — the fallback ORDER is the contract. The pattern's original
+    exemplar, `WordPopup.sourceBadge.test.js`'s badge lift, retired with
+    word-card ticket 02: the badge derivation moved into
+    `lib/popupModel.js` and is asserted behaviorally in
+    `lib/popupModel.test.js`, the stronger form wherever logic can leave
+    the component. Rationale: the "ai · ai" badge
     bug passed its own original pin — that pin asserted the buggy
     expression byte-for-byte, so red-green was impossible for that logic
     error and only the review pass caught it (fixed 2026-10-20, `cab5280`).

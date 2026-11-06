@@ -6,6 +6,28 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-06 (word-card ticket 02 — one WordCard renders every status through the model)
+
+The word popup now renders exactly one card: `Components/WordCard.jsx`
+builds `lib/popupModel.js`'s view-model from the shell's state plus its own
+Explanation-toggle flag and maps the descriptors to JSX — the old
+`PopupContent`, `MissingPopupContent` and the shell's inline loading/error
+card are gone. The shell (`WordPopup.jsx`) keeps every state and effect,
+selects the card status, and hands over one handlers object and the inert
+`ExplainPane` element; the profile Popups-tab preview mounts the same card
+with canned state (one handler — the Models-used open change — so the
+model reads the toolbar inert). No visible change. The vitest source pins
+re-targeted to `WordCard.jsx` where the wiring moved; the derived-logic
+pins (badge lift, Anki label/amber, ask label/icon, explain gating, row
+order, disabled expressions) retired to `lib/popupModel.test.js`'s
+behavioral suites. Concept touch-ups only (substantive rewrites are ticket
+04): `generated.at` bumped on interactive-words, profile, anki-export,
+architecture/frontend and playbooks/running-tests; interactive-words gains
+`WordCard.jsx` as a source; the component names in interactive-words and
+profile and the lift-and-evaluate exemplar in running-tests/frontend (now
+`WordPopup.lookup.test.js`'s `effectiveFamiliarity` lift — the badge lift
+it named retired) are corrected so nothing points at deleted code.
+
 ## 2026-11-06 (word-card ticket 01 — the lib popup model and style helpers land, the expand phase)
 
 The word card's derived logic gained a pure, React-free lib home:

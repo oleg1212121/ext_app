@@ -4,7 +4,7 @@ title: Frontend Architecture
 description: The hybrid Inertia/React + Livewire + Alpine frontend, Tailwind 4 CSS-first config, Vite build, JS module layering (lib/, hooks/, page-local), vitest for pure logic, and ESLint for static correctness.
 tags: [frontend, react, inertia, livewire, tailwind, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-11-06T17:26:00+0300 }
+generated: { by: agent:zcode, at: 2026-11-06T18:17:00+0300 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: package
@@ -115,7 +115,9 @@ No jsdom and no React testing: components and hooks are wiring, covered by
 the Pest feature suite and manual verification (ADR 0066). Source pins obey
 one split — a pin over derived logic lifts the real expression out of the
 component source and evaluates it against payload states
-(`WordPopup.sourceBadge.test.js`); verbatim-contains pins are
+(`WordPopup.lookup.test.js`'s `effectiveFamiliarity` lift — the card's own
+derived logic left the component for the behavioral `lib/popupModel.js`
+suite in word-card tickets 01–02); verbatim-contains pins are
 wiring/structure only (`WordPopup.ankiSend.test.js`). `vitest.config.js`
 is standalone and must not load the laravel-vite plugin. CI runs it as the
 `frontend` job in `tests.yml`; `composer run test` deliberately does not

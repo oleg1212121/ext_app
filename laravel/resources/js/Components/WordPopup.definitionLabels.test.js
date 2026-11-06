@@ -18,9 +18,14 @@ import {describe, expect, it} from 'vitest';
 // dimsEntry dims the WHOLE <section> at half opacity with hover restoring
 // it — the hook lives on the section element, the header keeps its base
 // 60% — and the chips ride entryUsageChips with the
-// word-popup-section-label-chip hook.
+// word-popup-section-label-chip hook. Since word-card ticket 02 the
+// dictionary renders in Components/WordCard.jsx, and the section-level
+// facts (the "WORD — pos" label, the word-level chips, the section's
+// dimming mark) arrive per entry from lib/popupModel.js — derived and
+// asserted behaviorally there; the per-sense chips still derive here, in
+// the JSX, through the same lib module.
 
-const popupSource = readFileSync(new URL('./WordPopup.jsx', import.meta.url), 'utf8');
+const popupSource = readFileSync(new URL('./WordCard.jsx', import.meta.url), 'utf8');
 
 // The definitions section: from the <details> to its closing </details>.
 const definitionsSource = () => popupSource.slice(
@@ -62,7 +67,8 @@ describe('The popup\'s definition label chips', () => {
 
     it('never stacks the sense dim inside an already-dimmed section', () => {
         const block = definitionsSource();
-        expect(block).toContain('!dimsEntry(entry) && dimsDefinition(definition.labels)');
+        // `dimmed` is the model's section mark (dimsEntry, lib/popupModel.js).
+        expect(block).toContain('!dimmed && dimsDefinition(definition.labels)');
     });
 
     it('carries the word-popup-definition-label hook on both tier branches', () => {
@@ -83,10 +89,12 @@ describe('The popup\'s definition label chips', () => {
 });
 
 describe('The popup\'s section-wide word-level mark', () => {
-    it('dims the whole section through the shared lib, hover restoring it', () => {
-        expect(popupSource).toContain("from '../lib/usageLabelDisplay'");
+    it('dims the whole section on the model\'s mark, hover restoring it', () => {
+        // The mark is the model's per-entry `dimmed` (dimsEntry from the
+        // shared lib, lib/popupModel.test.js).
+        expect(popupSource).toContain('card.entries.map(({entry, label, chips, dimmed}, index) => (');
         const block = sectionSource();
-        expect(block).toContain('dimsEntry(entry)');
+        expect(block).toContain('${dimmed');
         expect(block).toContain('word-popup-section-dimmed');
         expect(block).toContain('opacity-50');
         expect(block).toContain('hover:opacity-100');
@@ -100,10 +108,12 @@ describe('The popup\'s section-wide word-level mark', () => {
     });
 
     it('renders the word-level chips after the label text', () => {
+        // Both arrive per entry from the model (sectionLabel +
+        // entryUsageChips, lib/popupModel.js).
         const block = sectionLabelSource();
-        expect(block).toContain('entryUsageChips(entry, t)');
-        expect(block).toContain('{sectionLabel(entry, data.word)}');
-        expect(block.indexOf('{sectionLabel(entry, data.word)}')).toBeLessThan(block.indexOf('entryUsageChips(entry, t)'));
+        expect(block).toContain('chips.map((chip, chipIndex) => (');
+        expect(block).toContain('{label}');
+        expect(block.indexOf('{label}')).toBeLessThan(block.indexOf('chips.map((chip, chipIndex) => ('));
     });
 
     it('carries the word-popup-section-label-chip hook on both tier branches', () => {

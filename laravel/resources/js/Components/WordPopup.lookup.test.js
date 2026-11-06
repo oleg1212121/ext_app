@@ -59,8 +59,10 @@ const runEnrichSource = popupBody.slice(
     popupBody.indexOf('const askAi = () => {'),
 );
 
-// The default portal's render branch.
-const popupRenderSource = popupBody.slice(popupBody.indexOf('return createPortal('));
+// The default portal's render: from the card-status selector (word-card
+// ticket 02 — the old three-branch body, now one selector feeding the one
+// WordCard) to the end of the shell.
+const popupRenderSource = popupBody.slice(popupBody.indexOf('const status = data != null'));
 
 describe('WordPopup: the on-open lookup (ticket 07)', () => {
     it('POSTs /words/lookup through one shared lib module — CSRF-signed, RAW surface + language code', () => {
@@ -108,10 +110,10 @@ describe('WordPopup: the on-open lookup (ticket 07)', () => {
         expect(fetchEffectSource).toMatch(/if \(fetchId == null\) \{/);
         // The lookup effect stores the resolved id…
         expect(lookupEffectSource).toContain('setLookedUpId(found)');
-        // …and the render branch leaves missing mode once an id exists —
+        // …and the status selector leaves missing mode once an id exists —
         // the loading line shows while the payload loads, then the
         // dictionary view.
-        expect(popupRenderSource).toMatch(/wordId == null && lookedUpId == null && data == null \? \(/);
+        expect(popupRenderSource).toMatch(/wordId == null && lookedUpId == null && data == null \? 'missing'/);
     });
 
     it('the fetch effect’s early return clears the payload state — the missing branch is self-sufficient', () => {
@@ -132,12 +134,15 @@ describe('WordPopup: the on-open lookup (ticket 07)', () => {
         // and the card's ask icon only ever disables while the resolve is
         // in flight — on a miss it is as live as ticket 03 left it. The
         // icon stays keyed on the SINGLE column language: an ordered list
-        // never enables adoption (ticket 03's contract).
-        const missingBranch = popupRenderSource.slice(
-            popupRenderSource.indexOf('wordId == null && lookedUpId == null && data == null ? ('),
-            popupRenderSource.indexOf(') : ('),
+        // never enables adoption (ticket 03's contract). The gate lives in
+        // the card's one ask dispatch (word-card ticket 02): the missing
+        // card's branch of it.
+        const askDispatch = popupRenderSource.slice(
+            popupRenderSource.indexOf('const askAiAction = data != null'),
+            popupRenderSource.indexOf('return createPortal('),
         );
-        expect(missingBranch).toContain('onAskAi={canAskAi && language?.code != null && !lookupBusy ? askAiMissing : null}');
+        expect(askDispatch).toContain(': (canAskAi && language?.code != null && !lookupBusy ? askAiMissing : null);');
+        expect(popupRenderSource).toContain('onAskAi: askAiAction,');
     });
 
     it('drops stale answers — popup closed or surface moved — like the fetch effect', () => {
@@ -160,11 +165,7 @@ describe('WordPopup: the on-open lookup (ticket 07)', () => {
         // (the same one the detail fetch uses) while lookupBusy, then
         // settles to the note on a miss — or swaps to the dictionary view
         // on a hit (the fetch effect's own loading line).
-        const missingBranch = popupRenderSource.slice(
-            popupRenderSource.indexOf('wordId == null && lookedUpId == null && data == null ? ('),
-            popupRenderSource.indexOf(') : ('),
-        );
-        expect(missingBranch).toContain('resolving={lookupBusy}');
+        expect(popupRenderSource).toContain('resolving: lookupBusy,');
     });
 });
 
@@ -176,11 +177,14 @@ describe('WordPopup: the popup-open penalty (word-popup-overhaul ticket 01)', ()
         popupBody.indexOf('// On-open duplicate detection'),
     );
 
-    // The header derivation, lifted verbatim out of the component source
-    // and evaluated against the payload states (the sourceBadge pattern,
-    // ADR 0066): the fallback ORDER is the contract — the penalty response
-    // wins over the caller's open-time value — and a verbatim-contains pin
-    // cannot tell that from a flipped one.
+    // The shell's copy of the derivation — the one the Anki card's
+    // Familiarity field reports (the send cluster stays in the shell) —
+    // lifted verbatim out of the component source and evaluated against the
+    // payload states (ADR 0066): the fallback ORDER is the contract — the
+    // penalty response wins over the caller's open-time value — and a
+    // verbatim-contains pin cannot tell that from a flipped one. The card
+    // header resolves the same two values in lib/popupModel.js, asserted
+    // behaviorally in lib/popupModel.test.js.
     const derivation = penaltyEffectSource.match(/const effectiveFamiliarity = (.+);/)?.[1];
     if (!derivation) throw new Error('the effectiveFamiliarity derivation was not found in WordPopup.jsx');
     const effectiveFor = (resolvedFamiliarity, familiarity) =>
@@ -225,8 +229,11 @@ describe('WordPopup: the popup-open penalty (word-popup-overhaul ticket 01)', ()
         expect(effectiveFor(null, undefined)).toBeNull();
     });
 
-    it('effectiveFamiliarity feeds PopupContent — the shared header slot', () => {
-        expect(popupRenderSource).toContain('familiarity={effectiveFamiliarity}');
+    it('the card resolves its header from both values — the shell hands over the opening and the resolved score', () => {
+        // word-card ticket 02: the header's slot is the model's own
+        // resolution of the two, so header and Anki note read one value.
+        expect(popupRenderSource).toMatch(/^ {24}familiarity,$/m);
+        expect(popupRenderSource).toMatch(/^ {24}resolvedFamiliarity,$/m);
     });
 });
 

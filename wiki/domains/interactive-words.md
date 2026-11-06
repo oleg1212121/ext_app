@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — every 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-06T17:26:00+0300 }
+generated: { by: agent:zcode, at: 2026-11-06T18:17:00+0300 }
 verified: { by: agent:zcode, at: 2026-11-05T16:00:00+0000 }
 sources:
   - id: word-controller
@@ -83,6 +83,9 @@ sources:
   - id: word-popup
     resource: laravel/resources/js/Components/WordPopup.jsx
     title: WordPopup (lazy detail popup — toolbar + always-rendered dictionary, no tab strip)
+  - id: word-card
+    resource: laravel/resources/js/Components/WordCard.jsx
+    title: WordCard (the one card — every status rendered from lib/popupModel.js's view-model)
   - id: word-lookup-lib
     resource: laravel/resources/js/lib/wordLookup.js
     title: wordLookup.js (the popup's lookup POST — the ordered resolver; a single-code list is the old single-code contract)
@@ -403,8 +406,8 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
    actions (the `progress_actions` opt-out hides the toolbar's two
    progress icons entirely), or the Explanation toggle together with the
    robot and the Models-used popup (`explanation`); the popup
-   body lives in the exported
-   `PopupContent`, which the profile tab reuses for a live preview.
+   body is the one `WordCard` (`Components/WordCard.jsx`, word-card
+   ticket 02), which the profile tab reuses for a live preview.
    It always fits the viewport: it opens below the word, flips above it when
    there is more room above, its height is capped to the larger side, the
    body scrolls internally. The **info popup** above the card
@@ -432,7 +435,7 @@ anywhere** (ADR 0027); exposure events are ledgered instead (ADR 0028).
 
 Since popup-ai-enrich ticket 03 every tokenizer word token is interactive,
 mapped or not. A token with no word-map entry opens the popup in **missing
-mode** (`Components/WordPopup.jsx`'s exported `MissingPopupContent`, rendered
+mode** (`WordCard`'s `missing` status, rendered
 while `wordId` is null and no payload sits in `data`): the **raw clicked
 surface** as the title — the folded `l_word` key would show ё-folded,
 mark-stripped text — and one honest note, `word.not_in_dictionary` ("This
@@ -1160,8 +1163,8 @@ see [Profile](/domains/profile.md) for the Anki tab side):
   (no handlers in preview mode), so the preview cannot drift from the
   real popup's first row — and it stays inert there too: the reachability
   probe lives in the outer `WordPopup` (which owns `ankiSettings` and the
-  loaded payload), `PopupContent` only reads the outcome through a
-  false-defaulting `ankiReachable` prop, so the preview's Anki icon is
+  loaded payload), the card only reads the outcome through the
+  model's false-defaulting `ankiReachable` state, so the preview's Anki icon is
   always grey and disabled and the preview never touches the network. The
   preview renders the same info popup above its card (its wrapper carries
   the portal's positioning minus absolute/z-50 — `relative` is the

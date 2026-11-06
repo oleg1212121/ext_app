@@ -13,17 +13,17 @@ import {describe, expect, it} from 'vitest';
 // yet" placeholder shows only when linked AND staged are both empty.
 // Popup-only by decision: the Anki note fields and card Body keep reading
 // the LINKED translations — ankiTemplate never touches staged strings.
+// Since word-card ticket 02 the dictionary — and CollapsibleLine, its sole
+// consumer's helper — live in Components/WordCard.jsx.
 
-const popupSource = readFileSync(new URL('./WordPopup.jsx', import.meta.url), 'utf8');
+const popupSource = readFileSync(new URL('./WordCard.jsx', import.meta.url), 'utf8');
 const ankiTemplateSource = readFileSync(new URL('../lib/ankiTemplate.js', import.meta.url), 'utf8');
 
-// PopupContent's body: the exported component the real portal and the
-// profile preview share.
-const contentStart = popupSource.indexOf('export function PopupContent');
-const contentSource = popupSource.slice(contentStart);
+// WordCard: the one card the real portal and the profile preview share.
+const contentSource = popupSource;
 
-// The dictionary view: from its class hook to the end of PopupContent —
-// every POS section lives inside it.
+// The dictionary view: from its class hook to the end of the card — every
+// POS section lives inside it.
 const dictionaryStart = contentSource.indexOf('className="word-popup-dictionary');
 const dictionary = contentSource.slice(dictionaryStart);
 
@@ -71,7 +71,7 @@ describe('The linked translations line', () => {
         // when the raw line takes over.
         const component = popupSource.slice(
             popupSource.indexOf('function CollapsibleLine'),
-            popupSource.indexOf('function ExplainGuidance'),
+            popupSource.indexOf('export function WordCard'),
         );
         expect(component).toMatch(/if \(items\.length === 0\) \{\s*\n\s*return empty;\s*\n\s*\}/);
     });

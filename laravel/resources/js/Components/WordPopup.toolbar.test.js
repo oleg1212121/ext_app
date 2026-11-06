@@ -6,40 +6,36 @@ import {describe, expect, it} from 'vitest';
 // the way WordPopup.ankiSend.test.js pins the send — assertions on the JSX
 // source. What it locks (popup-ai-enrich ticket 01): NO tab strip — the
 // dictionary content always renders; the toolbar's single row is "I know" /
-// "Remove mark" on the left, then pushed right, in order, Anki, the
-// Explanation on-demand toggle, the live Ask-AI icon, and the
-// robot (models-used) icon rightmost — and it is ICONS ONLY: every message
-// the icons trigger (Anki outcomes, the ask-AI error, the AI Context
-// explanation) lives in the info popup, the absolutely positioned layer that
-// floats above the card (word-popup-overhaul ticket 04, pinned in its own
-// describe below) so the card's content is byte-stable while messages come
-// and go. A hairline closes the header block (word / familiarity /
-// frequency / form-of) — nothing loads until the Explanation icon's first
-// click, the page-lifetime cache survives hide/re-show, and
-// `explanation: false` removes the toggle (and the robot) entirely (ADR 0046
-// keys keep their meaning). All icons disable rather than disappear when
-// inapplicable (the `progress_actions` gate covers only the two progress
-// icons) — the one exception being Ask-AI, which word-popup-overhaul
-// ticket 06 hides for everyone but approved admins — tooltips and
-// aria-labels come from the word.* / ai.* ui-strings,
-// and the glyphs come from the shared line-art set in Components/icons.jsx
-// (currentColor, no own color) — their colors ride the shared
-// toolbarButtonClass color tokens (popup-provenance ticket 01): the know
-// icon verdigris, remove-mark vermilion, the robot info blue, the rest
-// neutral grey, the pressed tint verdigris — and the Anki icon is the one
-// conditional token: amber iff the on-open reachability probe answers
-// (popup-provenance ticket 05, pinned in WordPopup.ankiReachable.test.js).
-// The profile preview's inertness (no handlers reach PopupContent) is
-// pinned on PopupsSettings.jsx.
+// "Remove mark" on the left, then pushed right Anki, the Explanation
+// on-demand toggle, the live Ask-AI icon, and the robot (models-used) icon
+// rightmost — and it is ICONS ONLY: every message the icons trigger (Anki
+// outcomes, the ask-AI error, the AI Context explanation) lives in the info
+// popup, the absolutely positioned layer that floats above the card
+// (word-popup-overhaul ticket 04, pinned in its own describe below) so the
+// card's content is byte-stable while messages come and go. A hairline
+// closes the header block (word / familiarity / frequency / form-of) —
+// nothing loads until the Explanation icon's first click, and the
+// page-lifetime cache survives hide/re-show.
+//
+// Since word-card ticket 02 the card is ONE component, Components/WordCard.jsx,
+// rendering every status from lib/popupModel.js's view-model: the toolbar is
+// a descriptor list the card maps to buttons (one mapped <button>, the class
+// hook and the handler bound by `kind` through one lookup each), so every
+// DERIVED fact the old per-button pins matched verbatim — the row order, the
+// progress_actions / explanation / admin visibility gates, the disabled
+// combinations, the Anki label chain and amber ternary, the ask label and
+// icon variants, the per-button color tokens — is asserted behaviorally in
+// lib/popupModel.test.js instead. What stays here is the wiring: the hooks,
+// the descriptor-to-JSX mapping, the token-to-class map (full Tailwind
+// literals), the shell's state/handler hand-over, the info popup layer and
+// the profile preview's inertness (pinned on PopupsSettings.jsx).
 
 const popupSource = readFileSync(new URL('./WordPopup.jsx', import.meta.url), 'utf8');
 const iconsSource = readFileSync(new URL('./icons.jsx', import.meta.url), 'utf8');
 const previewSource = readFileSync(new URL('../Pages/Profile/PopupsSettings.jsx', import.meta.url), 'utf8');
 
-// PopupContent's body: the exported component the real portal and the
-// profile preview share.
-const contentStart = popupSource.indexOf('export function PopupContent');
-const contentSource = popupSource.slice(contentStart);
+// WordCard: the one card the real portal and the profile preview share.
+const contentSource = readFileSync(new URL('./WordCard.jsx', import.meta.url), 'utf8');
 
 // The toolbar block: from the strip's own class hook to the word header
 // that follows it — everything between is the first-row JSX.
@@ -57,16 +53,16 @@ const dictionary = contentSource.slice(dictionaryStart);
 const popupBodySource = popupSource.slice(popupSource.indexOf('export default function WordPopup'));
 
 // The info popup layer (word-popup-overhaul ticket 04): the shared render
-// every transient message floats in — defined between the ask-AI error
-// component and the missing card, so this slice captures the dismiss
+// every transient message floats in — defined after the ask-AI error
+// component and before the shell, so this slice captures the dismiss
 // button + the layer itself.
 const infoLayer = popupSource.slice(
     popupSource.indexOf('function InfoDismissButton'),
-    popupSource.indexOf('export function MissingPopupContent'),
+    popupSource.indexOf('export default function WordPopup'),
 );
 
-// The ask-AI error render proper — its mount moved into the info popup
-// (both popup bodies), so the component is pinned on its own slice.
+// The ask-AI error render proper — mounted inside the info popup, so the
+// component is pinned on its own slice.
 const askAiErrorComponent = popupSource.slice(
     popupSource.indexOf('function AskAiError'),
     popupSource.indexOf('function InfoDismissButton'),
@@ -80,19 +76,25 @@ const noticeTimer = popupSource.slice(
     popupSource.indexOf('// The resolve list'),
 );
 
-// The full JSX of one toolbar button, located by its stable class hook.
-const buttonIn = (hook, source = toolbar) => {
-    const at = source.indexOf(hook);
-    expect(at, `${hook} renders in the toolbar`).toBeGreaterThan(-1);
-    const start = source.lastIndexOf('<button', at);
-    return source.slice(start, source.indexOf('</button>', at));
+// The one mapped toolbar button: every descriptor renders through it.
+const mappedButton = () => {
+    const at = toolbar.indexOf('<button');
+    expect(at, 'the toolbar maps its descriptors to a button').toBeGreaterThan(-1);
+    return toolbar.slice(at, toolbar.indexOf('</button>', at));
 };
 
-// The hoisted label const the Anki button's title + aria-label share.
-const labelConstSource = () => {
-    const at = popupSource.indexOf('const ankiActionLabel');
-    expect(at, 'ankiActionLabel is hoisted in PopupContent').toBeGreaterThan(-1);
-    return popupSource.slice(at, popupSource.indexOf(';', at));
+// The kind → handler lookup the mapped button binds its click through.
+const clickLookup = () => {
+    const at = contentSource.indexOf('const clickForKind = {');
+    expect(at, 'the card binds handlers through one lookup').toBeGreaterThan(-1);
+    return contentSource.slice(at, contentSource.indexOf('};', at));
+};
+
+// The kind → class-hook lookup.
+const hookLookup = () => {
+    const at = contentSource.indexOf('const HOOK_FOR_KIND = {');
+    expect(at, 'the card maps kinds to class hooks through one lookup').toBeGreaterThan(-1);
+    return contentSource.slice(at, contentSource.indexOf('};', at));
 };
 
 describe('WordPopup action toolbar', () => {
@@ -102,110 +104,77 @@ describe('WordPopup action toolbar', () => {
     });
 
     it('replaces the bottom footer — no footer row remains', () => {
-        expect(popupSource).not.toContain('word-popup-footer');
+        for (const source of [popupSource, contentSource]) {
+            expect(source).not.toContain('word-popup-footer');
+        }
     });
 
     it('has no tab strip anywhere — the dictionary content always renders', () => {
-        expect(popupSource).not.toContain('word-popup-tabs');
-        expect(popupSource).not.toContain('role="tablist"');
-        expect(popupSource).not.toContain('tab_dictionary');
-        expect(popupSource).not.toContain('tab_explanation');
-        // No tab state, no gated dictionary: the old `tab`/`showTabs`/
-        // `showDictionary` wiring is gone entirely, and no `&& (` conditional
-        // wraps the dictionary div — it renders unconditionally.
-        expect(popupSource).not.toMatch(/\bshowTabs\b|\bshowDictionary\b|\bsetTab\b|tab ===/);
-        expect(popupSource).not.toMatch(/&& \(\s*<div className="word-popup-dictionary/);
+        for (const source of [popupSource, contentSource]) {
+            expect(source).not.toContain('word-popup-tabs');
+            expect(source).not.toContain('role="tablist"');
+            expect(source).not.toContain('tab_dictionary');
+            expect(source).not.toContain('tab_explanation');
+            // No tab state, no gated dictionary: the old `tab`/`showTabs`/
+            // `showDictionary` wiring is gone entirely, and no `&& (`
+            // conditional wraps the dictionary div — it renders
+            // unconditionally on every card with chrome.
+            expect(source).not.toMatch(/\bshowTabs\b|\bshowDictionary\b|\bsetTab\b|tab ===/);
+            expect(source).not.toMatch(/&& \(\s*<div className="word-popup-dictionary/);
+        }
     });
 
     it('carries the six actions on stable word-popup-* hooks', () => {
-        expect(toolbar).toContain('word-popup-progress-known');
-        expect(toolbar).toContain('word-popup-progress-reset');
-        expect(toolbar).toContain('word-popup-anki-send');
-        expect(toolbar).toContain('word-popup-explain-toggle');
-        expect(toolbar).toContain('word-popup-ask-ai');
-        expect(toolbar).toContain('word-popup-models-button');
+        // One lookup names every hook; the mapped button wears the hook of
+        // its descriptor's kind.
+        expect(hookLookup()).toContain("know: 'word-popup-progress-known'");
+        expect(hookLookup()).toContain("'remove-mark': 'word-popup-progress-reset'");
+        expect(hookLookup()).toContain("anki: 'word-popup-anki-send'");
+        expect(hookLookup()).toContain("explain: 'word-popup-explain-toggle'");
+        expect(hookLookup()).toContain("'ask-ai': 'word-popup-ask-ai'");
+        expect(hookLookup()).toContain("models: 'word-popup-models-button'");
+        expect(mappedButton()).toContain('${HOOK_FOR_KIND[b.kind]}');
     });
 
-    it('orders the row: know, remove, … Anki, Explanation, Ask-AI, Robot — robot rightmost', () => {
-        const order = [
-            'word-popup-progress-known',
-            'word-popup-progress-reset',
-            'word-popup-anki-send',
-            'word-popup-explain-toggle',
-            'word-popup-ask-ai',
-            'word-popup-models-button',
-        ];
-        const at = order.map((hook) => toolbar.indexOf(hook));
-        at.forEach((position, index) => expect(position, order[index]).toBeGreaterThan(-1));
-        expect([...at].sort((a, b) => a - b)).toEqual(at);
+    it('renders the model’s toolbar once — one mapped button, in the descriptors’ own order', () => {
+        // The row order, the visibility gates and the disabled states are
+        // the model's (lib/popupModel.test.js); the card maps the list it
+        // is given, in order, keyed by kind.
+        expect(toolbar).toContain('card.toolbar.map((b) => (');
+        expect(toolbar.match(/<button/g)).toHaveLength(1);
+        expect(mappedButton()).toContain('key={b.kind}');
+        // No visibility key is read in the toolbar — the model already
+        // dropped what does not render.
+        expect(toolbar).not.toContain('sections.');
+        expect(toolbar).not.toContain('canAskAi');
     });
 
     it('pushes Anki — the first of the right-hand icons — off the left pair with ml-auto', () => {
-        expect(buttonIn('word-popup-anki-send')).toContain('ml-auto');
-        expect(buttonIn('word-popup-progress-known')).not.toContain('ml-auto');
-        expect(buttonIn('word-popup-progress-reset')).not.toContain('ml-auto');
-        // Only the group leader carries the push.
+        // Only the group leader carries the push: the anki kind, nothing else.
+        expect(mappedButton()).toContain("${b.kind === 'anki' ? ' ml-auto' : ''}");
         expect(toolbar.match(/ml-auto/g)).toHaveLength(1);
     });
 
-    it('disables — never hides — a progress icon in its inapplicable state', () => {
-        // know: the mark is already at the maximum; remove mark: no mark to
-        // remove. A busy send or a missing handler (the preview) disables
-        // both, exactly like the old footer buttons did.
-        expect(buttonIn('word-popup-progress-known')).toMatch(
-            /disabled=\{[^}]*familiarity === FAMILIARITY_MAX\}/,
-        );
-        expect(buttonIn('word-popup-progress-known')).toMatch(/progressBusy \|/);
-        expect(buttonIn('word-popup-progress-known')).toMatch(/onProgressAction == null/);
-        expect(buttonIn('word-popup-progress-reset')).toMatch(
-            /disabled=\{[^}]*familiarity == null\}/,
-        );
+    it('labels every icon from its descriptor — tooltip + aria', () => {
+        expect(mappedButton()).toContain('title={b.title}');
+        expect(mappedButton()).toContain('aria-label={b.label}');
     });
 
-    it('the progress_actions visibility gate hides only the two progress icons', () => {
-        // One gate per progress icon, both inside the toolbar…
-        expect(toolbar.match(/sections\.progress_actions !== false/g)).toHaveLength(2);
-        // …and the four right-hand icons sit outside them: the Anki icon is
-        // disabled only by its own state (no handler, send in flight — grey
-        // since the 2026-10-24 quiet probes is COLOR, never a disable),
-        // the other two never disable through a visibility toggle.
-        const anki = buttonIn('word-popup-anki-send');
-        expect(anki).toMatch(/disabled=\{onAnkiSend == null \|\| ankiSend\?\.status === 'sending'\}/);
-        expect(anki).not.toContain('sections.');
-        expect(buttonIn('word-popup-explain-toggle')).not.toContain('progress_actions');
-        expect(buttonIn('word-popup-ask-ai')).not.toContain('sections.');
-        expect(buttonIn('word-popup-models-button')).not.toContain('progress_actions');
-    });
-
-    it('labels every icon with tooltip + aria from the ui-strings', () => {
-        expect(buttonIn('word-popup-progress-known')).toContain("t('word.i_know_this')");
-        expect(buttonIn('word-popup-progress-reset')).toContain("t('word.remove_mark')");
-        // The Anki button's title AND aria-label read one hoisted label const
-        // — the sending/update/add ternary written once, above the toolbar.
-        const anki = buttonIn('word-popup-anki-send');
-        expect(anki).toContain('title={ankiActionLabel}');
-        expect(anki).toContain('aria-label={ankiActionLabel}');
-        const label = popupSource.match(/const ankiActionLabel =[\s\S]*?ankiExisting === 'found' \? t\('word\.anki_update'\) : t\('word\.anki_send'\)/);
-        expect(label).toHaveLength(1);
-        expect(label[0]).toContain("t('word.anki_sending')");
-        // The new right-hand icons: the Explanation toggle, the Ask-AI
-        // icon, and the robot keep the ai.* model-picker label.
-        expect(buttonIn('word-popup-explain-toggle')).toContain("t('word.explain_toggle')");
-        expect(buttonIn('word-popup-ask-ai')).toContain('title={askAiLabel}');
-        expect(buttonIn('word-popup-ask-ai')).toContain('aria-label={askAiLabel}');
-        expect(buttonIn('word-popup-models-button')).toContain("t('ai.models_icon')");
-        expect(toolbar.match(/title=/g)).toHaveLength(6);
-        expect(toolbar.match(/aria-label=/g)).toHaveLength(6);
+    it('disables per descriptor — never hides inline', () => {
+        // The disabled state is the model's verdict per icon (an absent
+        // handler is an absent capability the model reads); the card never
+        // computes it.
+        expect(mappedButton()).toContain('disabled={b.disabled}');
+        expect(toolbar).not.toMatch(/disabled=\{[^b]/);
     });
 
     it('draws the glyphs from the shared line-art set — no inline SVG', () => {
-        expect(buttonIn('word-popup-progress-known')).toContain('<Icon name="checkCircle"');
-        expect(buttonIn('word-popup-progress-reset')).toContain('<Icon name="minusCircle"');
-        expect(buttonIn('word-popup-explain-toggle')).toContain('<Icon name="chatBubble"');
-        // The ask icon flips between the plain sparkles and the re-ask
-        // variant (sparkles inside the refresh ring) on the payload's
-        // ai_asked.
-        expect(buttonIn('word-popup-ask-ai')).toContain("<Icon name={data.ai_asked ? 'sparklesRefresh' : 'sparkles'}");
+        // The icon token maps to the shared Icon set; the robot token to
+        // the Models used popup's own glyph.
+        expect(mappedButton()).toContain('<Icon name={b.icon} className="h-[1.25em] w-[1.25em]"/>');
+        expect(mappedButton()).toContain("b.icon === 'robot'");
+        expect(mappedButton()).toContain('<RobotHelpIcon className="h-[1.25em] w-[1.25em]"/>');
+        expect(toolbar).not.toContain('<svg');
         for (const name of ['checkCircle', 'minusCircle', 'ankiAdd', 'chatBubble']) {
             expect(iconsSource).toMatch(new RegExp(`^    ${name}: '`, 'm'));
         }
@@ -219,68 +188,38 @@ describe('WordPopup action toolbar', () => {
         expect(iconsSource).toContain('nonScalingStroke');
     });
 
-    it('flips the Anki icon between its add and update forms on the detection outcome', () => {
-        const anki = buttonIn('word-popup-anki-send');
-        // found → the update glyph + the shared label const's update wording
-        // ("Update in Anki"); checking / absent / unknown-Anki → the add
-        // form stays (a silent detection failure renders no error of its
-        // own, the spec's "icon stays add form").
-        expect(anki).toContain("ankiExisting === 'found' ? 'ankiUpdate' : 'ankiAdd'");
-        expect(labelConstSource()).toContain("ankiExisting === 'found' ? t('word.anki_update') : t('word.anki_send')");
+    it('binds every handler by kind through one lookup', () => {
+        expect(mappedButton()).toContain('onClick={clickForKind[b.kind]}');
+        const lookup = clickLookup();
+        expect(lookup).toContain("know: () => handlers.onProgressAction?.('known')");
+        expect(lookup).toContain("'remove-mark': () => handlers.onProgressAction?.('reset')");
+        expect(lookup).toContain('anki: handlers.onAnkiSend');
+        expect(lookup).toContain("'ask-ai': handlers.onAskAi");
     });
 
-    it('asks live for approved admins only — hidden elsewhere, still disables per state; an asked word stays clickable', () => {
-        // The live enrichment (popup-ai-enrich ticket 04, re-ask per the
-        // ADR 0082 amendment): the icon renders for approved admins ONLY
-        // (word-popup-overhaul ticket 06 — hidden, not disabled, for
-        // everyone else, matching the endpoint's 403) and disables when
-        // inapplicable — no handler (the profile preview's inertness) or a
-        // send in flight. A word already asked is NOT disabled: it shows
-        // the re-ask variant and the click re-asks.
-        const askAi = buttonIn('word-popup-ask-ai');
-        expect(askAi).toContain('onClick={onAskAi}');
-        expect(askAi).toMatch(/disabled=\{onAskAi == null \|\| aiBusy\}/);
-        expect(askAi).not.toMatch(/\n\s+disabled\n/);
-        // The hide gate wraps the whole button — both icon variants (plain
-        // sparkles + re-ask) live inside it, so one gate covers both.
-        expect(toolbar).toMatch(/\{canAskAi && \(\s*<button[^>]*word-popup-ask-ai/s);
-        expect(buttonIn('word-popup-ask-ai')).toContain("data.ai_asked ? 'sparklesRefresh' : 'sparkles'");
-        // The gate is the shared lib helper (role + is_approved, evaluated
-        // behaviorally in lib/authUser.test.js) off the shared auth user,
-        // computed once in the outer WordPopup and threaded to both cards —
-        // the profile preview reads the same helper, so the two surfaces
-        // cannot drift.
+    it('asks live for approved admins only — the gate is the shared lib helper, computed once in the shell', () => {
+        // The hide-not-disable rule and the per-state disabling are model
+        // output (lib/popupModel.test.js); the gate itself is the shared lib
+        // helper (role + is_approved, evaluated behaviorally in
+        // lib/authUser.test.js) off the shared auth user, computed once in
+        // the outer WordPopup and handed to the one card — the profile
+        // preview reads the same helper, so the two surfaces cannot drift.
         expect(popupSource).toContain("from '../lib/authUser'");
         expect(popupBodySource).toContain('canAskAi = isApprovedAdmin(props.auth?.user)');
         expect(previewSource).toContain('canAskAi = isApprovedAdmin(props.auth?.user)');
-        expect(popupBodySource.match(/canAskAi=\{canAskAi\}/g)).toHaveLength(2);
-    });
-
-    it('swaps the ask icon label between ask / ask again / sending', () => {
-        // One hoisted label const drives tooltip + aria (the Anki pattern):
-        // an already-enriched word reads "ask again" (the re-ask variant's
-        // first-time hint), a send in flight reads "sending", the default
-        // is the plain Ask AI.
-        const askAi = buttonIn('word-popup-ask-ai');
-        expect(askAi).toContain('title={askAiLabel}');
-        expect(askAi).toContain('aria-label={askAiLabel}');
-        const label = popupSource.match(/const askAiLabel =[\s\S]*?data\.ai_asked\s*\?\s*t\('word\.ask_ai_again'\)\s*:\s*\(aiBusy \? t\('word\.ask_ai_sending'\) : t\('word\.ask_ai'\)\)/);
-        expect(label).toHaveLength(1);
+        expect(popupBodySource.match(/^ {24}canAskAi,$/gm)).toHaveLength(1);
     });
 
     it('floats a failed ask in the info popup — never silently, with the Retry control', () => {
-        // The dictionary card mounts the shared info popup layer with the
-        // ask handler (the stable word-popup-ask-ai-error hook lives on the
-        // AskAiError component inside it, pinned below): the layer carries
-        // the server's guidance verbatim (no key / no model / in progress /
-        // throttled) plus the four-state contract's Retry control. The
-        // missing card mounts the same layer — its wiring is pinned in
-        // WordText.missing.test.js.
+        // The card mounts the shared info popup layer; its Retry binds to
+        // the model's ask availability — the same verdict that enables the
+        // icon — so the missing card's admin + language + mid-resolve gate
+        // keeps the retry in lockstep with the sparkles icon.
         const layerMount = contentSource.slice(
             contentSource.indexOf('<InfoPopup'),
             contentSource.indexOf('word-popup-card'),
         );
-        expect(layerMount).toContain('onRetryAskAi={onAskAi}');
+        expect(layerMount).toContain('onRetryAskAi={card.askAi.available ? handlers.onAskAi : null}');
         expect(askAiErrorComponent).toContain('word-popup-ask-ai-retry');
         expect(askAiErrorComponent).toContain("t('word.ask_ai_retry')");
         expect(askAiErrorComponent).toContain('onClick={onRetry}');
@@ -290,57 +229,35 @@ describe('WordPopup action toolbar', () => {
         const askCallback = popupSource.slice(popupSource.indexOf('const runEnrich = (body, origin) => {'));
         expect(askCallback).toContain("t('word.ask_ai_failed'");
     });
-    it('gates the Explanation toggle and the robot on the explain payload and ADR 0046 key', () => {
-        // One shared gate: a popup without an explain payload renders without
-        // both icons (as before), and `explanation: false` — the ADR 0046
-        // section-visibility key — removes the toggle icon AND the robot,
-        // exactly as it once dropped the whole tab strip.
-        expect(contentSource).toMatch(
-            /const showExplain = explainProps != null && sections\.explanation !== false;/,
-        );
-        expect(toolbar.match(/showExplain &&/g)).toHaveLength(2);
-    });
 
-    it('disables the toggle on a payload without sentence identity — the AI-answer mount (ADR 0096 amendment)', () => {
-        // Toolbar parity without a false promise: the AI-answer mount passes
-        // the columns' explain config but no sentence context exists to ask
-        // about, so the toggle renders disabled — grey through the shared
-        // class's disabled:opacity-40, non-responsive as a disabled button —
-        // while the robot beside it stays live.
-        expect(contentSource).toMatch(
-            /const explainDisabled = explainProps != null && explainProps\.sentenceId == null;/,
-        );
-        expect(buttonIn('word-popup-explain-toggle')).toContain('disabled={explainDisabled}');
-        expect(buttonIn('word-popup-models-button')).not.toContain('disabled=');
+    it('gates the Models used popup on the model’s explain verdict — the robot’s own gate', () => {
+        expect(contentSource).toContain('const showExplain = card.explain.visible;');
+        expect(contentSource).toMatch(/\{showExplain && \(\s*<ModelsUsedPopup/s);
     });
 
     it('toggles the Explanation pane: pressed state, click to show, click to hide', () => {
-        const toggle = buttonIn('word-popup-explain-toggle');
-        // Pressed semantics travel to assistive tech…
-        expect(toggle).toContain('aria-pressed={explainShown}');
-        // …one click flips the flag either way.
-        expect(toggle).toContain('onClick={() => setExplainShown((shown) => !shown)}');
+        // Pressed semantics travel to assistive tech from the descriptor…
+        expect(mappedButton()).toContain('aria-pressed={b.pressed}');
+        // …one click flips the card-owned flag either way.
+        expect(clickLookup()).toContain('explain: () => setExplainShown((shown) => !shown)');
         // While shown the icon reads as pressed: the shared button class's
         // pressed branch (verdigris accent + persistent tint, whatever token
         // the button passes — the toggle rests neutral).
-        expect(toggle).toContain("toolbarButtonClass('neutral', explainShown)");
-        const helper = popupSource.slice(popupSource.indexOf('const toolbarButtonClass'));
-        const pressedBranch = helper.slice(helper.indexOf("pressed = false"), helper.indexOf("'disabled:opacity-40'"));
+        expect(mappedButton()).toContain('toolbarButtonClass(b.color, b.pressed)');
+        const helper = contentSource.slice(contentSource.indexOf('const toolbarButtonClass'));
+        const pressedBranch = helper.slice(helper.indexOf("pressed = false"), helper.indexOf("'disabled:opacity-40"));
         expect(pressedBranch).toContain('TOOLBAR_ACCENTS.verdigris');
         expect(pressedBranch).toContain('bg-[var(--color-verdigris)]/10');
         expect(pressedBranch).toContain('dark:bg-[var(--color-verdigris-night)]/10');
     });
 
-    it('paints the icons per color token — know verdigris, remove-mark vermilion, robot info, the rest neutral', () => {
+    it('maps the color tokens to full-literal classes — verdigris, vermilion, amber, info, neutral', () => {
         // popup-provenance ticket 01: the helper takes a color token, and the
         // token map carries the house hues. Its class strings are full
         // literals — Tailwind's scanner reads this file's text, so
-        // concatenation-built names would never compile. "Remove mark" now
-        // renders the destructive vermilion and the robot the info blue; the
-        // Ask-AI icon keeps the neutral grey, and the Anki icon is the
-        // conditional consumer — amber token iff the on-open probe says
-        // Anki is reachable, neutral otherwise (ticket 05, its own suite).
-        const map = popupSource.slice(popupSource.indexOf('const TOOLBAR_ACCENTS'));
+        // concatenation-built names would never compile. Which icon wears
+        // which token is the model's (lib/popupModel.test.js).
+        const map = contentSource.slice(contentSource.indexOf('const TOOLBAR_ACCENTS'));
         expect(map).toContain('opacity-80 hover:opacity-100');
         for (const [token, variable] of [
             ['verdigris', '--color-verdigris'],
@@ -352,14 +269,8 @@ describe('WordPopup action toolbar', () => {
             expect(map).toContain(`text-[var(${variable})]`);
             expect(map).toContain(`dark:text-[var(${variable}-night)]`);
         }
-        expect(buttonIn('word-popup-progress-known')).toContain("toolbarButtonClass('verdigris')");
-        expect(buttonIn('word-popup-progress-reset')).toContain("toolbarButtonClass('vermilion')");
-        expect(buttonIn('word-popup-models-button')).toContain("toolbarButtonClass('info')");
-        // Neutral is the signature's default: bare calls keep the old
-        // reduced-opacity grey.
-        expect(buttonIn('word-popup-ask-ai')).toContain('toolbarButtonClass()');
-        expect(buttonIn('word-popup-explain-toggle')).toContain("toolbarButtonClass('neutral'");
-        expect(buttonIn('word-popup-anki-send')).toContain("toolbarButtonClass(ankiReachable ? 'amber' : 'neutral')");
+        // Neutral is the signature's default.
+        expect(contentSource).toContain("toolbarButtonClass = (color = 'neutral', pressed = false)");
     });
 
     it('floats the Anki status lines in the info popup above the card', () => {
@@ -373,8 +284,7 @@ describe('WordPopup action toolbar', () => {
         expect(infoLayer).toContain("t('word.anki_already')");
         expect(infoLayer).toContain('word-popup-anki-error');
         expect(infoLayer).toContain('/profile?tab=anki');
-        // Gone from the toolbar strip — it keeps only the icon row (the
-        // Anki button's own hook stays, of course).
+        // Gone from the toolbar strip — it keeps only the icon row.
         expect(toolbar).not.toContain('word-popup-anki-added');
         expect(toolbar).not.toContain('word-popup-anki-updated');
         expect(toolbar).not.toContain('word-popup-anki-duplicate');
@@ -382,11 +292,16 @@ describe('WordPopup action toolbar', () => {
     });
 
     it('keeps the robot a models-popup opener — never a toggle of its own', () => {
-        const robot = buttonIn('word-popup-models-button');
-        expect(robot).toContain('onClick={() => onModelsOpenChange?.(true)}');
-        expect(robot).toContain('aria-haspopup="dialog"');
-        // The modal still mounts behind the same gate.
+        expect(clickLookup()).toContain('models: () => handlers.onModelsOpenChange?.(true)');
+        expect(mappedButton()).toContain('aria-haspopup={b.hasPopup}');
+        // The modal mounts behind the same gate and closes through the
+        // same handler.
         expect(contentSource).toMatch(/\{showExplain && \(\s*<ModelsUsedPopup/s);
+        expect(contentSource).toContain('onClose={() => handlers.onModelsOpenChange?.(false)}');
+    });
+
+    it('wires the hover probe from the descriptor — no probe handler, no hover', () => {
+        expect(mappedButton()).toContain('onMouseEnter={b.hoverProbe ? handlers.onAnkiProbe : undefined}');
     });
 });
 
@@ -396,9 +311,50 @@ describe('WordPopup header hairline', () => {
         expect(header).toContain('border-b border-[var(--color-hairline)]');
         expect(header).toContain('dark:border-[var(--color-hairline-night)]');
         // The POS sections keep their existing separators — the same style.
-        expect(popupSource).toContain(
+        expect(contentSource).toContain(
             'mt-2.5 border-t border-[var(--color-hairline)] pt-2.5 dark:border-[var(--color-hairline-night)]',
         );
+    });
+});
+
+describe('The shell hands the one card its state and handlers (word-card ticket 02)', () => {
+    const mount = popupBodySource.slice(popupBodySource.indexOf('<WordCard'));
+
+    it('mounts one WordCard for every status — the three-branch body is gone', () => {
+        expect(popupSource.match(/<WordCard/g)).toHaveLength(1);
+        expect(popupSource).not.toContain('PopupContent');
+        expect(popupSource).not.toContain('word-popup-card');
+        expect(popupBodySource).toMatch(/const status = data != null\s*\? 'loaded'/);
+    });
+
+    it('passes ONE handlers object — progress, Anki send + probe, ask, both dismissals, models', () => {
+        const handlers = mount.slice(mount.indexOf('handlers={{'), mount.indexOf('}}', mount.indexOf('handlers={{')));
+        for (const pair of [
+            'onProgressAction: changeProgress',
+            'onAnkiSend: ankiIconClick',
+            'onAnkiProbe: probeAnkiNow',
+            'onAskAi: askAiAction',
+            'onDismissAnki: dismissAnkiStatus',
+            'onDismissAskAi: dismissAskAiError',
+            'onModelsOpenChange: setModelsOpen',
+        ]) {
+            expect(handlers, pair).toContain(pair);
+        }
+    });
+
+    it('hands the Explanation pane over inert — the card mounts it behind its own toggle', () => {
+        expect(mount).toContain('explainPane={explainProps ? <ExplainPane explain={explainProps} explainKey={explainKey}/> : null}');
+        expect(mount).toContain('modelsOpen={modelsOpen}');
+    });
+
+    it('builds the view-model in the card — never deriving there', () => {
+        // The card feeds the shell's state plus its own toggle flag and the
+        // handler set through buildCardModel; nothing else derives.
+        expect(contentSource).toContain("from '../lib/popupModel'");
+        expect(contentSource).toContain('const card = buildCardModel({...state, explainShown, handlers}, t);');
+        for (const derived of ['FAMILIARITY_MAX', 'ankiConnectEndpoint', 'entryUsageChips', 'dimsEntry(', 'ai_asked', 'ankiReachable', 'sectionLabel(']) {
+            expect(contentSource, derived).not.toContain(derived);
+        }
     });
 });
 
@@ -455,11 +411,12 @@ describe('The live ask-AI request (popup-ai-enrich tickets 04 + 05)', () => {
         // The 409 sync is byte-identical: the refetch path still swaps a
         // fresh payload in.
         expect(runEnrich).toContain('setData(json.data)');
-        // The render branch: the missing card holds until the on-open
+        // The status selector: the missing card holds until the on-open
         // lookup resolves the adopted word — the queued ask itself swaps
-        // nothing. (Ticket 07's lookedUpId leaves the branch the same way:
-        // a resolved id loads the payload through the fetch effect.)
-        expect(popupBody).toMatch(/wordId == null && lookedUpId == null && data == null \? \(/);
+        // nothing. (Ticket 07's lookedUpId leaves the missing status the
+        // same way: a resolved id loads the payload through the fetch
+        // effect.)
+        expect(popupBody).toMatch(/wordId == null && lookedUpId == null && data == null \? 'missing'/);
     });
 
     it('guards against stale responses landing on a moved popup', () => {
@@ -507,15 +464,18 @@ describe('The live ask-AI request (popup-ai-enrich tickets 04 + 05)', () => {
 
 describe('The Context explanation lives in the info popup (word-popup-overhaul ticket 04)', () => {
     it('mounts the pane through the toggle gate into the layer — never in the dictionary', () => {
-        // The toggle-on gate travels with the state that owns it: PopupContent
+        // The toggle-on gate travels with the state that owns it: WordCard
         // passes the pane into the layer's explainSlot only while
         // `explainShown`; the layer carries it behind the stable
-        // `word-popup-explain-row` hook above the card.
-        expect(contentSource).toMatch(/explainSlot=\{showExplain && explainShown && \(/);
-        expect(contentSource).toContain('<ExplainPane explain={explainProps} explainKey={explainKey} preview={preview}/>');
+        // `word-popup-explain-row` hook above the card. The pane element
+        // itself is built inert by the mount site (the shell from its
+        // explain payload, the profile preview with its canned flag).
+        expect(contentSource).toMatch(/explainSlot=\{showExplain && explainShown && \(\s*explainPane\s*\)\}/);
+        expect(popupBodySource).toContain('<ExplainPane explain={explainProps} explainKey={explainKey}/>');
         expect(infoLayer).toContain('word-popup-explain-row');
         // The dictionary view holds only the word family's sections now.
         expect(dictionary).not.toContain('<ExplainPane');
+        expect(dictionary).not.toContain('explainPane');
     });
 
     it('loads nothing before the first click — the pane mounts only behind the toggle', () => {
@@ -532,6 +492,7 @@ describe('The Context explanation lives in the info popup (word-popup-overhaul t
         // instead of refetching (ExplainPane reads cachedExplanation on mount).
         expect(popupSource).toContain('cachedExplanation(explainKey)');
         expect(popupSource).not.toContain('explainCache.clear()');
+        expect(contentSource).not.toContain('explainCache');
     });
 
     it('hides the pane again when the popup moves to another word', () => {
@@ -540,10 +501,10 @@ describe('The Context explanation lives in the info popup (word-popup-overhaul t
         // next open.
         const reset = contentSource.slice(
             contentSource.indexOf('useEffect(() => {'),
-            contentSource.indexOf('const showExplain'),
+            contentSource.indexOf('const card = buildCardModel'),
         );
         expect(reset).toContain('setExplainShown(false)');
-        expect(reset).toContain('}, [data]);');
+        expect(reset).toContain('}, [state.data]);');
     });
 });
 
@@ -638,7 +599,7 @@ describe('The info popup layer (word-popup-overhaul ticket 04)', () => {
     it('sticky items each carry a dismiss control — wired to the owning state', () => {
         // One small shared dismiss button; the successes take none (they
         // auto-dismiss).
-        expect(iconsSource).toMatch(/^    xMark: '/m);
+        expect(iconsSource).toMatch(/^ {4}xMark: '/m);
         expect(infoLayer).toContain('word-popup-info-dismiss');
         expect(infoLayer).toContain('{onDismissAnki != null && (');
         expect(askAiErrorComponent).toContain('<InfoDismissButton');
@@ -647,11 +608,11 @@ describe('The info popup layer (word-popup-overhaul ticket 04)', () => {
             expect(line, hook).not.toContain('InfoDismissButton');
         }
         // The dismiss callbacks clear the message state where it lives — the
-        // outer WordPopup — and reach PopupContent as props.
+        // outer WordPopup — and reach the card in its one handlers object.
         expect(popupBodySource).toMatch(/const dismissAnkiStatus = \(\) => setAnkiSend\(null\);/);
         expect(popupBodySource).toMatch(/const dismissAskAiError = \(\) => \{\s*setAiError\(null\);\s*setAiErrorStatus\(null\);\s*\};/);
-        expect(popupBodySource).toContain('onDismissAnki={dismissAnkiStatus}');
-        expect(popupBodySource).toContain('onDismissAskAi={dismissAskAiError}');
+        expect(popupBodySource).toContain('onDismissAnki: dismissAnkiStatus');
+        expect(popupBodySource).toContain('onDismissAskAi: dismissAskAiError');
     });
 
     it('the card surface never reflows — the layer renders before it, the card class is unconditional', () => {
@@ -666,21 +627,26 @@ describe('The info popup layer (word-popup-overhaul ticket 04)', () => {
         // coming and going can never reflow the card's content.
         const cardDiv = contentSource.slice(contentSource.lastIndexOf('<div', cardAt), contentSource.indexOf('>', cardAt));
         expect(cardDiv).toContain('word-popup-card ${popupContainerClass} min-h-0 flex-1');
-        expect(cardDiv).not.toMatch(/\?|\&\&/);
+        expect(cardDiv).not.toMatch(/\?|&&/);
     });
 
-    it('the missing card gets the same layer — its ask error floats above the card too', () => {
-        const missingSource = popupSource.slice(
-            popupSource.indexOf('export function MissingPopupContent'),
-            popupSource.indexOf('export function PopupContent'),
+    it('one mount serves every card — the missing card’s ask messages float above it too', () => {
+        // The layer's messages are the model's notices (the missing card
+        // carries the ask-AI ones only — it can send nothing to Anki, pinned
+        // behaviorally in lib/popupModel.test.js); the bare pre-payload card
+        // has none and mounts no layer at all.
+        const layerMount = contentSource.slice(
+            contentSource.indexOf('{card.notices && ('),
+            contentSource.indexOf('word-popup-card'),
         );
-        expect(missingSource).toContain('<InfoPopup');
-        expect(missingSource).toContain('onRetryAskAi={onAskAi}');
-        expect(missingSource).toContain('onDismissAskAi={onDismissAskAi}');
-        // The queued ask's started notice floats above the missing card as
-        // well (word-popup-overhaul ticket 06) — the card stays missing
-        // after an ask; the minted word appears on the next open.
-        expect(missingSource).toContain('aiStarted={aiStarted}');
+        expect(layerMount).toContain('<InfoPopup');
+        expect(layerMount).toContain('ankiSend={card.notices.ankiSend}');
+        expect(layerMount).toContain('onDismissAnki={handlers.onDismissAnki}');
+        expect(layerMount).toContain('aiStarted={card.notices.aiStarted}');
+        expect(layerMount).toContain('aiError={card.notices.aiError}');
+        expect(layerMount).toContain('aiErrorStatus={card.notices.aiErrorStatus}');
+        expect(layerMount).toContain('onDismissAskAi={handlers.onDismissAskAi}');
+        expect(contentSource.match(/<InfoPopup/g)).toHaveLength(1);
     });
 
     it('floats the queued ask’s started notice — transient, verdigris, no dismiss control (ticket 06)', () => {
@@ -699,21 +665,26 @@ describe('The info popup layer (word-popup-overhaul ticket 04)', () => {
 });
 
 describe('Popups tab preview', () => {
-    it('renders the same toolbar inert — no progress or Anki handlers, no network', () => {
-        expect(previewSource).toContain('<PopupContent');
+    it('renders the same card inert — no progress or Anki handlers, no network', () => {
+        expect(previewSource).toContain('<WordCard');
+        expect(previewSource).not.toContain('<PopupContent');
+        // The one handler: the Models used popup's open change. The model
+        // reads every other capability as absent — the inert toolbar.
+        expect(previewSource).toContain('handlers={{onModelsOpenChange: setModelsOpen}}');
         expect(previewSource).not.toContain('onProgressAction');
         expect(previewSource).not.toContain('onAnkiSend');
-        expect(previewSource).not.toContain('ankiSend=');
+        expect(previewSource).not.toContain('ankiSend');
         // The preview keeps the explain payload + canned-answer flag that
         // make the Explanation toggle render its pane without any request.
-        expect(previewSource).toContain('preview');
+        expect(previewSource).toContain('preview: true');
+        expect(previewSource).toContain('<ExplainPane explain={previewExplain} explainKey="preview" preview/>');
     });
 
     it('keeps the preview’s Explanation toggle enabled — the sample payload carries a sentence id', () => {
-        // PopupContent disables a sentence-less payload (the AI-answer
-        // mount's no-context case, ADR 0096 amendment); the preview stands
-        // in for a real clicked column popup, so SAMPLE_EXPLAIN carries one
-        // — its pane is the canned answer and never posts either way.
+        // The model disables a sentence-less payload (the AI-answer mount's
+        // no-context case, ADR 0096 amendment); the preview stands in for a
+        // real clicked column popup, so SAMPLE_EXPLAIN carries one — its
+        // pane is the canned answer and never posts either way.
         const sampleSource = readFileSync(new URL('../Pages/Profile/sampleWordData.js', import.meta.url), 'utf8');
         expect(sampleSource).toMatch(/SAMPLE_EXPLAIN = \{[^}]*sentenceId: 1/);
     });

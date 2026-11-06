@@ -26,19 +26,22 @@ import {describe, expect, it} from 'vitest';
 // string) and a note-type mismatch keep amber. Reachability is a
 // browser-side fact only — no backend flag. Components sit outside
 // vitest's behavioral reach (ADR 0066), so the wiring is pinned the way
-// the sibling suites pin theirs: source assertions on WordPopup.jsx.
+// the sibling suites pin theirs: source assertions on WordPopup.jsx. Since
+// word-card ticket 02 the icon itself renders from lib/popupModel.js's
+// toolbar descriptor in Components/WordCard.jsx — its amber-iff-reachable
+// color, its own-state-only disabling, its label chain and the preview's
+// grey defaults are asserted behaviorally in lib/popupModel.test.js ("the
+// Anki icon"); here: the card never reads reachability, it maps the
+// descriptor.
 
 const popupSource = readFileSync(new URL('./WordPopup.jsx', import.meta.url), 'utf8');
 const previewSource = readFileSync(new URL('../Pages/Profile/PopupsSettings.jsx', import.meta.url), 'utf8');
 
 // The outer WordPopup's body: the state, the probe effect and the send
-// callback live here — never in PopupContent, which the inert profile
-// preview shares.
+// callback live here — never in the card, which the inert profile preview
+// shares.
 const bodySource = popupSource.slice(popupSource.indexOf('export default function WordPopup'));
-const contentSource = popupSource.slice(
-    popupSource.indexOf('export function PopupContent'),
-    popupSource.indexOf('export default function WordPopup'),
-);
+const contentSource = readFileSync(new URL('./WordCard.jsx', import.meta.url), 'utf8');
 
 // The probe effect: from its comment hook to the reader-engaged probe that
 // follows it.
@@ -71,15 +74,16 @@ const resolveSource = () => sendSource().slice(
 );
 const failureSource = () => sendSource().slice(sendSource().indexOf('(error) => {'));
 
-// The Anki icon button's JSX inside PopupContent's toolbar strip.
-const ankiButton = () => {
+// The card's one mapped toolbar button — the Anki descriptor renders
+// through it like every other icon.
+const mappedButton = () => {
     const toolbar = contentSource.slice(
-        contentSource.indexOf('word-popup-actions'),
-        contentSource.indexOf('word-popup-header'),
+        contentSource.indexOf('className="word-popup-actions'),
+        contentSource.indexOf('className="word-popup-header'),
     );
-    const at = toolbar.indexOf('word-popup-anki-send');
-    expect(at, 'the Anki icon renders in the toolbar').toBeGreaterThan(-1);
-    return toolbar.slice(toolbar.lastIndexOf('<button', at), toolbar.indexOf('</button>', at));
+    const at = toolbar.indexOf('<button');
+    expect(at, 'the toolbar maps its descriptors to a button').toBeGreaterThan(-1);
+    return toolbar.slice(at, toolbar.indexOf('</button>', at));
 };
 
 describe('The on-open Anki reachability probe', () => {
@@ -146,13 +150,14 @@ describe('The reader-engaged probe — the way back in', () => {
     it('hovering the icon probes ungated and is passed down as onAnkiProbe', () => {
         // probeAnkiNow fires the probe WITHOUT the onlyIfKnown gate: the
         // reader's own engagement is what re-discovers a running Anki in
-        // a cold session. PopupContent receives it as onAnkiProbe and
-        // wires it to the icon's hover; the preview passes nothing (the
-        // prop defaults null → onMouseEnter undefined → no network).
+        // a cold session. The card receives it in the handlers object and
+        // wires it to the icon's hover through the descriptor's hoverProbe
+        // flag; the preview passes no probe handler (the model's flag stays
+        // false → onMouseEnter undefined → no network).
         expect(probeAnkiNowSource()).toContain('probeReachable(ankiSettings)');
         expect(probeAnkiNowSource()).not.toContain('onlyIfKnown');
-        expect(contentSource).toMatch(/onMouseEnter=\{onAnkiProbe \?\? undefined\}/);
-        expect(popupSource).toMatch(/onAnkiProbe=\{probeAnkiNow\}/);
+        expect(mappedButton()).toContain('onMouseEnter={b.hoverProbe ? handlers.onAnkiProbe : undefined}');
+        expect(popupSource).toMatch(/onAnkiProbe: probeAnkiNow,/);
     });
 
     it('whatever the answer, the session becomes KNOWN — the tooltip switches', () => {
@@ -168,7 +173,7 @@ describe('The reader-engaged probe — the way back in', () => {
         // find-before-add talks to AnkiConnect for real — a down Anki
         // fails the send into the inline error line, the honest outcome.
         expect(bodySource).toMatch(/const ankiIconClick = \(\) => \{\s*probeAnkiNow\(\);\s*sendToAnki\(\);\s*\}/);
-        expect(popupSource).toMatch(/onAnkiSend=\{ankiIconClick\}/);
+        expect(popupSource).toMatch(/onAnkiSend: ankiIconClick,/);
     });
 });
 
@@ -189,47 +194,26 @@ describe('The duplicate check waits for the probe', () => {
     });
 });
 
-describe('The Anki icon\'s conditional amber', () => {
-    it('amber iff reachable — neutral while pending, unreachable, or unknown', () => {
-        // The full-literal token ternary (Tailwind's scanner reads this
-        // file): every non-reachable state falls to the neutral grey the
-        // other unaccented icons wear.
-        expect(ankiButton()).toContain("toolbarButtonClass(ankiReachable ? 'amber' : 'neutral')");
+describe('The Anki icon reads reachability through the model', () => {
+    it('the card never reads reachability — color, label and disabling arrive on the descriptor', () => {
+        // Amber iff reachable, grey-is-color-only (the quiet-probe rule:
+        // disabled only by no handler or a send in flight), the label chain
+        // and the preview's grey defaults are all lib/popupModel.test.js's.
+        // The card maps the descriptor and holds no Anki state of its own.
+        expect(mappedButton()).toContain('toolbarButtonClass(b.color, b.pressed)');
+        expect(mappedButton()).toContain('disabled={b.disabled}');
+        expect(contentSource).not.toContain('ankiReachable');
+        expect(contentSource).not.toContain('ankiConnectEndpoint');
     });
 
-    it('grey is COLOR only — the icon stays enabled so a cold session can re-discover Anki', () => {
-        // 2026-10-24, quiet probes: with the on-open probe silent for a
-        // cold session, a disabled grey icon could never learn Anki came
-        // up — hover and click ARE the discovery path. Disabling keeps
-        // only its own two reasons: no handler, a send in flight.
-        expect(ankiButton()).toMatch(/disabled=\{onAnkiSend == null \|\| ankiSend\?\.status === 'sending'\}/);
-        expect(ankiButton()).not.toContain('!ankiReachable');
-    });
-
-    it('the tooltip explains the state — sending, unknown (with the endpoint), unreachable, the forms', () => {
-        // The label chain: send-in-flight wins, then reachable picks
-        // between the update and add forms, the quiet unknown names the
-        // endpoint and offers the click-as-check, and a known-unreachable
-        // endpoint (plus the no-settings case) carries the start-Anki
-        // guidance.
-        const labelSource = contentSource.slice(
-            contentSource.indexOf('const ankiActionLabel'),
-            contentSource.indexOf('const askAiLabel'),
-        );
-        expect(labelSource).toContain("t('word.anki_sending')");
-        expect(labelSource).toContain("t('word.anki_unknown', {endpoint: ankiConnectEndpoint(ankiSettings)})");
-        expect(labelSource).toContain("t('word.anki_unreachable')");
-        expect(labelSource).toContain("t('word.anki_update')");
-        expect(labelSource).toContain("t('word.anki_send')");
-    });
-
-    it('the prop defaults grey and the preview never probes — PopupContent stays inert', () => {
+    it('the shell hands the probe outcome over as state — the card stays inert', () => {
         // The probe lives in the outer WordPopup only (it needs the
-        // ankiSettings prop and the loaded data): PopupContent just reads
-        // the outcome through a false-defaulting prop, so the profile's
-        // Popups-tab preview — which passes neither — renders the grey,
-        // unprobing icon, same as today.
-        expect(contentSource).toMatch(/ankiReachable = false,/);
+        // ankiSettings prop and the loaded data): the card just receives the
+        // outcome in its state, so the profile's Popups-tab preview — which
+        // passes none — renders the grey, unprobing icon, same as today.
+        expect(popupSource).toMatch(/^ {24}ankiReachable,$/m);
+        expect(popupSource).toMatch(/^ {24}ankiUnknown,$/m);
+        expect(popupSource).toMatch(/^ {24}ankiSettings,$/m);
         expect(contentSource).not.toContain('probeReachable');
         expect(contentSource).not.toContain('setAnkiReachable');
         expect(previewSource).not.toContain('ankiReachable');
