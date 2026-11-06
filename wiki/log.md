@@ -6,6 +6,33 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-06 (word-card ticket 01 — the lib popup model and style helpers land, the expand phase)
+
+The word card's derived logic gained a pure, React-free lib home:
+`lib/popupModel.js::buildCardModel(state, t)` turns one state object
+(the four card statuses — missing / loading / error / loaded — plus the
+shell's flag set and a handler-presence object) into the whole view-model:
+toolbar descriptors (kind, label/title, color + icon tokens, disabled,
+pressed / hover-probe / dialog where they apply), the header lines with the
+provenance badge, the word-family entries with section labels, the explain
+gating, the ask-AI label + availability, the body line, and the info
+popup's notices. The pure style helpers (`DEFAULT_POPUP_FONT_SIZE`,
+`popupFontSizeFor`, `popupContainerClass`, and `popupStyle` — now with an
+injectable viewport and newly exported) moved to `lib/popupStyle.js`; the
+reader, simulator and profile pages import them from lib, and
+`WordPopup.jsx` imports them back. Behavioral vitest suites sit beside both
+modules. No component consumes the model yet — every existing pin suite
+passes untouched; the concept prose rewrites wait for ticket 04.
+Re-stamped (`generated.at`) the five concepts whose listed sources the edit
+touched or the ticket named — `interactive-words`, `anki-export`,
+`profile`, `reader`, `architecture/frontend` (their claims name the helpers'
+behavior, not their file, and stay accurate) — which also retired the
+stale frontend ADR 0066 baseline entry (pruned). Six pre-existing
+warnings unrelated to the ticket were acknowledged in the baseline: five
+source-mtime artifacts of the 2026-11-05 18:36:59 fast-forward (each
+source's content commit predates its concept's `generated.at`) and the
+`access-control` concept's `stale_after` expiring today.
+
 ## 2026-11-05 (word-popup-overhaul review pass — the ask gate extracted to lib/authUser.js, the profile.md drift re-stamped)
 
 Review-fix pass: the approved-admin ask gate (`role === 'admin' &&

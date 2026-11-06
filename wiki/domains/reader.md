@@ -5,7 +5,7 @@ description: The reading surface — an explicit work-scoped URL tree (ADR 0091)
 tags: [reader, inertia, react, illustrations]
 status: stable
 stale_after: 2027-01-25
-generated: { by: agent:zcode, at: 2026-11-05T11:50:00+0000 }
+generated: { by: agent:zcode, at: 2026-11-06T17:26:00+0300 }
 verified: { by: human:alex-agent, at: 2026-10-27T21:50:00+03:00 }
 sources:
   - id: controller

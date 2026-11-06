@@ -4,7 +4,7 @@ title: Frontend Architecture
 description: The hybrid Inertia/React + Livewire + Alpine frontend, Tailwind 4 CSS-first config, Vite build, JS module layering (lib/, hooks/, page-local), vitest for pure logic, and ESLint for static correctness.
 tags: [frontend, react, inertia, livewire, tailwind, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-11-02T18:34:37+0300 }
+generated: { by: agent:zcode, at: 2026-11-06T17:26:00+0300 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: package

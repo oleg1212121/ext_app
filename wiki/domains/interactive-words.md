@@ -5,7 +5,7 @@ description: Interactive words on the reader and bilinguals simulator — every 
 tags: [reader, bilinguals, dictionary, words, ai, anki, react, inertia]
 status: stable
 stale_after: 2027-04-15
-generated: { by: agent:zcode, at: 2026-11-05T16:00:00+0000 }
+generated: { by: agent:zcode, at: 2026-11-06T17:26:00+0300 }
 verified: { by: agent:zcode, at: 2026-11-05T16:00:00+0000 }
 sources:
   - id: word-controller

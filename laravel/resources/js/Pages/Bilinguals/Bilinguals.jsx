@@ -10,7 +10,7 @@ import TextContent from "./Components/TextContent.jsx";
 import ReadingSideRadiogroup from "../../Components/ReadingSideRadiogroup.jsx";
 import AnnotationToggle, { PanelToggleTab } from "../../Components/AnnotationToggle.jsx";
 import PageInput from "../../Components/PageInput.jsx";
-import {popupFontSizeFor} from "../../Components/WordPopup.jsx";
+import {popupFontSizeFor} from "../../lib/popupStyle";
 import {useI18n} from '../../i18n';
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave';
 import {useDragResize} from '../../hooks/useDragResize';

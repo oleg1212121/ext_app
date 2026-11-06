@@ -15,10 +15,11 @@ import {AnkiConnectError, ankiConnectEndpoint, markAnkiReachable, probeReachable
 import {buildNoteFields, uiLabels} from '../lib/ankiTemplate';
 import {AnkiNoteTypeMismatchError, findExistingNote, sendAnkiNote} from '../lib/ankiSync';
 import {ankiWordSyncConfig} from '../lib/ankiWordConfig';
+// The pure style helpers live in lib (word-card ticket 01) — the portal
+// positions with popupStyle, the card surfaces wear popupContainerClass,
+// and the info popup's viewport clamp shares the two margins.
+import {DEFAULT_POPUP_FONT_SIZE, POPUP_MARGIN, VIEWPORT_MARGIN, popupContainerClass, popupStyle} from '../lib/popupStyle';
 
-const POPUP_MARGIN = 8;
-const VIEWPORT_MARGIN = 12;
-const MIN_POPUP_HEIGHT = 160;
 const TRANSLATIONS_PREVIEW = 8;
 const TRANSCRIPTIONS_PREVIEW = 1;
 // The info popup's viewport-clamp floor (word-popup-overhaul ticket 04):
@@ -51,11 +52,6 @@ const storeExplanation = (key, explanation) => {
 
 const explainButtonClass = 'rounded-sm border border-[var(--color-verdigris)] px-2.5 py-1 text-[0.857em] hover:bg-[var(--color-verdigris)]/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)] dark:border-[var(--color-verdigris-night)]';
 
-// Surface styling of the popup box, shared by the real portal and the
-// profile's Popups-tab preview (ADR 0046). Positioning classes stay with
-// the portal wrapper.
-export const popupContainerClass = 'flex flex-col overflow-hidden rounded-md border border-[var(--color-hairline)] dark:border-[var(--color-hairline-night)] bg-[#FDFBF5] dark:bg-[#1C1915] shadow-lg shadow-black/20 font-sans text-[var(--color-ink)] dark:text-[var(--color-vellum-night)]';
-
 // Action-toolbar icon buttons (the popup's first row). The glyphs carry no
 // color of their own — these text classes drive the resting and hover states:
 // each button passes a color token (verdigris / vermilion / amber / info, or
@@ -82,59 +78,6 @@ const toolbarButtonClass = (color = 'neutral', pressed = false) => [
         : TOOLBAR_ACCENTS[color],
     'disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-vermilion)]',
 ].join(' ');
-
-// Popup typography derives from the host page's font-size setting (ADR 0031):
-// the page passes the size it computed with popupFontSizeFor(); this default
-// only covers callers that don't (≈ today's look, slightly larger than the
-// original fixed 14px text).
-export const DEFAULT_POPUP_FONT_SIZE = 17;
-const POPUP_BASE_WIDTH = 560;
-
-/**
- * Derive the popup font from a page's reading font size: proportional at
- * POPUP_FONT_RATIO, floored so small reading fonts never shrink the popup
- * below its original fixed size, capped so huge fonts stay readable.
- */
-export function popupFontSizeFor(pageFontSize, {
-    ratio = 0.65,
-    min = 14,
-    max = 32,
-} = {}) {
-    return Math.min(max, Math.max(min, Math.round(pageFontSize * ratio)));
-}
-
-/**
- * Position the popover next to the clicked word, always inside the viewport:
- * it opens below the word unless there is more room above (then it flips up,
- * anchored to the word's top edge), and its height is capped to the larger
- * side so the top action toolbar stays reachable. Width scales with the popup
- * font (560px at the default 17px) so proportions hold as the user scales
- * text from the page's +/- controls.
- */
-function popupStyle(rect, fontSize) {
-    const width = Math.min(
-        Math.round((POPUP_BASE_WIDTH * fontSize) / DEFAULT_POPUP_FONT_SIZE),
-        window.innerWidth - VIEWPORT_MARGIN * 2,
-    );
-    const left = Math.min(
-        Math.max(VIEWPORT_MARGIN, rect.left + window.scrollX),
-        Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN),
-    );
-
-    const spaceBelow = window.innerHeight - rect.bottom - POPUP_MARGIN - VIEWPORT_MARGIN;
-    const spaceAbove = rect.top - POPUP_MARGIN - VIEWPORT_MARGIN;
-    const flipUp = spaceAbove > spaceBelow;
-    const maxHeight = Math.max(MIN_POPUP_HEIGHT, Math.max(spaceBelow, spaceAbove));
-    const top = flipUp ? rect.top + window.scrollY : rect.bottom + window.scrollY + POPUP_MARGIN;
-
-    return {
-        left: `${left}px`,
-        top: `${top}px`,
-        width: `${width}px`,
-        maxHeight: `${maxHeight}px`,
-        ...(flipUp ? {transform: 'translateY(-100%)'} : {}),
-    };
-}
 
 // A payload entry belongs to the popup's own headword when its word matches
 // it; everything else is a base-word section of the word family (ADR 0045).
