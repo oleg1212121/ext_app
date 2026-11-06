@@ -1,5 +1,33 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-import {patchWordStatus, recordWordOpens} from './wordFamiliarity.js';
+import {effectiveFamiliarity, patchWordStatus, recordWordOpens} from './wordFamiliarity.js';
+
+// word-card review pass — the ONE effective-familiarity definition: the
+// card header (lib/popupModel.js) and the shell's Anki send (the note's
+// Familiarity field, Components/WordPopup.jsx) both call it, so header and
+// note can never disagree. The fallback ORDER is the contract — the
+// popup-open penalty's response wins over the caller's open-time value —
+// and the fold is nullish, so a legitimate 0 sticks.
+describe('effectiveFamiliarity — the popup-open penalty response wins', () => {
+    it('takes the resolved (post-penalty) familiarity over the opening one', () => {
+        expect(effectiveFamiliarity(35, 40)).toBe(35);
+    });
+
+    it('falls back to the opening familiarity until the penalty answers', () => {
+        expect(effectiveFamiliarity(null, 40)).toBe(40);
+        expect(effectiveFamiliarity(undefined, 40)).toBe(40);
+    });
+
+    it('keeps a resolved 0 — nullish, not falsy, fallback', () => {
+        expect(effectiveFamiliarity(0, 40)).toBe(0);
+        expect(effectiveFamiliarity(null, 0)).toBe(0);
+    });
+
+    it('is null for an unmarked word, never undefined', () => {
+        expect(effectiveFamiliarity(null, null)).toBeNull();
+        expect(effectiveFamiliarity(null, undefined)).toBeNull();
+        expect(effectiveFamiliarity(undefined, undefined)).toBeNull();
+    });
+});
 
 describe('patchWordStatus', () => {
     it('recolors the word on both canonical sides', () => {

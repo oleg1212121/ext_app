@@ -4,7 +4,7 @@ title: Frontend Architecture
 description: The hybrid Inertia/React + Livewire + Alpine frontend, Tailwind 4 CSS-first config, Vite build, JS module layering (lib/, hooks/, page-local), vitest for pure logic, and ESLint for static correctness.
 tags: [frontend, react, inertia, livewire, tailwind, vitest, eslint]
 status: stable
-generated: { by: agent:zcode, at: 2026-11-02T18:34:37+0300 }
+generated: { by: agent:zcode, at: 2026-11-06T21:30:00+0300 }
 verified: { by: agent:zcode, at: 2026-10-14T19:20:00+03:00 }
 sources:
   - id: package
@@ -88,10 +88,25 @@ De-facto convention, now documented (follow it for new code):
   compose. Storage wrappers (`simulatorPosition`, `readingPosition`,
   `sideFlip` — private `KEY`, exported `loadX`/`saveX` pair, best-effort
   try/catch), pure logic (`readingRows.mjs`, `stressMarks.mjs`,
-  `sseStream.mjs`, `simulatorText.mjs`, `aiAsk.mjs`), and browser/network
-  helpers (`http.js`, `wordFamiliarity.js`). The `.mjs` extension marks
-  modules loadable outside the app bundle (Node/CLI/vitest) — keep pure
-  logic there so vitest can pin it.
+  `sseStream.mjs`, `simulatorText.mjs`, `aiAsk.mjs`), view-models and
+  style helpers (`popupModel.js` — the word popup's card model,
+  `buildCardModel(state, t)` deriving the whole card from one state
+  object with `t` injected, plus the shared `sectionLabel` the Anki note
+  builder reads; `popupStyle.js` — the popup's placement, container and
+  font-size helpers and the toolbar's class helpers `toolbarButtonClass`
+  / `TOOLBAR_ACCENTS` / `explainButtonClass`, full Tailwind literals so
+  the scanner sees them), and browser/network helpers (`http.js`,
+  `wordFamiliarity.js`). The `.mjs` extension marks modules loadable
+  outside the app bundle (Node/CLI/vitest) — keep pure logic there so
+  vitest can pin it. **Pages import pure helpers from `lib/`, never from
+  a shared `Components/` file**: a shared component file exports
+  components only (the
+  reader, the simulator and the profile Popups tab take the popup's
+  style helpers from `lib/popupStyle.js`; a vitest structural pin holds
+  the five popup component files to no `export const`). The rule covers
+  the shared `Components/` layer; a page folder's own sibling modules are
+  page-local (`Pages/Profile/Edit.jsx` imports helpers from its
+  `./ui.jsx`, which predates the rule).
 * **`resources/js/hooks/`** — shared React hooks (most carry an ADR-citing
   header comment): `useSideFlip` (ADR 0037), `useUiSettingsAutosave`,
   `useDragResize` (panel drag mechanics shared by the simulator's AI panel
@@ -113,10 +128,20 @@ files (shared `Components/` popups and page-local `Pages/*/Components/`;
 popup JSX read as text, ADR 0066), colocated next to the code they pin.
 No jsdom and no React testing: components and hooks are wiring, covered by
 the Pest feature suite and manual verification (ADR 0066). Source pins obey
-one split — a pin over derived logic lifts the real expression out of the
-component source and evaluates it against payload states
-(`WordPopup.sourceBadge.test.js`); verbatim-contains pins are
-wiring/structure only (`WordPopup.ankiSend.test.js`). `vitest.config.js`
+one split — verbatim-contains pins are wiring/structure only
+(`WordPopup.ankiSend.test.js`), and derived logic is tested behaviorally
+in `lib/`: logic that can leave a component moves to `lib/` and gets a
+behavioral suite (the exemplar is `lib/popupModel.test.js`'s "the
+provenance badge" describe, which took over from the retired
+`WordPopup.sourceBadge.test.js` badge lift when the card's derivations
+moved into `lib/popupModel.js`, word-card tickets 01–02; with
+`lib/wordFamiliarity.test.js`'s `effectiveFamiliarity` describe, the
+behavioral `lib/` suites are the exemplar). Only derived logic that must
+stay inside a component may be lift-and-evaluated — the pin regex-lifts
+the real expression out of the component source and evaluates it against
+payload states — and no such pin remains: the last one, the shell's
+`effectiveFamiliarity` copy, moved to `lib/wordFamiliarity.js` in the
+word-card review pass (ADR 0066, amended 2026-11-06). `vitest.config.js`
 is standalone and must not load the laravel-vite plugin. CI runs it as the
 `frontend` job in `tests.yml`; `composer run test` deliberately does not
 chain it. Invoke via `docker exec ext_app_laravel npm run test`.

@@ -3,7 +3,9 @@ import {useI18n} from '../../i18n'
 import {usePage} from '@inertiajs/react'
 import {useUiSettingsAutosave} from '../../hooks/useUiSettingsAutosave'
 import {isApprovedAdmin} from '../../lib/authUser'
-import {PopupContent, DEFAULT_POPUP_FONT_SIZE} from '../../Components/WordPopup.jsx'
+import {WordCard} from '../../Components/WordCard.jsx'
+import {ExplainPane} from '../../Components/ExplainPane.jsx'
+import {DEFAULT_POPUP_FONT_SIZE} from '../../lib/popupStyle'
 import {CheckboxRow, SectionHeader} from './ui.jsx'
 import {SAMPLE_DATA, SAMPLE_EXPLAIN, SAMPLE_FAMILIARITY} from './sampleWordData'
 
@@ -48,6 +50,9 @@ export default function PopupsSettings({popupVisibility = null}) {
         return resolved
     })
     const [modelsOpen, setModelsOpen] = useState(false)
+    // The canned explain payload: the sample carries a sentence id, so the
+    // toggle is live and its pane opens on the canned answer.
+    const previewExplain = {...SAMPLE_EXPLAIN, wordId: SAMPLE_DATA.id, surface: 'melted'}
 
     useUiSettingsAutosave('popup', sections)
 
@@ -94,29 +99,37 @@ export default function PopupsSettings({popupVisibility = null}) {
                     {/* The POSITIONED WRAPPER of the preview (the real
                         portal's class, WordPopup.jsx, minus its absolute/
                         z-50): `relative` is what anchors the info popup
-                        layer — PopupContent renders it as the wrapper's
+                        layer — WordCard renders it as the wrapper's
                         absolutely positioned child, hanging above the card
                         surface it renders below — so the preview's canned
                         explanation floats above the preview card exactly
                         like the live explanation above the real one. The
                         card surface itself (popupContainerClass) comes from
-                        PopupContent. */}
+                        WordCard — the same one card the live popup mounts
+                        (word-card ticket 02), fed canned state: the only
+                        handler is the Models used popup's open change, so
+                        the model reads every other capability as absent
+                        (inert toolbar, grey unprobed Anki icon), and the
+                        explain pane is the canned-answer preview (no
+                        network). */}
                     <div
                         className="word-popup relative mt-3"
                         style={{width: 'min(560px, 100%)', fontSize: `${DEFAULT_POPUP_FONT_SIZE}px`}}
                         aria-label={t('profile.popups_preview_title')}
                     >
-                        <PopupContent
-                            surface="melted"
-                            familiarity={SAMPLE_FAMILIARITY}
-                            data={SAMPLE_DATA}
-                            explainProps={{...SAMPLE_EXPLAIN, wordId: SAMPLE_DATA.id, surface: 'melted'}}
-                            explainKey="preview"
-                            sections={sections}
+                        <WordCard
+                            state={{
+                                status: 'loaded',
+                                surface: 'melted',
+                                familiarity: SAMPLE_FAMILIARITY,
+                                data: SAMPLE_DATA,
+                                explainProps: previewExplain,
+                                sections,
+                                canAskAi,
+                            }}
+                            handlers={{onModelsOpenChange: setModelsOpen}}
                             modelsOpen={modelsOpen}
-                            onModelsOpenChange={setModelsOpen}
-                            canAskAi={canAskAi}
-                            preview
+                            explainPane={<ExplainPane explain={previewExplain} explainKey="preview" preview/>}
                         />
                     </div>
                 </div>

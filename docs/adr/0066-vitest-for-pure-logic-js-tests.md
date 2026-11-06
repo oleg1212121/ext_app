@@ -91,3 +91,65 @@ behaviorally. The derivation moved to `lib/aiAnswerTokens.mjs`
 (`answerLanguagesFromPayload`, Node-tested) and the hook imports it; the
 hook pin is deleted. Hooks are untested React wiring again, exactly as
 Decision 1 has always said.
+
+## Amended 2026-11-06 (lift-and-evaluate narrows to logic that must stay in a component; the badge exemplar goes behavioral)
+
+The 2026-10-23 amendment's lift-and-evaluate clause narrows. It covers
+only derived logic that **must** remain inside a component because it is
+inseparable from React state, effects or wiring. Derived logic that
+**can** move to `lib/` moves there and is tested behaviorally — the
+2026-10-23 closing rule ("logic that CAN be imported from `lib/` is still
+tested behaviorally") is now the requirement, and the lift-and-evaluate
+form is the fallback for the remainder, not a peer choice. The word-card
+tickets (01–03 and their review pass) are the case that forced the
+reading: the word card's whole derived surface — the provenance badge,
+the effective familiarity, the Anki label chain and color token, the
+explain gating, the ask-AI label and availability, the missing card's
+wordless icons, the per-sense usage chips and dims, the Models used
+popup's props — left `Components/WordPopup.jsx` for one pure function,
+`lib/popupModel.js`'s `buildCardModel`, which takes the card's state
+object plus `t` and returns toolbar descriptors, the header model, the
+entry list (each entry with its senses), the Models used props, the body
+line and the info popup's notices. The shell's card-status selector moved
+beside it (`cardStatus`, table-tested), and the effective familiarity the
+shell's Anki send needs is one helper, `lib/wordFamiliarity.js`'s
+`effectiveFamiliarity`, which the model calls too. The component
+(`Components/WordCard.jsx`) maps descriptors to JSX and derives nothing,
+and the shell holds no copy of a derivation, so there is nothing left in
+either to lift.
+
+The exemplar changes accordingly. The 2026-10-23 exemplar,
+`Components/WordPopup.sourceBadge.test.js`'s regex-lifted badge
+derivation evaluated via `new Function`, retired with word-card ticket
+02: the derivation lives in `lib/popupModel.js` and is asserted
+behaviorally in `lib/popupModel.test.js` ("the provenance badge" — the
+importer verbatim, the trailing "ai" part, "ai" alone, the adopt-on-ask
+dedupe that keeps "ai · ai" out, the foreign importer kept honest, the
+empty badge, and the missing card never badged). That suite is the
+behavioral exemplar now — the same "ai · ai" regression that motivated
+the 2026-10-23 split is the test a lift could only approximate. What
+`WordPopup.sourceBadge.test.js` holds today is structure only: the card
+renders the model's badge (`card.header.sourceBadge.map(`), one chip per
+part, at one site inside a section label. **No lift-and-evaluate pin
+remains in the repo.** The last one, `Components/WordPopup.lookup.test.js`'s
+`effectiveFamiliarity` lift over the shell's send-cluster copy, retired
+in the word-card review pass: the derivation was liftable to `lib/` after
+all, so it moved (`lib/wordFamiliarity.js`, asserted behaviorally in
+`lib/wordFamiliarity.test.js` — the penalty response wins, a resolved 0
+sticks, an unmarked word is null) and both the shell and the model call
+it. The exemplar for derived logic is therefore the behavioral `lib/`
+suites — `lib/popupModel.test.js`, `lib/wordFamiliarity.test.js` —
+and the lift form stays on the books only as the fallback for a future
+derivation that genuinely cannot leave a component.
+
+Everything else stays as written. Decision 1 is unchanged: vitest runs
+pure-logic tests in Node, no jsdom, no component rendering. Decision 2 is
+unchanged and, if anything, sharpened: pure logic lives in `lib/`, and a
+view-model with an injected `t` (the `lib/ankiTemplate.js` `uiLabels(t)`
+precedent) is pure logic. The two-kind rule itself is unchanged —
+verbatim-contains pins stay allowed for **wiring/structure** only
+(pass-throughs, class hooks, presence/absence; exemplar still
+`Components/WordPopup.ankiSend.test.js`), and a verbatim pin over a
+derivation is still the failure mode the 2026-10-23 incident named. The
+2026-11-02 clarifications (page-local components under the same rule;
+hooks never pinned) are unchanged.

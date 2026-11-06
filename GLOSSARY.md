@@ -145,24 +145,39 @@ a plain-text prefix; a word whose every definition is labelled
 obsolete/archaic will rank as a demoted entry in the popup.
 _Avoid_: POS tags, grammar tags, sense tags
 
+**Word card**:
+The word popup's one rendered card — the dictionary view when a word
+resolves, the honest placeholder when it doesn't (the missing word's
+card), plus the bare pre-payload loading and load-error states. Its
+toolbar, header, and chrome render once, for every status; every
+disabled / label / color state on it is derived by the **popup model**
+(`lib/popupModel.js`'s `buildCardModel`, one pure function over the
+popup's whole state) rather than written per variant, so the card itself
+derives nothing. The popup shell owns the state and effects around it and
+positions it; the profile's Popups tab previews the same card with canned
+state.
+_Avoid_: card body, popup content
+
 **Info popup**:
 The layer of transient word-popup communication — Anki send notices
 (auto-dismissed after ~4 seconds), the transient ask-AI started notice
 (same ~4s auto-dismiss), the sticky Anki errors, the sticky
 ask-AI error, and the AI Context explanation while its toolbar toggle
 is on — stacked in one absolutely positioned, card-surface-styled box
-floating above the word popup's card, so the card's content never
-shifts when messages come or go. Sticky items carry their own small
-dismiss control; everything clears when the popup closes or moves to
-another word, and the profile's Popups-tab preview renders its canned
+floating above the word card, so the card's content never shifts when
+messages come or go. Which messages it floats is the popup model's
+verdict (the missing word's card floats ask-AI messages only; the bare
+loading / error card has no info popup). Sticky items carry their own
+small dismiss control; everything clears when the popup closes or moves
+to another word, and the profile's Popups-tab preview renders its canned
 explanation through the same layer.
 _Avoid_: status line, toast, notification drawer
 
 **Missing word**:
 A word clicked in a text that the dictionary holds no entry for. It
-opens a placeholder card — the clicked spelling plus a plain
-"not in the dictionary yet" note, with the real card's toolbar mirrored
-in full and every wordless icon disabled (the robot and, for approved
-admins, Ask-AI stay live) — and asking AI is the only way that
-card becomes a real dictionary entry.
+opens the word card in its missing state — the clicked spelling plus a
+plain "not in the dictionary yet" note, with the real card's toolbar
+mirrored in full and every wordless icon disabled by the popup model's
+no-payload rule (the robot and, for approved admins, Ask-AI stay live) —
+and asking AI is the only way that card becomes a real dictionary entry.
 _Avoid_: unknown word, out-of-dictionary word

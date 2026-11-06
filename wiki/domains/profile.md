@@ -4,7 +4,7 @@ title: Profile
 description: The /profile account surface — tabbed Account / Preferences / Popups / Anki / AI Models / Danger zone, per-user language (native + learning + interface) and AI-model preferences, popup block visibility with a live preview, per-language Anki settings (a learning-language-defaulted language selector over deck + card content, the connection beside it) with template sync + sample card, provider API key management, account deletion.
 tags: [profile, settings, popups, anki, ai, inertia, react]
 status: stable
-generated: { by: agent:zcode, at: 2026-11-05T15:23:00+0000 }
+generated: { by: agent:zcode, at: 2026-11-06T21:30:00+0300 }
 verified: { by: agent:zcode, at: 2026-10-19T20:30:00+03:00 }
 sources:
   - id: controller
@@ -154,8 +154,8 @@ regular `max-w-3xl` panel / `max-w-xl` card caps — at 576px a ⅓/⅔ split
 would crush the preview to ~345px.
 
 Right of the checkbox groups at `lg`+ (stacked below them on smaller
-screens), a **live preview** renders the popup's real body — the exported
-`PopupContent` from `Components/WordPopup.jsx` with a fixture-style
+screens), a **live preview** renders the popup's real body — the one
+`WordCard` from `Components/WordCard.jsx` (word-card ticket 02) with a fixture-style
 "melted → melt" sample family — bound to the current checkbox state, so the
 preview cannot drift from the real popup; in preview mode the action
 toolbar's icons render disabled (no handlers) — Ask-AI exactly mirrors the
@@ -171,7 +171,7 @@ the default popup font size and carries the real portal wrapper's
 positioning class (`word-popup relative` — `relative` is what anchors the
 info popup layer's absolute positioning above the card; the portal keeps
 `absolute z-50`) while the card surface itself (`popupContainerClass`)
-renders from the shared `PopupContent` — so user styles and tests can
+renders from the shared `WordCard` — so user styles and tests can
 target both identically. The server resolves saved state over
 defaults in `App\Support\PopupVisibility::for()` and shares it to every
 page as the `popupVisibility` Inertia prop. The tab's module-local

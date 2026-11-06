@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Link, router} from '@inertiajs/react';
 import ReaderRow from './ReaderRow.jsx';
-import {popupFontSizeFor} from '../../Components/WordPopup.jsx';
+import {popupFontSizeFor} from '../../lib/popupStyle';
 import {Icon} from '../../Components/icons.jsx';
 import {SpinnerSvg} from '../../Components/Spinner.jsx';
 import ReadingSideRadiogroup from '../../Components/ReadingSideRadiogroup.jsx';

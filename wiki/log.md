@@ -6,6 +6,145 @@ bundle, added at the top. Entries older than the current quarter roll off into
 at each quarter boundary — link there, not to a dated entry here, when
 pointing readers at pre-quarter history.
 
+## 2026-11-06 (word-card review pass — the card derives nothing for real, the status selector and effective familiarity move to lib/, the last lift pin retires)
+
+Review-fix pass over the word-card spec. The view-model now carries what
+`WordCard.jsx` still computed: each entry's senses
+(`entries[].definitions: [{text, chips, dimmed}]`, the never-stack-inside-
+a-dimmed-section rule included) and the Models used popup's props
+(`modelsUsed`), both behavioral in `lib/popupModel.test.js` — so the
+"the card owns no derivations" claim in `GLOSSARY.md`, ADR 0066 and
+`domains/interactive-words.md` is true as written. The shell's status
+selector became `lib/popupModel.js`'s `cardStatus` (table-tested,
+covering the error-over-loading tail and the null gap for the first
+time); the effective familiarity became one helper,
+`lib/wordFamiliarity.js`'s `effectiveFamiliarity`, which the model and
+the shell's Anki send both call — retiring the repo's last
+lift-and-evaluate pin (`WordPopup.lookup.test.js`). The shell's
+duplicate ask gate is gone (the model's `askAi.available` is the one
+gate); the card surface renders as one `<div>` with the status branch
+inside; the Explanation pane mounts on the model's `explain.pressed`;
+the dead model fields (`preview`, `familiarity`, `askAi.label`) are
+dropped; `hasCard` → `hasChrome`, `body` → `bodyLine`. ADR 0066's
+2026-11-06 amendment is corrected in place (no lift pin remains; the
+exemplar is the behavioral `lib/` suites), as are
+`architecture/frontend.md` (the exemplar sentence; the "pages import
+pure helpers from `lib/`" rule scoped to shared `Components/` files) and
+`playbooks/running-tests.md` (the pin-split exemplars).
+`generated.at` bumped on the two concepts and the playbook, and
+re-stamped on `domains/anki-export.md` and `domains/profile.md` after
+their listed sources changed (`WordPopup.jsx` / `lib/popupModel.js`;
+`PopupsSettings.jsx` drops the dead `preview: true` state key,
+`sampleWordData.js` a comment) — their claims checked and still
+accurate. No routes, models or commands changed (no `wiki:sync`).
+
+## 2026-11-06 (word-card ticket 04 — knowledge base closure: the Word card term, the ADR 0066 exemplar swap, the concepts rewritten)
+
+The knowledge base catches up with the deepened word card. The repo-root
+`GLOSSARY.md` gains **Word card** under Interactive words — the popup's one
+rendered card (dictionary view, missing placeholder, the bare pre-payload
+loading / error states) whose toolbar, header and chrome render once with
+every disabled / label / color state derived by the popup model
+(`lib/popupModel.js`), _Avoid_ card body / popup content — and the
+**Missing word** and **Info popup** entries re-anchor onto it (the missing
+card is the word card's missing state; the info popup floats above the
+word card and floats what the model's notices say). ADR 0066 gains its
+2026-11-06 amendment: the lift-and-evaluate clause narrows to derived
+logic that must stay inside a component, logic that can move to `lib/`
+moves and gets behavioral tests, the exemplar swaps from the retired
+`WordPopup.sourceBadge.test.js` badge lift to `lib/popupModel.test.js`'s
+"the provenance badge" describe (the `effectiveFamiliarity` lift in
+`WordPopup.lookup.test.js` is the surviving lift exemplar), and the
+wiring/structure verbatim-contains pins stay exactly as written.
+
+`domains/interactive-words.md` now describes the shell / word card / popup
+model structure and the four statuses (`loaded`, `missing`, `loading`,
+`error`) in `# How it works`, fixes the passages that still named deleted
+code — the `toolbarButtonClass(ankiReachable ? …)` expression, "both popup
+bodies", the missing card's "the outer `WordPopup` passes no handlers" (the
+shell passes its one handlers object on every status; the model's
+no-payload rule disables the wordless icons) — and lists
+`lib/popupModel.js` + `lib/popupStyle.js` as sources.
+`architecture/frontend.md`'s lib layering names the popup model and the
+style helpers and states that pages import pure helpers from `lib/`, never
+from a component file (additive — no divergence note existed to drop);
+its vitest paragraph carries the narrowed split and the new exemplar.
+`playbooks/running-tests.md`'s pin-split passage points at the amendment.
+`generated.at` bumped on the two concepts and the playbook. No routes,
+models or commands changed (no `wiki:sync`).
+
+## 2026-11-06 (word-card ticket 03 — flat siblings, WordPopup.jsx shrinks to the shell)
+
+`Components/WordPopup.jsx` now holds only the shell (state, effects, the
+positioned portal wrapper, the `WordCard` mount). The card's panes moved
+into flat siblings beside it: `InfoPopup.jsx` (the info popup layer),
+`AskAiError.jsx` (the ask-AI error plus the per-item `InfoDismissButton`
+it and the layer both mount — kept beside it so the imports run one way)
+and `ExplainPane.jsx` (the pane, `ExplainGuidance`, the page-lifetime
+explain cache); `CollapsibleLine` stays in `WordCard.jsx`. The temporary
+WordCard ↔ WordPopup import cycle is gone. The class helpers
+`toolbarButtonClass` (with its accent map) and `explainButtonClass` moved
+into `lib/popupStyle.js`, so no component file exports a helper and the
+profile preview imports `ExplainPane` from its own file. `lib/ankiTemplate.js`
+drops its commented twin of the section label: it imports `sectionLabel`
+from `lib/popupModel.js` (now exported with `entryMatchesHeadword`) and
+escapes the result, so one definition of the "WORD — pos" heading feeds the
+card and the note (the ankiTemplate suite passes unchanged). Vitest source
+pins re-targeted to the file each pinned piece now lives in, pinned strings
+unchanged. No visible change. Frontmatter only (rewrites are ticket 04):
+interactive-words gains the three siblings as sources, anki-export gains
+`InfoPopup.jsx` and `lib/popupModel.js`; `generated.at` bumped on those two,
+profile and playbooks/running-tests.
+
+## 2026-11-06 (word-card ticket 02 — one WordCard renders every status through the model)
+
+The word popup now renders exactly one card: `Components/WordCard.jsx`
+builds `lib/popupModel.js`'s view-model from the shell's state plus its own
+Explanation-toggle flag and maps the descriptors to JSX — the old
+`PopupContent`, `MissingPopupContent` and the shell's inline loading/error
+card are gone. The shell (`WordPopup.jsx`) keeps every state and effect,
+selects the card status, and hands over one handlers object and the inert
+`ExplainPane` element; the profile Popups-tab preview mounts the same card
+with canned state (one handler — the Models-used open change — so the
+model reads the toolbar inert). No visible change. The vitest source pins
+re-targeted to `WordCard.jsx` where the wiring moved; the derived-logic
+pins (badge lift, Anki label/amber, ask label/icon, explain gating, row
+order, disabled expressions) retired to `lib/popupModel.test.js`'s
+behavioral suites. Concept touch-ups only (substantive rewrites are ticket
+04): `generated.at` bumped on interactive-words, profile, anki-export,
+architecture/frontend and playbooks/running-tests; interactive-words gains
+`WordCard.jsx` as a source; the component names in interactive-words and
+profile and the lift-and-evaluate exemplar in running-tests/frontend (now
+`WordPopup.lookup.test.js`'s `effectiveFamiliarity` lift — the badge lift
+it named retired) are corrected so nothing points at deleted code.
+
+## 2026-11-06 (word-card ticket 01 — the lib popup model and style helpers land, the expand phase)
+
+The word card's derived logic gained a pure, React-free lib home:
+`lib/popupModel.js::buildCardModel(state, t)` turns one state object
+(the four card statuses — missing / loading / error / loaded — plus the
+shell's flag set and a handler-presence object) into the whole view-model:
+toolbar descriptors (kind, label/title, color + icon tokens, disabled,
+pressed / hover-probe / dialog where they apply), the header lines with the
+provenance badge, the word-family entries with section labels, the explain
+gating, the ask-AI label + availability, the body line, and the info
+popup's notices. The pure style helpers (`DEFAULT_POPUP_FONT_SIZE`,
+`popupFontSizeFor`, `popupContainerClass`, and `popupStyle` — now with an
+injectable viewport and newly exported) moved to `lib/popupStyle.js`; the
+reader, simulator and profile pages import them from lib, and
+`WordPopup.jsx` imports them back. Behavioral vitest suites sit beside both
+modules. No component consumes the model yet — every existing pin suite
+passes untouched; the concept prose rewrites wait for ticket 04.
+Re-stamped (`generated.at`) the five concepts whose listed sources the edit
+touched or the ticket named — `interactive-words`, `anki-export`,
+`profile`, `reader`, `architecture/frontend` (their claims name the helpers'
+behavior, not their file, and stay accurate) — which also retired the
+stale frontend ADR 0066 baseline entry (pruned). Six pre-existing
+warnings unrelated to the ticket were acknowledged in the baseline: five
+source-mtime artifacts of the 2026-11-05 18:36:59 fast-forward (each
+source's content commit predates its concept's `generated.at`) and the
+`access-control` concept's `stale_after` expiring today.
+
 ## 2026-11-05 (word-popup-overhaul review pass — the ask gate extracted to lib/authUser.js, the profile.md drift re-stamped)
 
 Review-fix pass: the approved-admin ask gate (`role === 'admin' &&
